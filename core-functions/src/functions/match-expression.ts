@@ -1,0 +1,1 @@
+export { MatchExpressionImplementation } from './regex';

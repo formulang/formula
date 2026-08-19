@@ -1,0 +1,49 @@
+{
+  "name": "@formulang/definitions",
+  "version": "1.0.0",
+  "description": "Portable contracts, types, and registry primitives for the Formulang formula language.",
+  "keywords": [
+    "formula",
+    "expression-language",
+    "dsl",
+    "typescript",
+    "safe-eval",
+    "spreadsheet-formulas"
+  ],
+  "homepage": "https://github.com/formulang/formula/tree/main/definitions#readme",
+  "bugs": {
+    "url": "https://github.com/formulang/formula/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/formulang/formula.git",
+    "directory": "definitions"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "prettier": "prettier --write . --ignore-path ../.prettierignore",
+    "prettier:check": "prettier --check . --ignore-path ../.prettierignore",
+    "test": "vitest run --config ../vitest.config.ts --passWithNoTests",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
