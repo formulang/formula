@@ -33,12 +33,12 @@ A release therefore happens exactly when `main` carries a version that npm does 
 
 The `Release` workflow triggers on every push to `main`. Runs are serialized through the `release` concurrency group (`cancel-in-progress: false`), so two merges in quick succession queue rather than race.
 
-1. `actions/checkout`, then pnpm + Node 22 setup with `registry-url: https://registry.npmjs.org` (this writes the `.npmrc` that reads `NODE_AUTH_TOKEN` at publish time).
+1. `actions/checkout`, then pnpm + Node 22 setup with `registry-url: https://registry.npmjs.org`.
 2. `pnpm install --frozen-lockfile`.
 3. `node scripts/set-version.js --check` — fails the run unless all five `package.json` files carry the same version. On mismatch it lists every file's version so the offender is obvious.
 4. `pnpm run build` and `pnpm run test` — a broken build or failing tests stops the run here; nothing is published.
 5. **Version gate.** The workflow asks npm about all four packages at `<version>`. Only when every one of them already exists are the remaining steps skipped (green no-op); if any package is missing at that version, the run proceeds to publish.
-6. **Publish.** `pnpm -r publish --access public --no-git-checks` publishes every workspace package to npmjs.org; the private root package is skipped automatically. Because each package sets `publishConfig.provenance: true` and the workflow grants `id-token: write`, npm generates [provenance attestations](https://docs.npmjs.com/generating-provenance-statements) linking the published tarballs to this exact workflow run.
+6. **Publish.** `pnpm -r publish --access public --no-git-checks` publishes every workspace package to npmjs.org; the private root package is skipped automatically. Authentication is npm [trusted publishing](https://docs.npmjs.com/trusted-publishers): pnpm exchanges the workflow run's OIDC identity token (enabled by the `id-token: write` permission) for a short-lived npm credential — no npm token or secret is stored anywhere. npm generates [provenance attestations](https://docs.npmjs.com/generating-provenance-statements) linking the published tarballs to this exact workflow run.
 7. **Tag + GitHub release.** The workflow creates and pushes the `v<version>` git tag, then runs `gh release create v<version> --generate-notes` — GitHub generates the release notes from the merged pull requests and commits since the previous release.
 
 Order matters: tagging and the GitHub release run **only after a successful publish**. A failed publish leaves no tag and no release behind, so a failed run can simply be re-run once the cause is fixed. This holds for partial failures too: the version gate publishes as long as _any_ of the four packages is missing at that version, and `pnpm -r publish` skips the ones that already went out — so a re-run completes the release instead of no-opping. If a re-run still cannot get all four published, release a fresh version.
@@ -49,17 +49,16 @@ Most pushes to `main` do not change the version — docs, refactors, tests. The 
 
 ## One-time setup
 
-Required once per repository, **before the first release version lands on `main`**:
+Publishing is **tokenless**: no npm token or repository secret exists. The release workflow authenticates itself to npm via [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC). The configuration, recorded here for reference:
 
-1. **`NPM_TOKEN` repository secret.** Create a **granular access token** on npmjs.com (Access Tokens → Generate New Token → Granular Access Token) with read/write permission on the `@formulang` packages and scope, and a **short expiration** (a week is plenty — it is only needed until trusted publishing takes over, see below). Avoid the classic "Automation" token type that bypasses 2FA; npm itself warns against it. Add the token in GitHub under Settings → Secrets and variables → Actions → New repository secret, named `NPM_TOKEN`. The workflow exposes it as `NODE_AUTH_TOKEN` for the `.npmrc` written by `actions/setup-node`.
+1. **Trusted publisher, per package.** Each of the four packages carries a Trusted Publisher entry on npmjs.com (package → Settings → Trusted Publisher → GitHub Actions): organization `formulang`, repository `formula`, workflow `release.yml`, no environment, allowed action Publish. The workflow's `permissions` block grants `id-token: write`, which lets the run mint the OIDC token that npm exchanges for a short-lived publish credential.
 
-   If a release run reaches the publish step with the secret missing or invalid, that step fails. Fix the secret, then re-run the failed workflow run from the Actions UI — nothing partial has happened, because tagging and the GitHub release only run after a successful publish.
+   If a publish fails with an authentication or token-exchange error, compare the trusted-publisher fields against reality — a renamed workflow file or transferred repository breaks the OIDC claim match. Fix the entry and re-run the failed run from the Actions UI; nothing partial has happened, because tagging and the GitHub release only run after a successful publish.
 
-   **After the first release: switch to trusted publishing.** A token is only required to bootstrap, because npm's [trusted publishing](https://docs.npmjs.com/trusted-publishers) is configured per package and the settings page exists only once a package has been published. As soon as `1.0.0` is on npm: open each of the four packages on npmjs.com → Settings → Trusted Publisher → GitHub Actions, and enter organization `formulang`, repository `formula`, workflow `release.yml`. Then update the workflow's publish step to npm's OIDC flow (requires npm CLI ≥ 11.5.1 in the job) and delete the `NPM_TOKEN` secret — publishing then authenticates the workflow run itself via OIDC (the `id-token: write` permission is already in place), with no long-lived secret to leak or rotate, and provenance generated automatically. The short expiry on the bootstrap token means it retires itself even if forgotten.
+2. **Adding a new package to the workspace** needs a one-time bootstrap, because a trusted publisher is configured in a package's settings page, which exists only after its first publish. Create a **granular access token** on npmjs.com with read/write permission on the `@formulang` scope and a short expiration (a week is plenty; avoid the classic "Automation" token type — npm itself warns against it), add it as an `NPM_TOKEN` repository secret, and give the workflow's publish step an `env` line `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` for that one release. Afterwards: add the new package's trusted-publisher entry, delete the secret, and revert the workflow line.
 
-2. **`GITHUB_TOKEN`** is provided automatically by GitHub Actions — no setup. The workflow's `permissions` block grants it `contents: write` (push the tag, create the release) and `id-token: write` (npm provenance).
-3. **Branch protection needs no special-casing.** The workflow never pushes commits to `main` — it only pushes a tag — so `main` protection can be as strict as you like.
-4. The npm packages themselves need no pre-creation: the first publish with `--access public` creates them under the `@formulang` scope, provided the token owner may publish there.
+3. **`GITHUB_TOKEN`** is provided automatically by GitHub Actions — no setup. The workflow's `permissions` block grants it `contents: write` (push the tag, create the release) and `id-token: write` (the OIDC token for trusted publishing and provenance).
+4. **Branch protection needs no special-casing.** The workflow never pushes commits to `main` — it only pushes a tag — so `main` protection can be as strict as you like.
 
 ## Verifying a release
 

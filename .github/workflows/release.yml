@@ -41,8 +41,6 @@ jobs:
           echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
       - name: Publish to npm
         if: steps.version.outputs.publish == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm -r publish --access public --no-git-checks
       - name: Tag and create the GitHub release
         if: steps.version.outputs.publish == 'true'
