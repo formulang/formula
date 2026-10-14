@@ -5,10 +5,10 @@ import { evaluateRuleOutputAsync } from '@formulang/runner';
 import { createTestRuntime } from '../test-helpers/eval-formula';
 
 /**
- * A mode can reach a function when the call runs: through a callable named by a variable or an
- * expression, which the parser does not follow. Every core definition with a parameter that lists
- * admitted values comes from the live registry, reconciled both ways with the calls below, and is
- * run with each admitted mode and with misspelt ones received at run time.
+ * Every function refuses, when it runs, a mode it does not list, wherever the mode comes from.
+ * Every core definition with a parameter that lists admitted values comes from the live registry,
+ * reconciled both ways with the calls below, and is run with each admitted mode and with misspelt
+ * ones given as values when the call runs.
  */
 
 const MODE = 'MODE';
@@ -54,13 +54,13 @@ function runtime() {
       type: FormulaTypes.any(true),
     });
   }
-  // Calls the function a name resolves to when the call runs, as the core higher-order functions
-  // resolve it, and answers that call's own output, warnings included.
+  // A host's higher-order function: calls the function the name resolves to, as the core
+  // higher-order functions resolve it, and answers that call's own output, warnings included.
   registry.registerFunction({
     signatureId: 'APPLY/v1',
     name: 'APPLY',
     category: 'custom',
-    description: 'Calls the function a run-time name resolves to and answers its output.',
+    description: 'Calls the named function with the other arguments and answers its output.',
     params: [
       { name: 'name', type: FormulaTypes.text(true) },
       { name: 'args', type: FormulaTypes.any(true), optional: true, variadic: true },
@@ -120,8 +120,8 @@ const enumerated = runtime()
   );
 
 describe('a mode received when the call runs', () => {
-  it('compiles a callable named by a variable or an expression and refuses its misspelt mode when it runs', async () => {
-    // The example of docs/language.md, Callable references.
+  it('answers null for the item whose mode the callee refuses, through nested calls', async () => {
+    // The higher-order functions keep a callee's value, not its warnings.
     const source = 'EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")';
     expect(await run(source, { value: 'WORD_COUNT' })).toStrictEqual({
       value: [[null]],
@@ -133,6 +133,31 @@ describe('a mode received when the call runs', () => {
     expect(
       await run('EACH(LIST(LIST("a b")); "EACH"; "WORD" & "_COUNT"; "whitespce")', {}),
     ).toStrictEqual({ value: [[null]], warnings: [] });
+  });
+
+  it('answers null for a nested call that omits a required mode', async () => {
+    const required = enumerated.filter(({ optional }) => !optional);
+    // Not vacuous: PLAIN_TEXT and MARKDOWN_BLOCKS require theirs.
+    expect(required.length).toBeGreaterThanOrEqual(2);
+    for (const { def, position } of required) {
+      const call = CALLS[def.signatureId] ?? [];
+      const inputs = Object.fromEntries(call.map((value, index) => [`a${index}`, value]));
+      const before = call.slice(1, position).map((_, index) => `; a${index + 1}`);
+      const source = `EACH(LIST(LIST(a0)); "EACH"; "${def.name}"${before.join('')})`;
+      expect(await run(source, inputs), source).toStrictEqual({ value: [[null]], warnings: [] });
+      // Passed on by the call written in the formula, the callable must take what it is given.
+      const forwarded = `EACH(LIST(a0); "${def.name}"${before.join('')})`;
+      const { registry } = runtime();
+      expect(
+        parseFormula(forwarded, { registry }).errors.map((error) => error.code),
+        forwarded,
+      ).toStrictEqual(['NO_MATCHING_OVERLOAD']);
+    }
+    // The block kind omitted where the text is written in the formula.
+    expect(await run('EACH(LIST(LIST("# T")); "EACH"; "MARKDOWN_BLOCKS")', {})).toStrictEqual({
+      value: [[null]],
+      warnings: [],
+    });
   });
 
   it('has a call for every core definition that lists admitted values, and only those', () => {
@@ -160,8 +185,8 @@ describe('a mode received when the call runs', () => {
             return mode === undefined ? [] : [mode];
           })
           .join('; ');
-      // A callable named by a variable is passed on by an outer higher-order call; the inner EACH
-      // then calls it with the item first and the rest after it.
+      // The outer EACH passes the function's name on to the inner EACH, which calls the function
+      // with the item first and the rest after it.
       const rest = call
         .slice(1)
         .map((value, index) => (value === MODE ? 'mode' : `a${index + 1}`))

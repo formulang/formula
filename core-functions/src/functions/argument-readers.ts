@@ -32,8 +32,8 @@ function modeRefusal(fn: string, param: string, modes: readonly string[]): Formu
 /**
  * Reads an optional mode: absent or `null` selects the first (default) mode, and any other value
  * must be one of `modes`, the empty text included, or the call answers `null` with a `TYPE`
- * warning. The parser refuses such a literal already; this refuses the values it cannot see, such
- * as the arguments a callable named at run time receives.
+ * warning. The parser refuses such a literal written in the formula already; this refuses the value
+ * wherever it comes from, such as an argument a host's higher-order function passes on.
  */
 export function readOptionalMode<M extends string>(
   fn: string,

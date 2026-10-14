@@ -539,20 +539,16 @@ parsing:
   EACH(LIST("a b"); "WORD_COUNT"; value)                     -- EXPECTED_STRING_LITERAL_REFERENCE
   ```
 
-  A callable that a higher-order function passes on can also be named by a
-  variable or an expression. It is resolved when the call runs, so the
-  arguments it receives are not checked while parsing: the function checks
-  its mode when it runs, and a built-in function answers a mode it does not
-  list with `null` and a `TYPE` warning.
+  Where the referenced name has several overloads, the host function runs the
+  first one that has an implementation, which need not be the one the
+  argument types select; the argument must then be a value that every
+  overload listing values at that position lists there.
 
-  ```
-  EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")        -- compiles; with value = "WORD_COUNT": [[null]]
-  ```
-
-  A function name or operator token passed on this way is looked up when the
-  call runs: `"NOPE"` in `EACH(value; "FILTER"; "NOPE")` makes that call
-  yield `null`. Only the name written as the higher-order function's own
-  argument is checked against the registry while parsing.
+  A function name or operator token that the referenced function passes on
+  in turn is looked up when that call runs: `"NOPE"` in
+  `EACH(value; "FILTER"; "NOPE")` makes that call yield `null`. Only the name
+  written as the higher-order function's own argument is checked against the
+  registry while parsing.
 
 How each host function invokes the reference:
 
@@ -593,13 +589,19 @@ any depth, as long as each callable is named by a string literal:
 `EACH(value; "WORD_COUNT"; "whitespce")` and
 `EACH(value; "EACH"; "WORD_COUNT"; "whitespce")` fail the same way, naming
 `WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
-A callable named by a variable or an expression is resolved when the call
-runs, and a higher-order function an embedder registers is checked at parse
-time only for the name of its callable; in both cases what reaches the
-callable is checked by the callable when it runs
-([extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)),
-and a built-in function answers a mode it does not list with `null` and a
-`TYPE` warning.
+Passed on, a literal must be admitted by every overload of the name that
+lists values at that position, and the message names the overloads that do
+not list it; a call written directly is checked against the overload its
+types select.
+
+Each function also checks the mode it receives when it runs, wherever the
+mode comes from (a higher-order function an embedder registers is checked at
+parse time only for the name of its callable; see
+[extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)).
+A built-in function answers a mode it does not list with `null` and a `TYPE`
+warning; through a higher-order call that item is `null`, as for any callee
+that fails, because the higher-order functions keep a callee's value, not its
+warnings.
 
 The admitted values are part of the function definition
 (`FunctionParamDefinition.literalValues`), so an editor holding the

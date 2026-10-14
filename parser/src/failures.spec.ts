@@ -378,16 +378,16 @@ describe('parseFormula failures', () => {
       );
     });
 
-    it('leaves a property path or callable reference passed through a higher-order call to 1.0.0 behaviour', () => {
-      // These parameters are literal-only but list no admitted values, so an argument reaching
-      // them through a higher-order call is not constrained at parse time, exactly as in 1.0.0.
+    it('applies the passed-on rule only to parameters that list admitted values', () => {
+      // These parameters are literal-only but list no admitted values; what a higher-order call
+      // passes them is parsed as in 1.0.0.
       expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; "name")')).toStrictEqual([]);
       expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; value)')).toStrictEqual([]);
       expect(codesOf('REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")')).toStrictEqual([]);
       expect(codesOf('EACH(value; "FILTER_PROPERTY"; value; ">"; 1)')).toStrictEqual([]);
       expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; ">"; 0)')).toStrictEqual([]);
       expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; value; 0)')).toStrictEqual([]);
-      // A property path written directly in the call is still required to be a literal, as in 1.0.0.
+      // Written directly in the call, the argument is required to be a literal, as in 1.0.0.
       expect(codesOf('SORT_BY_PROPERTY(value; "name")')).toStrictEqual([]);
       expect(codesOf('SORT_BY_PROPERTY(value; value)')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
