@@ -256,6 +256,18 @@ describe('builtins', () => {
     expect(kept.res.value).toStrictEqual(['craft']);
   });
 
+  it('resolves a function name a higher-order call passes on when it runs', async () => {
+    const nested = await evalFormula('EACH(LIST(LIST(1; 2; 3)); "FILTER"; ">"; 1)');
+    expect(nested.parsed.errors).toStrictEqual([]);
+    expect(nested.res.value).toStrictEqual([[2, 3]]);
+
+    // A name the registry does not know invokes nothing: the nested FILTER yields null.
+    const unknown = await evalFormula('EACH(LIST(LIST(1; 2; 3)); "FILTER"; "NOPE")');
+    expect(unknown.parsed.errors).toStrictEqual([]);
+    expect(unknown.res.errors).toStrictEqual([]);
+    expect(unknown.res.value).toStrictEqual([null]);
+  });
+
   it('estimated cost counts nested calls exactly once', () => {
     const { registry } = createTestRuntime();
     registry.registerVariable({

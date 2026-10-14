@@ -347,7 +347,8 @@ describe('parseFormula failures', () => {
       );
     });
 
-    it('holds property paths and callable references passed through a higher-order call to the same rules', () => {
+    it('holds property paths and callable references passed through a higher-order call to the literal rule', () => {
+      // A property path and a callable reference stay literals however they reach the parameter.
       expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; "name")')).toStrictEqual([]);
       expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; value)')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
@@ -355,10 +356,82 @@ describe('parseFormula failures', () => {
       expect(codesOf('REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
       ]);
+      expect(codesOf('EACH(value; "FILTER_PROPERTY"; value; ">"; 1)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
       expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; ">"; 0)')).toStrictEqual([]);
-      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; "NOPE")')).toStrictEqual([
+      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; value; 0)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+    });
+
+    it('resolves a function name passed on when the call runs, so an unknown one compiles', () => {
+      // The nested FILTER invokes nothing for "NOPE" and yields null, as it always has; only the
+      // name written as a higher-order function's own argument is checked against the registry.
+      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; "NOPE")')).toStrictEqual([]);
+      expect(codesOf('EACH(value; "EACH"; "WORD_CONT"; "whitespce")')).toStrictEqual([]);
+      expect(codesOf('FILTER(LIST(1); "NOPE")')).toStrictEqual([
         FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
       ]);
+    });
+
+    it('follows a nested higher-order call to the callable it names, at any depth', () => {
+      const source = 'EACH(value; "EACH"; "WORD_COUNT"; "whitespce")';
+      const errors = errorsOf(source);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
+      expect(errors[0]?.message).toBe(
+        `Parameter 'mode' of WORD_COUNT must be one of "whitespace", "letters", "locale", "pattern"; got "whitespce"`,
+      );
+      expect(errors[0]?.path).toStrictEqual(['call', 'EACH/v1', 'arg', '3']);
+      expect(source.slice(errors[0]?.span?.start, errors[0]?.span?.end)).toBe('"whitespce"');
+
+      const twoDeep = 'EACH(value; "EACH"; "WORD_COUNT"; value)';
+      const [notLiteral, ...others] = errorsOf(twoDeep);
+      expect(others).toStrictEqual([]);
+      expect(notLiteral?.code).toBe(FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE);
+      expect(notLiteral?.message).toBe(`Parameter 'mode' of WORD_COUNT must be a string literal`);
+      expect(twoDeep.slice(notLiteral?.span?.start, notLiteral?.span?.end)).toBe('value');
+
+      const filled = errorsOf('EACH(value; "REDUCE"; LIST("a"); "TAG")');
+      expect(filled.map((e) => e.message)).toStrictEqual([
+        `Parameter 'modes' of TAG must be a string literal; REDUCE passes it a value at run time`,
+      ]);
+
+      for (const misspelt of [
+        'EACH(value; "EACH"; "MARKDOWN_BLOCKS"; "heding-2")',
+        'EACH(value; "EACH"; "PLAIN_TEXT"; "htm")',
+        'EACH(value; "EACH"; "SENTENCES"; "punctuaton")',
+        'EACH(value; "EACH"; "LEADING_WORDS"; 2; "whitspace")',
+        'EACH(value; "EACH"; "TAG"; "a"; "zzz")',
+        'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; "whitespce")',
+        'EACH(value; "EACH"; "EACH"; "EACH"; "WORD_COUNT"; "whitespce")',
+        'EACH(value; "FILTER"; "IS_MODE"; "uper")',
+        'EACH(value; "FILTER_PROPERTY"; "p"; "IS_MODE"; "uper")',
+        'EACH(value; "FILTER_BY"; LIST("x"); "IS_MODE"; "uper")',
+        'COUNT(FLAT(EACH(value; "EACH"; "WORD_COUNT"; "whitespce")))',
+      ]) {
+        expect(codesOf(misspelt), misspelt).toStrictEqual([
+          FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+        ]);
+      }
+      for (const notLiteralThere of [
+        'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; value)',
+        'EACH(value; "EACH"; value; "whitespace")',
+        'EACH(value; "EACH"; "SORT_BY_PROPERTY"; value)',
+      ]) {
+        expect(codesOf(notLiteralThere), notLiteralThere).toStrictEqual([
+          FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+        ]);
+      }
+      for (const admitted of [
+        'EACH(value; "EACH"; "WORD_COUNT"; "whitespace")',
+        'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; "letters")',
+        'EACH(value; "FILTER"; "IS_MODE"; "upper")',
+        'EACH(value; "EACH"; "SORT_BY_PROPERTY"; "name")',
+      ]) {
+        expect(codesOf(admitted), admitted).toStrictEqual([]);
+      }
     });
   });
 });

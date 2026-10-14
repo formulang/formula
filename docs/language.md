@@ -527,17 +527,28 @@ parsing:
 - Its return type must fit: `FILTER(LIST("a";"bb"); "LEN")` fails with
   `ARGUMENT_TYPE_MISMATCH` because a filter check must return a boolean,
   and `LEN` returns a number.
-- Its literal-only parameters keep their rules. An argument the host function
-  passes on (the extra arguments of `EACH`, the `x` of the filters) must be a
-  literal the parameter admits, and a literal-only parameter the host function
-  fills at run time with an item, a key or an accumulator can never hold a
-  literal:
+- Its literal-only parameters keep their rules, also when the referenced
+  function is itself a higher-order function that passes arguments on in
+  turn. An argument the host function passes on (the extra arguments of
+  `EACH`, the `x` of the filters) must be a string literal, and one of the
+  admitted values when the parameter lists them; a literal-only parameter the
+  host function fills at run time with an item, a key or an accumulator can
+  never hold a literal. A mode, a property path or a function name therefore
+  never becomes a value chosen at run time:
 
   ```
-  EACH(LIST("a b"); "WORD_COUNT"; "whitespce")      -- LITERAL_VALUE_NOT_ALLOWED
-  EACH(LIST("a b"); "WORD_COUNT"; value)            -- EXPECTED_STRING_LITERAL_REFERENCE
-  REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")   -- EXPECTED_STRING_LITERAL_REFERENCE
+  EACH(LIST("a b"); "WORD_COUNT"; "whitespce")               -- LITERAL_VALUE_NOT_ALLOWED
+  EACH(LIST(LIST("a b")); "EACH"; "WORD_COUNT"; "whitespce") -- LITERAL_VALUE_NOT_ALLOWED
+  EACH(LIST("a b"); "WORD_COUNT"; value)                     -- EXPECTED_STRING_LITERAL_REFERENCE
+  EACH(LIST(value); "SORT_BY_PROPERTY"; value)               -- EXPECTED_STRING_LITERAL_REFERENCE
+  REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")            -- EXPECTED_STRING_LITERAL_REFERENCE
   ```
+
+  A function name passed on this way — `"NOPE"` in
+  `EACH(value; "FILTER"; "NOPE")` — is looked up when the call runs: a name
+  the registry does not know makes that call yield `null`. Only the name
+  written as the higher-order function's own argument is checked against the
+  registry while parsing.
 
 How each host function invokes the reference:
 
@@ -573,8 +584,9 @@ WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whit
                                  --   "letters", "locale", "pattern"; got "whitespce"
 ```
 
-The rule holds when a built-in higher-order function passes the literal on:
-`EACH(value; "WORD_COUNT"; "whitespce")` fails the same way, naming
+The rule holds when built-in higher-order functions pass the literal on, at
+any depth: `EACH(value; "WORD_COUNT"; "whitespce")` and
+`EACH(value; "EACH"; "WORD_COUNT"; "whitespce")` fail the same way, naming
 `WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
 A higher-order function an embedder registers is checked at parse time only
 for the name of its callable; what it passes the callable is checked by the

@@ -1053,22 +1053,7 @@ function bindTypesAndRequirements(
               );
             }
 
-            const candidates: FunctionDefinition[] = [];
-            const op = registry.getOperator(ref);
-            if (
-              op &&
-              (paramBase.reference === 'operator' || paramBase.reference === 'function_or_operator')
-            ) {
-              const opDef = registry.getFunction(op.functionSignatureId);
-              if (opDef) candidates.push(opDef);
-            }
-            if (
-              paramBase.reference === 'function' ||
-              paramBase.reference === 'function_or_operator'
-            ) {
-              candidates.push(...registry.listFunctionsByName(ref));
-            }
-
+            const candidates = callableCandidates(registry, paramBase.reference, ref);
             const chosen =
               candidates.length > 0
                 ? chooseOverload(
@@ -1087,37 +1072,16 @@ function bindTypesAndRequirements(
                 }),
               );
             } else {
-              invoked.forEach((invokedArg, position) => {
-                const target = paramAt(chosen.params, position);
-                if (!target || target.literalOnly !== true) return;
-                const forwardedArg =
-                  invokedArg.forwards === undefined ? undefined : node.args[invokedArg.forwards];
-                const forwarded = readLiteralArgument(target, forwardedArg, {
-                  subject: `Parameter '${target.name}' of ${chosen.name}`,
-                  span: forwardedArg?.span ?? literal.span,
-                  path: ['call', def.signatureId, 'arg', String(invokedArg.forwards ?? i)],
-                  suppliedBy: forwardedArg === undefined ? def.name : undefined,
-                });
-                if (!forwarded.ok) {
-                  errors.push(forwarded.error);
-                  return;
-                }
-                const targetBase = stripNullability(target.type);
-                const reference =
-                  targetBase.kind === 'callable' ? targetBase.reference : target.reference;
-                if (
-                  reference !== undefined &&
-                  !referenceExists(registry, reference, forwarded.value)
-                ) {
-                  errors.push(
-                    makeFormulaError({
-                      kind: 'type',
-                      code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-                      message: `Unknown function/operator reference: ${forwarded.value}`,
-                      span: forwarded.span,
-                    }),
-                  );
-                }
+              checkPassedArguments(registry, errors, {
+                call: { signatureId: def.signatureId, args: node.args },
+                host: def,
+                callable: chosen,
+                passed: invoked.map((invokedArg) => ({
+                  type: invokedArg.type,
+                  source: invokedArg.forwards,
+                })),
+                named: { index: i, span: literal.span },
+                depth: 1,
               });
 
               if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
@@ -1408,6 +1372,104 @@ function referenceExists(
   if (kind === 'function') return isFunction();
   if (kind === 'operator') return isOperator();
   return isFunction() || isOperator();
+}
+
+/**
+ * The definitions a callable reference can name: the function behind an operator token when the
+ * reference admits operators, then the functions of that name when it admits functions.
+ */
+function callableCandidates(
+  registry: FormulaRegistry,
+  kind: CallableReferenceKind,
+  name: string,
+): FunctionDefinition[] {
+  const candidates: FunctionDefinition[] = [];
+  const operator = registry.getOperator(name);
+  if (operator && (kind === 'operator' || kind === 'function_or_operator')) {
+    const operatorDef = registry.getFunction(operator.functionSignatureId);
+    if (operatorDef) candidates.push(operatorDef);
+  }
+  if (kind === 'function' || kind === 'function_or_operator') {
+    candidates.push(...registry.listFunctionsByName(name));
+  }
+  return candidates;
+}
+
+/**
+ * An argument a higher-order function passes to its callable: its type, and the index of the
+ * formula argument it passes on unchanged. `source` is undefined for a value the higher-order
+ * function supplies at run time: a list item, a key, a property value, an accumulator.
+ */
+type PassedArgument = { type: FormulaType; source: number | undefined };
+
+/**
+ * Holds every argument a core higher-order function passes to the callable it names to that
+ * callable's literal-only rules. An argument passed on must be a string literal, and one of the
+ * parameter's `literalValues` when it lists them; a parameter the higher-order function fills at run
+ * time must not be literal-only. When the callable is itself a core higher-order function, the
+ * argument that names ITS callable is followed into the invocation it makes in turn, so the rules
+ * hold at any depth. A name passed on is resolved when the call runs, so a name the registry does
+ * not know is no error here: the nested call invokes nothing and yields null.
+ */
+function checkPassedArguments(
+  registry: FormulaRegistry,
+  errors: FormulaError[],
+  at: {
+    /** The call written in the formula: every `source` indexes its arguments. */
+    call: { signatureId: string; args: readonly RuleNode[] };
+    /** The higher-order function that invokes the callable. */
+    host: FunctionDefinition;
+    /** The callable's definition, chosen for the types of the passed arguments. */
+    callable: FunctionDefinition;
+    passed: readonly PassedArgument[];
+    /** The formula argument that names the callable. */
+    named: { index: number; span: SourceSpan | undefined };
+    /** 1 for the callable written in the call, one more for each nested invocation. */
+    depth: number;
+  },
+): void {
+  at.passed.forEach((passed, position) => {
+    const target = paramAt(at.callable.params, position);
+    if (!target || target.literalOnly !== true) return;
+    const arg = passed.source === undefined ? undefined : at.call.args[passed.source];
+    const literal = readLiteralArgument(target, arg, {
+      subject: `Parameter '${target.name}' of ${at.callable.name}`,
+      span: arg?.span ?? at.named.span,
+      path: ['call', at.call.signatureId, 'arg', String(passed.source ?? at.named.index)],
+      suppliedBy: passed.source === undefined ? at.host.name : undefined,
+    });
+    if (!literal.ok) {
+      errors.push(literal.error);
+      return;
+    }
+
+    // Each nested callable is named by a different formula argument, so a call with n arguments
+    // nests at most n levels; the depth bound makes that a guarantee.
+    const targetBase = stripNullability(target.type);
+    const invocation = CALLABLE_INVOCATIONS.get(at.callable.signatureId);
+    if (targetBase.kind !== 'callable' || invocation === undefined) return;
+    if (passed.source === undefined || at.depth >= at.call.args.length) return;
+    const invoked = invocation(at.passed.map((p) => p.type));
+    const invokedTypes = invoked.map((invokedArg) => invokedArg.type);
+    const candidates = callableCandidates(registry, targetBase.reference, literal.value);
+    // The overload the types select; a lone definition also when they select none, so its
+    // literal rules hold even where the arity is off.
+    const callable: FunctionDefinition | null =
+      chooseOverload(candidates, invokedTypes) ?? (candidates.length === 1 ? candidates[0] : null);
+    if (!callable) return;
+    checkPassedArguments(registry, errors, {
+      call: at.call,
+      host: at.callable,
+      callable,
+      passed: invoked.map((invokedArg) => ({
+        type: invokedArg.type,
+        source:
+          invokedArg.forwards === undefined ? undefined : at.passed[invokedArg.forwards]?.source,
+      })),
+      named: { index: passed.source, span: literal.span },
+      depth: at.depth + 1,
+    });
+  });
 }
 
 function instantiateGenericReturnType(
