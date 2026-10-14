@@ -208,6 +208,7 @@ describe('List ops', () => {
       expect(
         await evalOk('COUNT(DISTINCT(LIST(TIME(9; 30; 0); TIME(9; 30; 0); TIME(9; 30; 1))))'),
       ).toBe(2);
+      expect(await evalOk('COUNT(DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2))))')).toBe(1);
       const day = (extra: Record<string, unknown>) => ({
         __formula_object_kind: 'date',
         iso: '2024-01-02',

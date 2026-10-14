@@ -1269,7 +1269,9 @@ arguments of those types, such as `STARTS_WITH`'s list form below.
 
 ```ts
 await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
-await evalOk('FILTER_BY(LIST("x"; "y"); LIST("apple"; "kiwi"); "STARTS_WITH"; LIST("a"; "k"))'); // ["x", "y"]
+await evalOk(
+  'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; LIST("a"; "c"))',
+); // ["x", "z"]
 // value = a list of callouts: keep those longer than eight words
 await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
 ```
@@ -1289,7 +1291,7 @@ compare, so no answer is built from them.
 ```ts
 await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
 await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))'); // 2
-await evalOk('DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2)))'); // [{ iso: "2024-01-02", ... }]
+await evalOk('COUNT(DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2))))'); // 1
 ```
 
 ### GROUP_COUNTS
