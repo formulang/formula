@@ -1018,8 +1018,8 @@ function bindTypesAndRequirements(
           }
 
           // Strict callable validation for the core higher-order functions, whose invocations
-          // CALLABLE_INVOCATIONS declares: arity, overload, return type, and the referenced
-          // function's literal-only rules for every argument the invocation passes it.
+          // `invocationOf` declares: arity, overload, return type, and the referenced function's
+          // literal-only rules for every argument the invocation passes it.
           const outerBindings = inferGenericBindingsForCall(def, argTypes);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
           const invocation = invocationOf(def);
@@ -1192,7 +1192,9 @@ function bindTypesAndRequirements(
       } else if (
         def.name.toUpperCase() === 'FILTER' ||
         def.name.toUpperCase() === 'FILTER_PROPERTY' ||
-        def.name.toUpperCase() === 'FILTER_BY'
+        // Added since 1.0.0, so keyed by signature id: a function a host registered under this
+        // name keeps the result type its definition declares.
+        def.signatureId === BuiltinSignatureIds.FILTER_BY
       ) {
         const targetType = argTypes[0];
         const stripped = stripNullability(targetType);

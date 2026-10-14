@@ -6,7 +6,15 @@ import {
   stripNullability,
 } from '@formulang/definitions';
 import { describe, expect, it } from 'vitest';
-import { CALLABLE_INVOCATIONS, invocationOf } from './callable-invocations';
+import baseline from '../../scripts/compat/baseline-1.0.0.json';
+import {
+  INVOCATIONS_BY_NAME,
+  INVOCATIONS_BY_SIGNATURE_ID,
+  invocationOf,
+} from './callable-invocations';
+
+/** The function names 1.0.0 had, from the compatibility baseline generated from 1.0.0. */
+const NAMES_IN_1_0_0: readonly string[] = baseline.functionNames;
 
 function coreHigherOrderFunctions() {
   const registry = createRegistry();
@@ -16,24 +24,48 @@ function coreHigherOrderFunctions() {
     .filter((def) => def.params.some((param) => stripNullability(param.type).kind === 'callable'));
 }
 
+function inOneZeroZero(def: { name: string }): boolean {
+  return NAMES_IN_1_0_0.includes(def.name.toUpperCase());
+}
+
 describe('callable invocations', () => {
   it('declares the invocation of every core function with a callable parameter, and only those', () => {
-    // Keyed by name, as 1.0.0 keyed the callable validation.
-    const higherOrder = [
-      ...new Set(coreHigherOrderFunctions().map((def) => def.name.toUpperCase())),
+    const higherOrder = coreHigherOrderFunctions();
+    const byName = [
+      ...new Set(higherOrder.filter(inOneZeroZero).map((def) => def.name.toUpperCase())),
     ].sort();
-    // The core set is not empty: EACH, FILTER, FILTER_PROPERTY, FILTER_BY and REDUCE at least.
-    expect(higherOrder.length).toBeGreaterThanOrEqual(5);
-    expect([...CALLABLE_INVOCATIONS.keys()].sort()).toStrictEqual(higherOrder);
+    const bySignatureId = higherOrder
+      .filter((def) => !inOneZeroZero(def))
+      .map((def) => def.signatureId)
+      .sort();
+    // Not vacuous: EACH, FILTER, FILTER_PROPERTY and REDUCE from 1.0.0, and FILTER_BY since.
+    expect(byName.length).toBeGreaterThanOrEqual(4);
+    expect(bySignatureId.length).toBeGreaterThanOrEqual(1);
+    expect([...INVOCATIONS_BY_NAME.keys()].sort()).toStrictEqual(byName);
+    expect([...INVOCATIONS_BY_SIGNATURE_ID.keys()].sort()).toStrictEqual(bySignatureId);
   });
 
-  it('finds the invocation by name, so a definition re-registered under a new id keeps it', () => {
+  it('keys the functions 1.0.0 had by name and the ones added since by signature id', () => {
+    let byName = 0;
+    let bySignatureId = 0;
     for (const def of coreHigherOrderFunctions()) {
+      expect(invocationOf(def), def.signatureId).toBeDefined();
       const reversioned = { ...def, signatureId: `${def.name}/v9` };
-      expect(invocationOf(reversioned), def.name).toBe(invocationOf(def));
-      expect(invocationOf(def), def.name).toBeDefined();
+      const hosts = { ...def, signatureId: `HOST_${def.name}/v1` };
+      if (inOneZeroZero(def)) {
+        // A definition re-registered under a new id keeps the validation 1.0.0 gave the name.
+        expect(invocationOf(reversioned), def.signatureId).toBe(invocationOf(def));
+        byName++;
+      } else {
+        // A function a host registered under the name on 1.0.0 keeps its own validation.
+        expect(invocationOf(hosts), def.signatureId).toBeUndefined();
+        expect(invocationOf(reversioned), def.signatureId).toBeUndefined();
+        bySignatureId++;
+      }
     }
-    expect(invocationOf({ name: 'LEN' })).toBeUndefined();
+    expect(byName).toBeGreaterThan(0);
+    expect(bySignatureId).toBeGreaterThan(0);
+    expect(invocationOf({ name: 'LEN', signatureId: 'LEN/v1' })).toBeUndefined();
   });
 
   it('reaches every callable parameter through the literal-only check', () => {
@@ -50,8 +82,11 @@ describe('callable invocations', () => {
     const text = FormulaTypes.text(false);
     const texts = FormulaTypes.list(text, false);
     const number = FormulaTypes.number(false);
-    const invoke = (name: string, argTypes: FormulaType[]) =>
-      CALLABLE_INVOCATIONS.get(name)?.(argTypes).map((arg) => arg.forwards ?? null);
+    const core = coreHigherOrderFunctions();
+    const invoke = (name: string, argTypes: FormulaType[]) => {
+      const def = core.find((candidate) => candidate.name === name);
+      return def && invocationOf(def)?.(argTypes).map((arg) => arg.forwards ?? null);
+    };
 
     expect(invoke('EACH', [texts, text, number, text])).toStrictEqual([null, 2, 3]);
     expect(invoke('FILTER', [texts, text, text])).toStrictEqual([null, 2]);
