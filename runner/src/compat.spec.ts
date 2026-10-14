@@ -298,6 +298,36 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     }
   });
 
+  it('keeps a one-argument host function only where the built-in requires more arguments', () => {
+    let refused = 0;
+    let kept = 0;
+    for (const name of added) {
+      const def = builtIn(name);
+      const [first] = def.params;
+      if (first === undefined) throw new Error(`${name} takes no argument`);
+      const oneArgument = hostDefinition(def, [{ name: first.name, type: first.type }]);
+      const registry = coreRegistry();
+      if (def.params.filter((param) => param.optional !== true).length === 1) {
+        // The built-in takes the same single argument: the overloads are ambiguous.
+        expect(() => registry.registerFunction(oneArgument), name).toThrow(
+          `Ambiguous overload for ${name}`,
+        );
+        refused++;
+      } else {
+        // No one-argument call reaches the built-in, so the host function keeps its calls.
+        registry.registerFunction(oneArgument);
+        const source = `${name}(${argumentFor(first)})`;
+        const parsed = parser.parseFormula(source, { registry });
+        expect(parsed.errors, source).toStrictEqual([]);
+        expect(parsed.root.signatureId, source).toBe(`HOST_${name}/v1`);
+        kept++;
+      }
+    }
+    // WORDS, WORD_COUNT, SENTENCES, LINES, LINE_COUNT, DISTINCT and GROUP_COUNTS take one
+    // argument; the other nine require two or more.
+    expect([refused, kept]).toStrictEqual([7, 9]);
+  });
+
   it('is shadowed by the built-in for every call it takes, when its parameters are narrower', async () => {
     let narrowable = 0;
     for (const name of added) {
