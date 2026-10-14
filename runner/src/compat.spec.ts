@@ -633,6 +633,55 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     expect(typedChecked).toStrictEqual(['FILTER_BY/4', 'FILTER_BY/5']);
   });
 
+  it('loses the calls 1.0.0 bound to the name’s only definition whatever their arguments', async () => {
+    // 1.0.0 binds a name's only definition even where the arguments do not fit it, so that its
+    // errors name its parameters. With the built-in under the name the host's function is no
+    // longer the only definition: a direct call with an argument count it does not declare binds
+    // the built-in where the built-in takes the arguments, and otherwise fails to compile. With the
+    // new definitions retired the host's function is alone again and takes such a call, but under
+    // FILTER_BY, whose invocation checks the call of five arguments.
+    const atHead: Record<'refused' | 'builtIn', string[]> = { refused: [], builtIn: [] };
+    const alone: Record<'refused' | 'host', string[]> = { refused: [], host: [] };
+    for (const name of added) {
+      for (const count of [2, 3, 5]) {
+        const args = ['LIST(1; 2; 3)', '"ISNUMBER"', '1', '2', '3'].slice(0, count);
+        const source = `${name}(${args.join('; ')})`;
+        const label = `${name}/${count}`;
+        const now = coreFunctions.createCoreFormulaRuntime();
+        harness.addHostFunction(packages, now.registry, now.implementations, name);
+        const head = await runRecorded(now.registry, now.implementations, source);
+        if (head.parsed.errors.length > 0) {
+          expect(
+            head.parsed.errors.map((error) => error.code),
+            source,
+          ).toStrictEqual(['NO_MATCHING_OVERLOAD']);
+          atHead.refused.push(label);
+        } else {
+          expect(head.parsed.root.signatureId, source).toBe(builtIn(name).signatureId);
+          atHead.builtIn.push(label);
+        }
+        const retired = coreFunctions.createCoreFormulaRuntime();
+        for (const def of retired.registry.listFunctionsByName(name)) {
+          retired.registry.retireFunction(def.signatureId);
+        }
+        harness.addHostFunction(packages, retired.registry, retired.implementations, name);
+        const only = await runRecorded(retired.registry, retired.implementations, source);
+        if (only.parsed.errors.length > 0) {
+          alone.refused.push(label);
+        } else {
+          expect(only.parsed.root.signatureId, source).toBe(`HOST_${name}/v1`);
+          expect(only.value, source).toBe(3);
+          alone.host.push(label);
+        }
+      }
+    }
+    // What the PR states, for the sixteen names at two, three and five arguments.
+    expect(atHead.refused.length).toBe(47);
+    expect(atHead.builtIn).toStrictEqual(['INDEX_OF/2']);
+    expect(alone.refused).toStrictEqual(['FILTER_BY/5']);
+    expect(alone.host.length).toBe(47);
+  });
+
   it('keeps its own direct calls, but under FILTER_BY, and through EACH the name reaches the built-in', async () => {
     expect(Object.keys(THROUGH_EACH).sort()).toStrictEqual([...added].sort());
     for (const name of added) {
