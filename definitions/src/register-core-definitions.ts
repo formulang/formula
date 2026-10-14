@@ -1411,4 +1411,120 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
     returnType: FormulaTypes.number(true),
     purity: 'pure',
   });
+
+  // Phrases and markup.
+  const phraseParams = (): FunctionParamDefinition[] => [
+    { name: 'text', type: FormulaTypes.text(true) },
+    {
+      name: 'phrases',
+      description: 'The phrases to look for, in priority order.',
+      type: FormulaTypes.list(FormulaTypes.text(true), true),
+    },
+    {
+      name: 'match',
+      description: 'How a phrase must occur: "substring" (default) or "word".',
+      type: FormulaTypes.text(false),
+      optional: true,
+      literalOnly: true,
+      literalValues: ['substring', 'word'],
+    },
+    {
+      name: 'ignoreCase',
+      description: 'Compare after lower-casing both sides (default FALSE).',
+      type: FormulaTypes.boolean(true),
+      optional: true,
+    },
+  ];
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.FIRST_CONTAINED,
+    name: 'FIRST_CONTAINED',
+    category: 'core',
+    description: 'The first phrase, in list order, that the text contains.',
+    params: phraseParams(),
+    returnType: FormulaTypes.text(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.CONTAINS_ANY,
+    name: 'CONTAINS_ANY',
+    category: 'core',
+    description: 'Whether the text contains any of the phrases.',
+    params: phraseParams(),
+    returnType: FormulaTypes.boolean(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.MISSING_FROM,
+    name: 'MISSING_FROM',
+    category: 'core',
+    description: 'The items, in order, that the text does not contain.',
+    params: [
+      { name: 'items', type: FormulaTypes.list(FormulaTypes.text(true), true) },
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'normalise',
+        description: 'How both sides are compared: "whitespace" (default), "exact" or "loose".',
+        type: FormulaTypes.text(false),
+        optional: true,
+        literalOnly: true,
+        literalValues: ['whitespace', 'exact', 'loose'],
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.PLAIN_TEXT,
+    name: 'PLAIN_TEXT',
+    category: 'core',
+    description: 'The text of HTML or markdown markup, one line per block.',
+    params: [
+      { name: 'markup', type: FormulaTypes.text(true) },
+      {
+        name: 'format',
+        description: 'The markup language: "html" or "markdown".',
+        type: FormulaTypes.text(false),
+        literalOnly: true,
+        literalValues: ['html', 'markdown'],
+      },
+    ],
+    returnType: FormulaTypes.text(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.MARKDOWN_BLOCKS,
+    name: 'MARKDOWN_BLOCKS',
+    category: 'core',
+    description: 'The text of the markdown blocks of one kind, in order.',
+    params: [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'kind',
+        description:
+          'The block kind: "heading", "heading-1" to "heading-6", "list-item", "table-row", "paragraph" or "code".',
+        type: FormulaTypes.text(false),
+        literalOnly: true,
+        literalValues: [
+          'heading',
+          'heading-1',
+          'heading-2',
+          'heading-3',
+          'heading-4',
+          'heading-5',
+          'heading-6',
+          'list-item',
+          'table-row',
+          'paragraph',
+          'code',
+        ],
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
 }

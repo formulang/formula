@@ -53,7 +53,7 @@ arguments with `,` instead.
 - **Math:** [ADD](#add) · [SUB](#sub) · [MUL](#mul) · [DIV](#div) · [POW](#pow) · [SUM](#sum) · [PRODUCT](#product) · [MOD](#mod) · [ROUND](#round) · [ROUNDDOWN](#rounddown) · [ROUNDUP](#roundup) · [CEILING](#ceiling) · [FLOOR](#floor) · [SQRT](#sqrt) · [EXP](#exp) · [LOG](#log) · [LOG10](#log10) · [PI](#pi) · [SIN](#sin) · [COS](#cos) · [TAN](#tan) · [ASIN](#asin) · [ACOS](#acos) · [ATAN](#atan) · [ISEVEN](#iseven) · [ISODD](#isodd) · [RANGE_SCORE](#range_score)
 - **Aggregation:** [AVG](#avg) · [MIN](#min) · [MAX](#max) · [MEDIAN](#median) · [COUNT](#count) · [COUNT_UNIQUE](#count_unique)
 - **Logic & comparison:** [EQ](#eq) · [NEQ](#neq) · [GT](#gt) · [GTE](#gte) · [LT](#lt) · [LTE](#lte) · [AND](#and) · [OR](#or) · [NOT](#not)
-- **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl) · [WORDS](#words) · [WORD_COUNT](#word_count) · [LEADING_WORDS](#leading_words) · [SENTENCES](#sentences) · [LINES](#lines) · [LINE_COUNT](#line_count)
+- **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl) · [WORDS](#words) · [WORD_COUNT](#word_count) · [LEADING_WORDS](#leading_words) · [SENTENCES](#sentences) · [LINES](#lines) · [LINE_COUNT](#line_count) · [FIRST_CONTAINED](#first_contained) · [CONTAINS_ANY](#contains_any) · [MISSING_FROM](#missing_from) · [PLAIN_TEXT](#plain_text) · [MARKDOWN_BLOCKS](#markdown_blocks)
 - **Lists:** [LIST](#list) · [INDEX](#index) · [FLAT](#flat) · [SORT](#sort) · [SORT_BY_PROPERTY](#sort_by_property) · [FILTER](#filter) · [FILTER_PROPERTY](#filter_property) · [EACH](#each) · [REDUCE](#reduce) · [INCLUDES](#includes)
 - **Date & time:** [DATE](#date) · [DATEVALUE](#datevalue) · [TIME](#time) · [TIMEVALUE](#timevalue) · [NOW](#now) · [TODAY](#today) · [DAY](#day) · [MONTH](#month) · [YEAR](#year) · [HOUR](#hour) · [MINUTE](#minute) · [SECOND](#second) · [DAYS](#days) · [DATEDIF](#datedif) · [WEEKDAY](#weekday) · [WEEKNUM](#weeknum) · [ISOWEEKNUM](#isoweeknum)
 - **Control flow:** [IF](#if) · [SWITCH](#switch)
@@ -598,13 +598,15 @@ is no locale sentence mode: `Intl.Segmenter` has no abbreviation data for
 sentences and splits German `"Wir helfen z. B. Handwerkern."` after `z.` and
 after `B.`.
 
-List results (`WORDS`, `SENTENCES`, `LINES`) longer than
-`maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security error, as
-`FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count past that
-bound. A `keep` list longer than `maxListLength` (1,000) raises
-`LIST_TOO_LARGE`. Embedders that count outside a formula import the same
-tokenisers from `@formulang/core-functions`: `splitWords(text, mode?, option?)`
-and `splitSentences(text, mode?, keep?)`.
+Embedders that count outside a formula import the same tokenisers from
+`@formulang/core-functions`: `splitWords(text, mode?, option?)` and
+`splitSentences(text, mode?, keep?)`.
+
+**Bounds.** List results (`WORDS`, `SENTENCES`, `LINES`, `MARKDOWN_BLOCKS`)
+longer than `maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security
+error, as `FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count
+past that bound. List arguments (`keep`, `phrases`, `items`) longer than
+`maxListLength` (1,000) raise `LIST_TOO_LARGE`.
 
 ### CONCAT
 
@@ -945,6 +947,118 @@ The number of lines `LINES` returns with the same arguments; `""` counts `0`.
 ```ts
 await evalOk('LINE_COUNT(value)', { value: 'a\r\nb\rc' }); // 3
 await evalOk('LINE_COUNT(""; "all")'); // 0
+```
+
+### FIRST_CONTAINED
+
+`FIRST_CONTAINED(text: text, phrases: list<text>, match?: text, ignoreCase?: boolean) -> text`
+
+The first phrase of `phrases`, in list order, that occurs in `text` — list
+order wins over the order in the text — or `null` when none does. `match` is
+the literal `"substring"` (default) or `"word"`; `"word"` also requires that
+the characters directly before and after the occurrence are not letters, marks
+or numbers (or are the edges of the text). `ignoreCase` (default `FALSE`)
+compares after lower-casing both sides as `LOWER` does; the answer is the
+phrase as listed. Empty phrases are skipped.
+
+```ts
+await evalOk('FIRST_CONTAINED("Gut, oder? Richtig?"; LIST("Richtig?"; "oder?"))'); // "Richtig?"
+await evalOk('FIRST_CONTAINED("KENNST DU DAS?"; LIST("kennst du das?"); "substring"; TRUE)'); // "kennst du das?"
+await evalOk('FIRST_CONTAINED("Der Geschäftsführer"; LIST("führer"); "word")'); // null
+```
+
+### CONTAINS_ANY
+
+`CONTAINS_ANY(text: text, phrases: list<text>, match?: text, ignoreCase?: boolean) -> boolean`
+
+Whether `FIRST_CONTAINED` finds a phrase with the same arguments; an empty
+list yields `false`. It is a separate name rather than a `CONTAINS` list
+overload because an overload could not carry `match` and `ignoreCase`.
+
+```ts
+await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))'); // true
+await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"); "word")'); // false
+await evalOk('CONTAINS_ANY("abc"; LIST())'); // false
+```
+
+### MISSING_FROM
+
+`MISSING_FROM(items: list<text>, text: text, normalise?: text) -> list<text>`
+
+The items, in order and as listed, that `text` does not contain. `normalise`
+sets how both sides are compared: `"whitespace"` (default) trims them and
+collapses every whitespace run to one space; `"exact"` compares them as
+written; `"loose"` also lower-cases them and folds typographic quotes
+(`‘ ’ ‚ ‛ ‹ ›` to `'`, `“ ” „ ‟ « »` to `"`) and dashes (U+2010 to U+2015 and
+the minus sign U+2212 to `-`). Items that are empty after normalising are
+skipped.
+
+```ts
+await evalOk('MISSING_FROM(LIST("liefern schnell"; "billig"); value)', {
+  value: 'Wir liefern\n  schnell.',
+}); // ["billig"]
+await evalOk('MISSING_FROM(LIST("\\"hallo\\""); value; "loose")', { value: 'Er sagte „Hallo“.' }); // []
+```
+
+### PLAIN_TEXT
+
+`PLAIN_TEXT(markup: text, format: text) -> text`
+
+The text of `markup`, one line per block, with whitespace collapsed within
+each line and blank lines dropped. `format` is a required literal:
+
+- `"html"` — comments and the content of `script`, `style` and `head` are
+  dropped; `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
+  `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`,
+  `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`, `tr`
+  and `ul` end a line where they open or close; every other tag is removed.
+  Numeric character references and the 252 named references of HTML 4 are
+  decoded as browsers decode them (`&#150;` is an en dash, `&lang;` is
+  U+27E8); a reference needs its closing `;`, and unknown names stay as
+  written. Source line breaks are whitespace, except inside `pre`, where each
+  one ends a line. The result is plain text, not sanitised HTML: `&lt;b&gt;`
+  comes back as `<b>`.
+- `"markdown"` — ATX heading markers, `>` quote markers, list markers (`-`,
+  `*`, `+`, `1.`, `1)`), table pipes and the delimiter row, code fences,
+  emphasis (`*`, `_`, `**`, `__`), inline-code backticks and backslash escapes
+  are removed; `[text](url)` becomes `text`, `![alt](url)` becomes `alt` and
+  `<url>` becomes `url`. A paragraph's lines join into one line and each line
+  of a fenced code block stays a line. The document is read as
+  [MARKDOWN_BLOCKS](#markdown_blocks) reads it.
+
+```ts
+await evalOk('PLAIN_TEXT("<p>A&amp;B</p><p>C&nbsp;D</p><script>x</script>"; "html")'); // "A&B\nC D"
+await evalOk('PLAIN_TEXT("## Titel"; "markdown")'); // "Titel"
+await evalOk('PLAIN_TEXT("[Link](https://x) and **bold**"; "markdown")'); // "Link and bold"
+```
+
+### MARKDOWN_BLOCKS
+
+`MARKDOWN_BLOCKS(text: text, kind: text) -> list<text>`
+
+The blocks of one `kind`, in document order, without their markers and with
+inline markup removed as `PLAIN_TEXT` removes it. `kind` is a required
+literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
+`"list-item"`, `"table-row"`, `"paragraph"` or `"code"`. A block's text is:
+
+- for a heading, its text without the opening and closing `#`s;
+- for a list item, its text and continuation lines — nested items are items
+  of their own;
+- for a table row, its non-empty cells joined by one space — the header row
+  is a row, the delimiter row is not, and a table needs its delimiter row;
+- for a paragraph, its lines joined by one space;
+- for a fenced code block, its content unchanged.
+
+The reading is a line-based subset of CommonMark with GFM tables: ATX
+headings only (no `===` or `---` underlines), fenced code only (no indented
+code blocks), list items recognised by their marker at any indentation, and
+`>` quote markers read through.
+
+```ts
+// value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'
+await evalOk('MARKDOWN_BLOCKS(value; "heading-2")', { value }); // ["1. Erstens"]
+await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value }); // ["item", "nested"]
+await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value }); // ["A B", "1 2"]
 ```
 
 ---

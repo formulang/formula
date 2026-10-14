@@ -3,20 +3,27 @@ import type {
   FormulaExecutionContext,
   FormulaLimits,
   FormulaNodeOutput,
-  FormulaWarning,
 } from '@formulang/definitions';
 import {
   DEFAULT_FORMULA_LIMITS,
-  FormulaErrorCodes,
-  FormulaRuntimeError,
   makeOkList,
   makeOkNull,
   makeOkNumber,
   makeOkText,
-  withWarnings,
 } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
-import { asNumber, assumedTextLength, isEmptyValue, isWordCharacterBefore } from './helpers';
+import {
+  boundedListResult,
+  isOneOf,
+  listTooLarge,
+  nullWithWarning,
+  readOptionalMode,
+  readText,
+  readTextList,
+  textCost,
+  typeWarning,
+} from './argument-readers';
+import { asNumber, isEmptyValue, isWordCharacterBefore } from './helpers';
 import { compileSafeRegex, type RegexCompileFailure } from './regex';
 
 /** How `WORDS`, `WORD_COUNT` and `LEADING_WORDS` find the words of a text. */
@@ -71,26 +78,6 @@ const PATTERN_FLAGS = /^[imsu]*$/;
 type Refusal = { code: 'TYPE' | 'REGEX'; message: string };
 type WordScan = { words: Iterable<string> } | { refusal: Refusal };
 type WordCall = { text: string; mode: WordSplitMode; option: string | null };
-
-function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
-  return typeof value === 'string' && (values as readonly string[]).includes(value);
-}
-
-function nullWithWarning(fn: string, warning: FormulaWarning): FormulaNodeOutput {
-  return withWarnings(makeOkNull(fn), [warning]);
-}
-
-function typeWarning(fn: string, message: string): FormulaNodeOutput {
-  return nullWithWarning(fn, { code: 'TYPE', message });
-}
-
-function listTooLarge(): FormulaRuntimeError {
-  return new FormulaRuntimeError(FormulaErrorCodes.LIST_TOO_LARGE, 'List is too large', 'security');
-}
-
-function textCost(text: unknown, factor = 1): number {
-  return Math.min(0.05, 0.00001 + 0.000001 * assumedTextLength(text) * factor);
-}
 
 function countOf(items: Iterable<unknown>): number {
   const iterator = items[Symbol.iterator]();
@@ -313,25 +300,6 @@ export function splitSentences(
   return sentencePieces(text, mode, keep);
 }
 
-/** Reads an optional mode literal: absent or empty selects the first (default) mode. */
-function readMode<M extends string>(
-  fn: string,
-  raw: unknown,
-  modes: readonly M[],
-): M | FormulaNodeOutput {
-  if (isEmptyValue(raw)) return modes[0];
-  if (isOneOf(modes, raw)) return raw;
-  return typeWarning(
-    fn,
-    `${fn} mode must be one of ${modes.map((mode) => JSON.stringify(mode)).join(', ')}`,
-  );
-}
-
-function readText(fn: string, raw: unknown): string | FormulaNodeOutput {
-  if (typeof raw === 'string') return raw;
-  return isEmptyValue(raw) ? makeOkNull(fn) : typeWarning(fn, `${fn} expects text`);
-}
-
 /** Reads `(text, mode?, option?)` of a word function; an output when the call answers null. */
 function readWordCall(
   fn: string,
@@ -342,7 +310,7 @@ function readWordCall(
 ): { call: WordCall } | { output: FormulaNodeOutput } {
   const text = readText(fn, rawText);
   if (typeof text !== 'string') return { output: text };
-  const mode = readMode(fn, rawMode, WORD_SPLIT_MODES);
+  const mode = readOptionalMode(fn, 'mode', rawMode, WORD_SPLIT_MODES);
   if (typeof mode !== 'string') return { output: mode };
   if (!hasOption || isEmptyValue(rawOption)) {
     // An empty language tag or pattern is an empty input: null in, null out.
@@ -352,27 +320,6 @@ function readWordCall(
   if (typeof rawOption !== 'string')
     return { output: typeWarning(fn, `${fn} option must be text`) };
   return { call: { text, mode, option: rawOption } };
-}
-
-/** Reads an optional list of text tokens; empty entries are skipped. */
-function readTokenList(
-  fn: string,
-  param: string,
-  raw: unknown,
-  limits: FormulaLimits,
-): string[] | FormulaNodeOutput {
-  if (isEmptyValue(raw)) return [];
-  if (!Array.isArray(raw)) return typeWarning(fn, `${fn} ${param} must be a list of text`);
-  if (raw.length > limits.maxListLength) throw listTooLarge();
-  const tokens: string[] = [];
-  for (const item of raw) {
-    if (typeof item === 'string') {
-      if (item.length > 0) tokens.push(item);
-    } else if (!isEmptyValue(item)) {
-      return typeWarning(fn, `${fn} ${param} must be a list of text`);
-    }
-  }
-  return tokens;
 }
 
 /** Collects words, refusing more than the output limit allows. */
@@ -468,13 +415,13 @@ export class SentencesImplementation extends AbstractEagerBatchImplementation {
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
     const text = readText('SENTENCES', args[0]);
     if (typeof text !== 'string') return text;
-    const mode = readMode('SENTENCES', args[1], SENTENCE_SPLIT_MODES);
+    const mode = readOptionalMode('SENTENCES', 'mode', args[1], SENTENCE_SPLIT_MODES);
     if (typeof mode !== 'string') return mode;
-    const keep = readTokenList('SENTENCES', 'keep', args[2], ctx.limits);
+    const keep = isEmptyValue(args[2])
+      ? []
+      : readTextList('SENTENCES', 'keep', args[2], ctx.limits);
     if (!Array.isArray(keep)) return keep;
-    const sentences = sentencePieces(text, mode, keep);
-    if (sentences.length > ctx.limits.maxWildcardOutputLength) throw listTooLarge();
-    return makeOkList('SENTENCES', sentences);
+    return makeOkList('SENTENCES', boundedListResult(sentencePieces(text, mode, keep), ctx.limits));
   }
 }
 
@@ -490,11 +437,9 @@ export class LinesImplementation extends AbstractEagerBatchImplementation {
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
     const text = readText('LINES', args[0]);
     if (typeof text !== 'string') return text;
-    const mode = readMode('LINES', args[1], LINE_SPLIT_MODES);
+    const mode = readOptionalMode('LINES', 'mode', args[1], LINE_SPLIT_MODES);
     if (typeof mode !== 'string') return mode;
-    const lines = splitLines(text, mode);
-    if (lines.length > ctx.limits.maxWildcardOutputLength) throw listTooLarge();
-    return makeOkList('LINES', lines);
+    return makeOkList('LINES', boundedListResult(splitLines(text, mode), ctx.limits));
   }
 }
 
@@ -510,7 +455,7 @@ export class LineCountImplementation extends AbstractEagerBatchImplementation {
   protected evaluate(args: unknown[], _ctx: FormulaExecutionContext): FormulaNodeOutput {
     const text = readText('LINE_COUNT', args[0]);
     if (typeof text !== 'string') return text;
-    const mode = readMode('LINE_COUNT', args[1], LINE_SPLIT_MODES);
+    const mode = readOptionalMode('LINE_COUNT', 'mode', args[1], LINE_SPLIT_MODES);
     if (typeof mode !== 'string') return mode;
     return makeOkNumber('LINE_COUNT', splitLines(text, mode).length);
   }

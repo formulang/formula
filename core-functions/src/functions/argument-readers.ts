@@ -1,0 +1,94 @@
+import type { FormulaLimits, FormulaNodeOutput, FormulaWarning } from '@formulang/definitions';
+import {
+  FormulaErrorCodes,
+  FormulaRuntimeError,
+  makeOkNull,
+  withWarnings,
+} from '@formulang/definitions';
+import { assumedTextLength, isEmptyValue } from './helpers';
+
+/** Whether `value` is one of the literal `values`. */
+export function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && (values as readonly string[]).includes(value);
+}
+
+export function nullWithWarning(fn: string, warning: FormulaWarning): FormulaNodeOutput {
+  return withWarnings(makeOkNull(fn), [warning]);
+}
+
+export function typeWarning(fn: string, message: string): FormulaNodeOutput {
+  return nullWithWarning(fn, { code: 'TYPE', message });
+}
+
+export function listTooLarge(): FormulaRuntimeError {
+  return new FormulaRuntimeError(FormulaErrorCodes.LIST_TOO_LARGE, 'List is too large', 'security');
+}
+
+function modeRefusal(fn: string, param: string, modes: readonly string[]): FormulaNodeOutput {
+  const admitted = modes.map((mode) => JSON.stringify(mode)).join(', ');
+  return typeWarning(fn, `${fn} ${param} must be one of ${admitted}`);
+}
+
+/**
+ * Reads an optional mode literal: absent or empty selects the first (default) mode. The parser
+ * already refuses other literals; this guards calls it cannot see, such as `EACH` arguments.
+ */
+export function readOptionalMode<M extends string>(
+  fn: string,
+  param: string,
+  raw: unknown,
+  modes: readonly M[],
+): M | FormulaNodeOutput {
+  if (isEmptyValue(raw)) return modes[0];
+  return isOneOf(modes, raw) ? raw : modeRefusal(fn, param, modes);
+}
+
+/** Reads a required mode literal. */
+export function readRequiredMode<M extends string>(
+  fn: string,
+  param: string,
+  raw: unknown,
+  modes: readonly M[],
+): M | FormulaNodeOutput {
+  return isOneOf(modes, raw) ? raw : modeRefusal(fn, param, modes);
+}
+
+/** Reads a text argument: an empty value answers null, a non-text value null with `TYPE`. */
+export function readText(fn: string, raw: unknown): string | FormulaNodeOutput {
+  if (typeof raw === 'string') return raw;
+  return isEmptyValue(raw) ? makeOkNull(fn) : typeWarning(fn, `${fn} expects text`);
+}
+
+/**
+ * Reads a list of texts, bounded by `maxListLength`. Empty entries are dropped; a non-list
+ * value or a non-text entry answers null with `TYPE`.
+ */
+export function readTextList(
+  fn: string,
+  param: string,
+  raw: unknown,
+  limits: FormulaLimits,
+): string[] | FormulaNodeOutput {
+  if (!Array.isArray(raw)) return typeWarning(fn, `${fn} ${param} must be a list of text`);
+  if (raw.length > limits.maxListLength) throw listTooLarge();
+  const texts: string[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      if (item.length > 0) texts.push(item);
+    } else if (!isEmptyValue(item)) {
+      return typeWarning(fn, `${fn} ${param} must be a list of text`);
+    }
+  }
+  return texts;
+}
+
+/** Bounds a list result by `maxWildcardOutputLength`, as `FLAT` does. */
+export function boundedListResult<T>(items: T[], limits: FormulaLimits): T[] {
+  if (items.length > limits.maxWildcardOutputLength) throw listTooLarge();
+  return items;
+}
+
+/** A cost estimate proportional to the length of a text argument, capped at 50 ms. */
+export function textCost(text: unknown, factor = 1): number {
+  return Math.min(0.05, 0.00001 + 0.000001 * assumedTextLength(text) * factor);
+}

@@ -217,6 +217,25 @@ describe('builtins', () => {
     expect(opening.res.value).toBe('Wir helfen');
   });
 
+  it('checks phrases and headings of a markdown document variable', async () => {
+    const document = ['## 1. Erstens', 'Kennst du das?', '## 2. Zweitens', '- Punkt'].join('\n');
+    const missing = await evalFormula(
+      'MISSING_FROM(LIST("1. Erstens"; "3. Drittens"); JOIN(MARKDOWN_BLOCKS(value; "heading-2"); " | "))',
+      { value: document },
+      FormulaTypes.text(true),
+    );
+    expect(missing.res.errors).toStrictEqual([]);
+    expect(missing.res.value).toStrictEqual(['3. Drittens']);
+
+    const phrase = await evalFormula(
+      'FIRST_CONTAINED(LOWER(PLAIN_TEXT(value; "markdown")); LIST("oder?"; "kennst du das?"))',
+      { value: document },
+      FormulaTypes.text(true),
+    );
+    expect(phrase.res.errors).toStrictEqual([]);
+    expect(phrase.res.value).toBe('kennst du das?');
+  });
+
   it('estimated cost counts nested calls exactly once', () => {
     const { registry } = createTestRuntime();
     registry.registerVariable({

@@ -61,6 +61,7 @@ import {
 import { LowerImplementation } from './lower';
 import { LtImplementation } from './lt';
 import { LteImplementation } from './lte';
+import { MarkdownBlocksImplementation, PlainTextImplementation } from './markup-text';
 import {
   AcosImplementation,
   AsinImplementation,
@@ -90,6 +91,11 @@ import { MulImplementation } from './mul';
 import { NeqImplementation } from './neq';
 import { NotImplementation } from './not';
 import { OrImplementation } from './or';
+import {
+  ContainsAnyImplementation,
+  FirstContainedImplementation,
+  MissingFromImplementation,
+} from './phrase-match';
 import { PowImplementation } from './pow';
 import { RangeScoreImplementation } from './range-score';
 import {
@@ -385,5 +391,27 @@ export function registerPrimitiveFormulaImplementations(
   implementations.register(
     BuiltinSignatureIds.LINE_COUNT,
     new LineCountImplementation({ signatureId: BuiltinSignatureIds.LINE_COUNT }),
+  );
+
+  // Phrases and markup
+  implementations.register(
+    BuiltinSignatureIds.FIRST_CONTAINED,
+    new FirstContainedImplementation({ signatureId: BuiltinSignatureIds.FIRST_CONTAINED }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.CONTAINS_ANY,
+    new ContainsAnyImplementation({ signatureId: BuiltinSignatureIds.CONTAINS_ANY }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.MISSING_FROM,
+    new MissingFromImplementation({ signatureId: BuiltinSignatureIds.MISSING_FROM }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.PLAIN_TEXT,
+    new PlainTextImplementation({ signatureId: BuiltinSignatureIds.PLAIN_TEXT }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.MARKDOWN_BLOCKS,
+    new MarkdownBlocksImplementation({ signatureId: BuiltinSignatureIds.MARKDOWN_BLOCKS }),
   );
 }
