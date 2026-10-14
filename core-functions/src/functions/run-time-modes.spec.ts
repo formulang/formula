@@ -120,7 +120,16 @@ const enumerated = runtime()
   );
 
 describe('a mode received when the call runs', () => {
-  it('answers null for the item whose mode the callee refuses, through nested calls', async () => {
+  it('calls a callable named by a value or an expression, and refuses its misspelt mode', async () => {
+    // The examples of docs/language.md, Callable references: the nested call resolves the name
+    // when it runs.
+    expect(
+      await run('EACH(LIST(LIST("a b")); "EACH"; value)', { value: 'WORD_COUNT' }),
+    ).toStrictEqual({ value: [[2]], warnings: [] });
+    expect(await run('EACH(LIST(LIST("a b")); "EACH"; "WORD" & "_COUNT")', {})).toStrictEqual({
+      value: [[2]],
+      warnings: [],
+    });
     // The higher-order functions keep a callee's value, not its warnings.
     const source = 'EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")';
     expect(await run(source, { value: 'WORD_COUNT' })).toStrictEqual({

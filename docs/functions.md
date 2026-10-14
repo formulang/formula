@@ -27,10 +27,13 @@ arguments with `,` instead.
   `normalise`, `format` or `kind`) takes a string literal naming one of them; a
   misspelt one is a compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when
   higher-order calls pass it on through callables named by string literals
-  (see [Enumerated literals](language.md#enumerated-literals)). Each function
-  also checks the mode it receives when it runs, wherever the mode comes from:
-  a value it does not list, the empty text included, returns `null` with a
-  `TYPE` warning, and `null` selects the default of an optional mode. Through
+  (see [Enumerated literals](language.md#enumerated-literals)). A mode can
+  still reach a function when the call runs, passed to a callable that a
+  higher-order call names by a variable or an expression
+  (`EACH(lists; "EACH"; name; mode)`), so each function also checks the mode
+  it receives, wherever it comes from: a value it does not list, the empty
+  text included, returns `null` with a `TYPE` warning, and `null` selects the
+  default of an optional mode. Through
   a higher-order call that item is `null`, as for any callee that fails: the
   higher-order functions keep a callee's value, not its warnings.
 - **Operators.** Where an operator backs a function, the operator and the named

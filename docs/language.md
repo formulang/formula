@@ -507,14 +507,31 @@ REDUCE(0; LIST(1; 2; 3); "+")                        -- 6
 REDUCE(""; LIST("a"; "b"); "CONCAT")                 -- "ab"
 ```
 
-The reference must be a plain double-quoted literal written directly in the
-call. It cannot come from a variable or be computed — this is enforced at
-parse time (`EXPECTED_STRING_LITERAL_REFERENCE`):
+The reference written as a higher-order function's own argument must be a
+plain double-quoted literal. There it cannot come from a variable or be
+computed — this is enforced at parse time
+(`EXPECTED_STRING_LITERAL_REFERENCE`):
 
 ```
 FILTER(LIST(1;2); value; 1)          -- error: not a literal
 FILTER(LIST(1;2); UPPER("gt"); 1)    -- error: an expression is not a literal
 ```
+
+A reference that a higher-order call passes on to a nested one is an
+ordinary argument of the outer call: it can be a variable or an expression,
+and the nested call looks the name up when it runs. The parser checks such a
+reference only when it is a string literal (below); a name that a value or an
+expression produces is resolved at run time, and one the registry does not
+know makes that nested call yield `null`:
+
+```
+EACH(LIST(LIST("a b")); "EACH"; value)                -- with value = "WORD_COUNT": [[2]]
+EACH(LIST(LIST("a b")); "EACH"; "WORD" & "_COUNT")    -- [[2]]
+EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")   -- with value = "WORD_COUNT": [[null]]
+```
+
+In the last formula `WORD_COUNT` refuses the mode it does not list when it
+runs; through the higher-order call that item is `null`.
 
 Because the reference is a literal, the parser fully validates it while
 parsing:
@@ -595,8 +612,10 @@ not list it; a call written directly is checked against the overload its
 types select.
 
 Each function also checks the mode it receives when it runs, wherever the
-mode comes from (a higher-order function an embedder registers is checked at
-parse time only for the name of its callable; see
+mode comes from: a callable that a higher-order call passes on can be named
+by a variable or an expression, whose name the parser cannot know, and a
+higher-order function an embedder registers without declaring its invocation
+is checked at parse time only for the name of its callable (see
 [extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)).
 A built-in function answers a mode it does not list with `null` and a `TYPE`
 warning; through a higher-order call that item is `null`, as for any callee
