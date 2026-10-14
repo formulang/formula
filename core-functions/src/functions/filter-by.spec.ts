@@ -1,6 +1,16 @@
-import { FormulaErrorCodes } from '@formulang/definitions';
+import type { FormulaNodeOutput, FormulaType } from '@formulang/definitions';
+import {
+  FormulaErrorCodes,
+  FormulaTypes,
+  makeOkBoolean,
+  makeOkText,
+  optimizeRule,
+} from '@formulang/definitions';
+import { parseFormula } from '@formulang/parser';
+import { evaluateRuleOutputAsync } from '@formulang/runner';
 import {
   collectAllErrors,
+  createTestRuntime,
   evalFormula,
   evalOk,
   evalOkWithOutput,
@@ -39,33 +49,142 @@ describe('FILTER_BY', () => {
     ).toStrictEqual([callouts[1]]);
   });
 
-  it('calls the overload of the operator that the parser checked', async () => {
-    // STARTS_WITH has a text and a list overload; the list one is checked here and must run.
-    expect(
-      await evalOk(
-        'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; LIST("a"; "c"))',
-      ),
-    ).toStrictEqual(['x', 'z']);
+  it('calls the operator as FILTER does', async () => {
+    // FILTER_BY over a list and the same list as keys keeps what FILTER keeps: both call the
+    // function behind an operator token, otherwise the first definition of the name that has an
+    // implementation (STARTS_WITH's text form, whatever form the parser checked).
+    const literal = (value: string | string[]) =>
+      Array.isArray(value)
+        ? `LIST(${value.map((item) => JSON.stringify(item)).join('; ')})`
+        : JSON.stringify(value);
+    const keys = literal(['apple', 'banana', 'cherry', 'x']);
+    for (const needles of [['a', 'c'], ['b'], ['x', 'ch'], [''], 'b', '', 'ch']) {
+      const filter = `FILTER(${keys}; "STARTS_WITH"; ${literal(needles)})`;
+      const filterBy = `FILTER_BY(${keys}; ${keys}; "STARTS_WITH"; ${literal(needles)})`;
+      expect(await evalOk(filterBy), filterBy).toStrictEqual(await evalOk(filter));
+      // The same with the needle a run-time value, which the parser types as any.
+      const filterAny = `FILTER(${keys}; "STARTS_WITH"; value)`;
+      const filterByAny = `FILTER_BY(${keys}; ${keys}; "STARTS_WITH"; value)`;
+      expect(await evalOk(filterByAny, { value: needles }), filterByAny).toStrictEqual(
+        await evalOk(filterAny, { value: needles }),
+      );
+    }
     expect(
       await evalOk(
         'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; "b")',
       ),
     ).toStrictEqual(['y']);
-    // Each key answers as the direct call with the same literal arguments does.
-    const literal = (value: string | string[]) =>
-      Array.isArray(value)
-        ? `LIST(${value.map((item) => JSON.stringify(item)).join('; ')})`
-        : JSON.stringify(value);
-    const keys = ['apple', 'banana', 'cherry', 'x'];
-    for (const needles of [['a', 'c'], ['b'], ['x', 'ch'], [''], 'b', '']) {
-      const kept: string[] = [];
-      for (const key of keys) {
-        const direct = `STARTS_WITH(${literal(key)}; ${literal(needles)})`;
-        if ((await evalOk(direct)) === true) kept.push(key);
+    // STARTS_WITH's text form runs, so a list of prefixes keeps nothing, as with FILTER.
+    expect(
+      await evalOk(
+        'FILTER_BY(LIST("x"; "z"); LIST("apple"; "cherry"); "STARTS_WITH"; LIST("a"; "c"))',
+      ),
+    ).toStrictEqual([]);
+    expect(await evalOk('FILTER_BY(LIST("a"; "b"); LIST(1; 5); ">"; 2)')).toStrictEqual(['b']);
+  });
+
+  describe('with an overload set of the host', () => {
+    // CHECK(text) answers a boolean, CHECK(list<text>) a text, which a filter cannot use.
+    function checkRuntime(implemented: readonly string[]) {
+      const invoked: string[] = [];
+      const runtime = createTestRuntime();
+      const define = (signatureId: string, type: FormulaType, returnType: FormulaType) =>
+        runtime.registry.registerFunction({
+          signatureId,
+          name: 'CHECK',
+          category: 'custom',
+          description: 'Host overload.',
+          params: [{ name: 'value', type }],
+          returnType,
+          purity: 'pure',
+        });
+      define('CHECK/v1', FormulaTypes.text(true), FormulaTypes.boolean(true));
+      define(
+        'CHECK_LIST/v1',
+        FormulaTypes.list(FormulaTypes.text(true), true),
+        FormulaTypes.text(true),
+      );
+      define('CHECK_NUMBER/v1', FormulaTypes.number(true), FormulaTypes.boolean(true));
+      const answers: Record<string, (value: unknown) => FormulaNodeOutput> = {
+        'CHECK/v1': (value) => makeOkBoolean('CHECK', value === 'yes'),
+        'CHECK_LIST/v1': () => makeOkText('CHECK', 'not a boolean'),
+        'CHECK_NUMBER/v1': (value) => makeOkBoolean('CHECK', value === 1),
+      };
+      for (const signatureId of implemented) {
+        runtime.implementations.register(signatureId, {
+          estimateCostsInSeconds: () => 0.0001,
+          evaluateMultiple: async (calls) => {
+            const outs: FormulaNodeOutput[] = [];
+            for (const call of calls) {
+              invoked.push(signatureId);
+              outs.push(answers[signatureId]!(await call.args[0]?.value()));
+            }
+            return outs;
+          },
+        });
       }
-      const source = `FILTER_BY(${literal(keys)}; ${literal(keys)}; "STARTS_WITH"; ${literal(needles)})`;
-      expect(await evalOk(source), source).toStrictEqual(kept);
+      return { ...runtime, invoked };
     }
+
+    async function run(runtime: ReturnType<typeof checkRuntime>, source: string, value?: unknown) {
+      const parsed = parseFormula(source, { registry: runtime.registry });
+      const compiled = optimizeRule(parsed, { registry: runtime.registry });
+      const out = await evaluateRuleOutputAsync(compiled, {
+        registry: runtime.registry,
+        resolver: runtime.implementations,
+        variables: { value },
+      });
+      return {
+        parse: parsed.errors.map((e) => e.code),
+        value: out.output.value ?? null,
+        warnings: (out.output.warnings ?? []).map((w) => w.code),
+      };
+    }
+
+    const ALL = ['CHECK/v1', 'CHECK_LIST/v1', 'CHECK_NUMBER/v1'];
+
+    it('never calls an overload the parser refuses for a filter', async () => {
+      // Typed keys select CHECK(list<text>), whose text result the parser refuses.
+      const typed = checkRuntime(ALL);
+      expect(
+        (await run(typed, 'FILTER_BY(LIST("p"; "q"); LIST(LIST("yes"); LIST("no")); "CHECK")'))
+          .parse,
+      ).toStrictEqual([FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH]);
+      // Keys of type any select CHECK(text), the first definition, which is also what runs:
+      // lists are not "yes", so nothing is kept, and CHECK(list<text>) is never called.
+      const anyKeys = checkRuntime(ALL);
+      expect(
+        await run(anyKeys, 'FILTER_BY(LIST("p"; "q"); value; "CHECK")', [['yes'], ['no']]),
+      ).toStrictEqual({ parse: [], value: [], warnings: [] });
+      expect(anyKeys.invoked).toStrictEqual(['CHECK/v1', 'CHECK/v1']);
+      const textKeys = checkRuntime(ALL);
+      expect(
+        await run(textKeys, 'FILTER_BY(LIST("p"; "q"); value; "CHECK")', ['yes', 'no']),
+      ).toStrictEqual({ parse: [], value: ['p'], warnings: [] });
+    });
+
+    it('falls back to the first definition that has an implementation, as FILTER does', async () => {
+      const runtime = checkRuntime(['CHECK_NUMBER/v1']);
+      expect(await run(runtime, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "CHECK")')).toStrictEqual({
+        parse: [],
+        value: ['p'],
+        warnings: [],
+      });
+      expect(await run(runtime, 'FILTER(LIST(1; 2); "CHECK")')).toStrictEqual({
+        parse: [],
+        value: [1],
+        warnings: [],
+      });
+      expect(runtime.invoked).toStrictEqual(Array(4).fill('CHECK_NUMBER/v1'));
+    });
+
+    it('answers null with a TYPE warning when no definition has an implementation', async () => {
+      const runtime = checkRuntime([]);
+      expect(
+        await run(runtime, 'FILTER_BY(LIST("p"; "q"); LIST("yes"; "no"); "CHECK")'),
+      ).toStrictEqual({ parse: [], value: null, warnings: ['TYPE'] });
+      expect(runtime.invoked).toStrictEqual([]);
+    });
   });
 
   it('types the result as the list it filters', async () => {

@@ -1262,16 +1262,19 @@ Keeps the items of `list` whose key — the item at the same position in
 `keys` — satisfies the named `operator`, called as `(key)` or, when
 `operatorValue` is given, `(key, operatorValue)`. `list` and `keys` must have
 the same length; otherwise the result is `null` with a `TYPE` warning. The
-operator is validated at parse time as for `FILTER`. When it names an
-overloaded function, `FILTER_BY` calls the overload whose parameters take the
-types of the keys and of `operatorValue` — the overload the parser checks for
-arguments of those types, such as `STARTS_WITH`'s list form below.
+operator is validated at parse time as for `FILTER`, and called as `FILTER`
+calls it: the function behind an operator token, otherwise the first function
+of that name that has an implementation. For an overloaded name that can be
+another overload than the one the parser checked for the types of the keys and
+of `operatorValue`: `STARTS_WITH` runs its text form, so a list of prefixes
+keeps nothing. An operator with no implementation returns `null` with a `TYPE`
+warning.
 
 ```ts
 await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
 await evalOk(
-  'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; LIST("a"; "c"))',
-); // ["x", "z"]
+  'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; "b")',
+); // ["y"]
 // value = a list of callouts: keep those longer than eight words
 await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
 ```
