@@ -28,12 +28,14 @@ import { evaluateRuleOutputAsync } from './index';
 /**
  * The enumerated-literal rule through `parseFormula` and evaluation, on a generated matrix: the
  * higher-order function that passes the literal on (every one whose invocation the parser knows,
- * from its tables) × the position the literal reaches (every position the invocation passes on) ×
- * where the call sits × the overload set of the name it reaches × the item that chooses among the
- * overloads × every value an overload lists, and one none lists. The higher-order functions run
- * the first definition of a name that has an implementation, which the parser cannot see, so every
- * formula that compiles also runs under registries that implement only some overloads, in both
- * registration orders, and every overload that runs must receive a value from its own list.
+ * from its tables) × the position the literal reaches (every position the invocation passes
+ * something to, 0 included, read from the invocation; past the parameters, up to one past the
+ * longest parameter list a callable can have) × where the call sits × the overload set of the name
+ * it reaches × the item that chooses among the overloads × every value an overload lists, and one
+ * none lists. The higher-order functions run the first definition of a name that has an
+ * implementation, which the parser cannot see, so every formula that compiles also runs under
+ * registries that implement only some overloads, in both registration orders, and every overload
+ * that runs must receive a value from its own list.
  */
 
 const text = FormulaTypes.text(true);
@@ -56,10 +58,10 @@ const VEHICLES: readonly string[] = [
 type Item = { item: string; value: unknown; selects: string | null };
 
 /**
- * How a call of each vehicle writes the arguments its invocation does not describe, so the item
- * reaches the callable at position 0: FILTER_BY's list beside the keys, and FILTER_PROPERTY's
- * target, whose property `p` holds the item (`rows`), and the property's name. A vehicle without an
- * entry here, or an entry for no vehicle, fails the first test.
+ * How a call of each vehicle writes the arguments its invocation does not describe: FILTER_BY's
+ * list beside the keys, and FILTER_PROPERTY's target, whose property `p` holds the value it passes
+ * (`rows`), and the property's name. A vehicle without an entry here, or an entry for no vehicle,
+ * fails the first test.
  */
 const UNDESCRIBED: Record<string, Record<number, string>> = {
   EACH: {},
@@ -76,7 +78,7 @@ type Reach = {
   position: number;
   /** The call argument passed on to that position; undefined: the vehicle supplies a value. */
   forwardedFrom: number | undefined;
-  /** Whether the item reaching position 0 is typed by the item written in the formula. */
+  /** Whether the subject, whose type selects the overload, is typed by the item written. */
   typedItem: boolean;
   /** The call's arguments, the item, the name and the literal as placeholders. */
   args: string[];
@@ -86,58 +88,72 @@ const ITEM = '\u0000item';
 const NAME = '\u0000name';
 const LITERAL = '\u0000literal';
 
-/** The positions each vehicle's invocation passes something to after position 0, at most three. */
+/**
+ * The longest parameter list among the core registry's functions, any of which a callable can name:
+ * an invocation that passes on every argument from an index is followed up to one position past it.
+ */
+const LONGEST = Math.max(
+  ...createCoreFormulaRuntime()
+    .registry.listFunctions()
+    .map((def) => def.params.length),
+);
+
+/** Where an overload of the matrix takes its subject: next to the mode, at 0 unless the mode is. */
+function subjectPosition(position: number): number {
+  return position === 0 ? 1 : 0;
+}
+
+/**
+ * Every position the vehicle's invocation passes something to, position 0 included, read from the
+ * invocation alone; for one that passes on every argument from an index, every position up to one
+ * past the longest parameter list. The literal goes where the invocation takes the value at the
+ * position, and the item, which selects the overload, where it takes the value at the subject's.
+ */
 function reachesOf(vehicle: string): Reach[] {
   const def = coreHigherOrder.find((candidate) => candidate.name.toUpperCase() === vehicle);
   const invocation = def && invocationOf(def);
   if (def === undefined || invocation === undefined) throw new Error(`no invocation: ${vehicle}`);
   const callableAt = def.params.findIndex((p) => stripNullability(p.type).kind === 'callable');
-  const variadic = def.params[def.params.length - 1]?.variadic === true;
-  // Three arguments past the last parameter reach every position a variadic invocation forwards.
-  const count = def.params.length + (variadic ? 2 : 0);
-  const invoked = invokedArguments(
-    invocation,
-    Array.from({ length: count }, () => anything),
+  const argTypes = (count: number) => Array.from({ length: count }, () => anything);
+  const passesOnTail =
+    def.params[def.params.length - 1]?.variadic === true &&
+    invocation.some((source) => source.kind === 'arguments');
+  let count = def.params.length;
+  while (passesOnTail && invokedArguments(invocation, argTypes(count)).length <= LONGEST) count++;
+  const invoked = invokedArguments(invocation, argTypes(count));
+  // The declaration entry behind each invoked position.
+  const entries = invocation.flatMap((source) =>
+    invokedArguments([source], argTypes(count)).map(() => source),
   );
-  const reaches: Reach[] = [];
-  for (let position = 1; position < Math.min(invoked.length, 4); position++) {
-    const forwardedFrom = invoked[position]?.forwards;
-    const args: string[] = [];
-    // Pass on arguments up to the one at `position`, and no further.
-    const last = forwardedFrom ?? Math.max(callableAt, ...invocation.map(argumentIndexOf));
-    for (let index = 0; index <= last; index++) {
-      const undescribed = UNDESCRIBED[vehicle]?.[index];
-      const source = invocation.find((s) => argumentIndexOf(s) === index);
-      if (index === callableAt) args.push(NAME);
-      else if (undescribed !== undefined) args.push(undescribed);
-      else if (index === forwardedFrom) args.push(LITERAL);
-      else if (source?.kind === 'item' && invokedFrom(invocation, index) === 0)
-        args.push(`LIST(${ITEM})`);
-      else if (source?.kind === 'item') args.push(`LIST(${LITERAL})`);
-      else if (source?.kind === 'value') args.push(ITEM);
-      else args.push('0');
-    }
-    reaches.push({
+  const undescribed = UNDESCRIBED[vehicle] ?? {};
+  return invoked.map((passed, position): Reach => {
+    const subject = subjectPosition(position);
+    // The call argument behind an invoked position, and how the formula writes it there.
+    const written = new Map<number, string>();
+    const write = (at: number, placeholder: string) => {
+      const entry = entries[at];
+      const forwards = invoked[at]?.forwards;
+      if (forwards !== undefined) written.set(forwards, placeholder);
+      else if (entry?.kind === 'item') written.set(entry.of, `LIST(${placeholder})`);
+      else if (entry?.kind === 'value' && entry.typeOf !== undefined) {
+        written.set(entry.typeOf, placeholder);
+      }
+    };
+    write(position, LITERAL);
+    write(subject, ITEM);
+    const last = Math.max(callableAt, ...written.keys(), ...Object.keys(undescribed).map(Number));
+    const args = Array.from({ length: last + 1 }, (_, index) =>
+      index === callableAt ? NAME : (undescribed[index] ?? written.get(index) ?? '0'),
+    );
+    const subjectEntry = entries[subject];
+    return {
       vehicle,
       position,
-      forwardedFrom,
-      typedItem: invocation[0]?.kind !== 'value' || invocation[0].typeOf !== undefined,
+      forwardedFrom: passed.forwards,
+      typedItem: subjectEntry?.kind !== 'value' || subjectEntry.typeOf !== undefined,
       args,
-    });
-  }
-  return reaches;
-}
-
-function argumentIndexOf(source: { kind: string } & Record<string, unknown>): number {
-  const index = source.of ?? source.at ?? source.from ?? source.typeOf;
-  return typeof index === 'number' ? index : -1;
-}
-
-/** The invoked position a source fills: the first for an item of list `index`. */
-function invokedFrom(invocation: readonly { kind: string }[], index: number): number {
-  return invocation.findIndex(
-    (source) => argumentIndexOf(source as { kind: string } & Record<string, unknown>) === index,
-  );
+    };
+  });
 }
 
 type Placement =
@@ -158,11 +174,19 @@ type OverloadSet = {
   name: string;
   overloads: Overload[];
   items: Item[];
-  /** The positions its mode can sit at; a set holding a core definition keeps the core's. */
+  /** The positions its mode can sit at: every one, unless it holds a core definition's mode. */
   positions?: readonly number[];
   /** The vehicles that take its result. */
   vehicles?: readonly string[];
 };
+
+/** The positions at which a core definition lists admitted values. */
+function listedPositions(signatureId: string): number[] {
+  const def = createCoreFormulaRuntime().registry.getFunction(signatureId);
+  return (def?.params ?? []).flatMap((param, index) =>
+    param.literalValues === undefined ? [] : [index],
+  );
+}
 
 const SETS: OverloadSet[] = [
   {
@@ -225,7 +249,7 @@ const SETS: OverloadSet[] = [
       { item: '"a b"', value: 'a b', selects: BuiltinSignatureIds.WORD_COUNT },
       { item: 'LIST("a b"; "c")', value: ['a b', 'c'], selects: 'WORD_COUNT_LIST/v1' },
     ],
-    positions: [1],
+    positions: listedPositions(BuiltinSignatureIds.WORD_COUNT),
     // It answers a number, which neither a filter nor REDUCE's text accumulator takes.
     vehicles: ['EACH'],
   },
@@ -293,8 +317,12 @@ function formulaFor(
 ) {
   const lit = JSON.stringify(literal);
   if (placement.kind === 'direct') {
-    const fillers = Array.from({ length: placement.position - 1 }, () => '0');
-    return `${set.name}(${[item, ...fillers, lit].join('; ')})`;
+    const { position } = placement;
+    const subject = subjectPosition(position);
+    const args = Array.from({ length: Math.max(position, subject) + 1 }, (_, index) =>
+      index === subject ? item : index === position ? lit : '0',
+    );
+    return `${set.name}(${args.join('; ')})`;
   }
   const { reach, depth } = placement;
   const name = vehicle ?? reach.vehicle;
@@ -310,11 +338,8 @@ function formulaFor(
 }
 
 function paramsOf(overload: Overload, position: number): FunctionParamDefinition[] {
-  const params: FunctionParamDefinition[] = [{ name: 'subject', type: overload.subject }];
-  for (let index = 1; index < position; index++) {
-    params.push({ name: `filler${index}`, type: anything });
-  }
-  params.push(
+  const subject = subjectPosition(position);
+  const mode: FunctionParamDefinition =
     overload.values === undefined
       ? { name: 'key', type: text }
       : {
@@ -322,7 +347,15 @@ function paramsOf(overload: Overload, position: number): FunctionParamDefinition
           type: FormulaTypes.text(false),
           literalOnly: true,
           literalValues: overload.values,
-        },
+        };
+  const params = Array.from(
+    { length: Math.max(position, subject) + 1 },
+    (_, index): FunctionParamDefinition =>
+      index === subject
+        ? { name: 'subject', type: overload.subject }
+        : index === position
+          ? mode
+          : { name: `filler${index}`, type: anything },
   );
   if (overload.extra) params.push({ name: 'extra', type: overload.extra });
   return params;
@@ -453,8 +486,11 @@ function implementedSets(set: OverloadSet): Array<ReadonlySet<string> | undefine
 
 const REACHES = VEHICLES.flatMap(reachesOf);
 
+/** Every position some vehicle passes something to. */
+const POSITIONS = [...new Set(REACHES.map((reach) => reach.position))].sort((a, b) => a - b);
+
 const cells = SETS.flatMap((set) => {
-  const positions = set.positions ?? [1, 2, 3];
+  const positions = set.positions ?? POSITIONS;
   const placements: Placement[] = [
     ...positions.map((position): Placement => ({ kind: 'direct', position })),
     ...REACHES.filter(
@@ -465,9 +501,15 @@ const cells = SETS.flatMap((set) => {
       [0, 1, 2, 3, 4].map((depth): Placement => ({ kind: 'passed', reach, depth })),
     ),
   ];
+  // Where the formula writes no literal (FILTER_PROPERTY passes the property's value at 0), the
+  // outcome cannot depend on one: a single cell stands for them all.
+  const literalsFor = (placement: Placement) =>
+    placement.kind === 'passed' && !placement.reach.args.some((arg) => arg.includes(LITERAL))
+      ? [MISSPELT]
+      : literalsOf(set);
   return placements.flatMap((placement) =>
     set.items.flatMap((item) =>
-      literalsOf(set).map((literal) => ({
+      literalsFor(placement).map((literal) => ({
         set,
         placement,
         item,
@@ -493,12 +535,23 @@ describe('the enumerated-literal rule, generated', () => {
         vehicle,
       ).toBe(true);
     }
-    // EACH passes on every argument after its callable: the mode sits at three positions.
+    // Every position each invocation passes something to, from 0 on; EACH passes on every
+    // argument after its callable, up to one past the longest parameter list a callable can have.
+    for (const vehicle of VEHICLES) {
+      const positions = REACHES.filter((reach) => reach.vehicle === vehicle).map((r) => r.position);
+      expect(positions, vehicle).toStrictEqual(positions.map((_, index) => index));
+      expect(positions.length, vehicle).toBeGreaterThanOrEqual(2);
+    }
     expect(
       REACHES.filter((reach) => reach.vehicle === 'EACH').map((r) => r.position),
-    ).toStrictEqual([1, 2, 3]);
-    // A value the vehicle supplies itself also reaches the mode (REDUCE's item).
-    expect(REACHES.some((reach) => reach.forwardedFrom === undefined)).toBe(true);
+    ).toStrictEqual(Array.from({ length: LONGEST + 1 }, (_, index) => index));
+    // A value the vehicle supplies itself reaches the mode at position 0 of every vehicle, and
+    // REDUCE's item at 1.
+    expect(
+      REACHES.filter((reach) => reach.forwardedFrom === undefined).map(
+        (reach) => `${reach.vehicle} ${reach.position}`,
+      ),
+    ).toStrictEqual([...VEHICLES.map((vehicle) => `${vehicle} 0`), 'REDUCE 1'].sort());
   });
 
   it('covers every placement, overload set, item and listed value, with every outcome', () => {
