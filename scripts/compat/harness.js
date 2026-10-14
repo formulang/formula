@@ -4,7 +4,8 @@
  * Compatibility harness. It parses and evaluates formulas under registry shapes and returns
  * outcomes that compare across versions: the parse error codes or, for each variable environment,
  * the value with its warning and error codes and the value (or error code) of every node, with
- * the clock frozen, and whether the formula named a function the current source adds.
+ * the clock the functions read frozen, and whether the formula named a function the current source
+ * adds.
  *
  * `generate-baseline.js` ran it against the built packages of 1.0.0 to write
  * `baseline-1.0.0.json`; `runner/src/compat.spec.ts` runs it against the source and requires the
@@ -371,17 +372,17 @@ function runtimeFor(packages, shape, retired) {
 /** The instant the clock reads while the harness evaluates, so formulas that read it compare. */
 const FROZEN_CLOCK = Date.UTC(2024, 4, 15, 13, 45, 30);
 
-/** Runs `run` with `Date` reading `FROZEN_CLOCK` when built without arguments. */
+/**
+ * Runs `run` with `new Date()` reading `FROZEN_CLOCK`: the clock the functions read (`NOW`,
+ * `TODAY`, the date parts of the current date). `Date.now()`, from which the runner measures its
+ * wall-time limits, keeps running, so a run that exceeds a limit fails as it does unfrozen.
+ */
 async function withFrozenClock(run) {
   const RealDate = globalThis.Date;
   class FrozenDate extends RealDate {
     constructor(...args) {
       if (args.length === 0) super(FROZEN_CLOCK);
       else super(...args);
-    }
-
-    static now() {
-      return FROZEN_CLOCK;
     }
   }
   globalThis.Date = FrozenDate;
@@ -518,6 +519,7 @@ module.exports = {
   ENVIRONMENTS,
   FROZEN_CLOCK,
   RUN_TIME_NAMES,
+  withFrozenClock,
   BASE_SHAPES,
   HOST_FUNCTION_SHAPE,
   environmentsFor,

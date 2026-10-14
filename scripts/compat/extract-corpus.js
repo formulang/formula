@@ -3,8 +3,8 @@
 
 /**
  * Writes `scripts/compat/corpus.json`: every formula of a checkout's spec files and docs, plus the
- * formulas of the compatibility probes listed below. It ran once, against 1.0.0 (`699d57e`), so
- * the corpus is the formulas 1.0.0 documented and tested.
+ * formulas of the compatibility probes listed below. It runs against 1.0.0 (`699d57e`), so the
+ * corpus is the formulas 1.0.0 documented and tested, and the probes.
  *
  * Usage: node scripts/compat/extract-corpus.js <checkout> <commit>
  *
@@ -32,7 +32,9 @@ const FORMULA_HELPERS = new Set([
 
 /**
  * Formulas of the compatibility probes: the callable validation of re-versioned higher-order
- * functions, and a higher-order function an embedder registers (`MAP_ALL`, compat shapes only).
+ * functions, a higher-order function an embedder registers (`MAP_ALL`, compat shapes only), and a
+ * name 1.1.0 adds written as a nested callable with a mode it does not list, which 1.0.0 resolves
+ * only when the nested call runs on a list (and the second formula never runs).
  */
 const PROBE_FORMULAS = [
   'FILTER(LIST("a"; "bb"); "LEN")',
@@ -57,6 +59,8 @@ const PROBE_FORMULAS = [
   'MAP_ALL(LIST("a"); "LEN"; 1)',
   'MAP_ALL(LIST(LIST(1; 2)); "LEN")',
   'MAP_ALL(LIST(1; 2); ">")',
+  'EACH(value; "EACH"; "WORD_COUNT"; "whitespce")',
+  'IF(FALSE; EACH(LIST(LIST("a b")); "EACH"; "WORD_COUNT"; "whitespce"); EMPTY())',
 ];
 
 function walk(dir, accept, out = []) {

@@ -2125,6 +2125,14 @@
     {
       "source": "MAP_ALL(LIST(1; 2); \">\")",
       "origin": "compatibility probe"
+    },
+    {
+      "source": "EACH(value; \"EACH\"; \"WORD_COUNT\"; \"whitespce\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "IF(FALSE; EACH(LIST(LIST(\"a b\")); \"EACH\"; \"WORD_COUNT\"; \"whitespce\"); EMPTY())",
+      "origin": "compatibility probe"
     }
   ]
 }

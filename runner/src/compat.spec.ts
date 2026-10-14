@@ -31,25 +31,42 @@ function wanted(formula: BaselineFormula, shape: string): Outcome {
 }
 
 /**
- * Whether the formula names a function 1.1.0 adds: written in its text, in any letter case, or
- * produced when the call runs by a value or an expression. The harness records it from the names
- * the formula asked the registry for on 1.0.0.
+ * Whether the formula at `index` names a function 1.1.0 adds: written in its source in any letter
+ * case (called, or a string literal naming a callable), or produced when the call runs by a value
+ * or an expression. The union of the names the source writes, the names the formula asked the
+ * registry for on 1.0.0 (the baseline's record) and the names it asks for at the head (`atHead`),
+ * which looks a callable a nested call names up when it parses, where 1.0.0 did so only when the
+ * nested call ran.
  */
-function namesAnAddedFunction(formula: BaselineFormula, shape: string): boolean {
-  return wanted(formula, shape).namesAdded === true;
+function namesAnAddedFunction(atHead: ByShape, index: number, shape: string): boolean {
+  const formula = formulas[index];
+  if (formula === undefined) throw new Error(`no formula ${index}`);
+  return (
+    writesAnAddedName.test(formula.source) ||
+    wanted(formula, shape).namesAdded === true ||
+    atHead[shape]?.[index]?.namesAdded === true
+  );
+}
+
+/** What a formula does: its outcome without the record of the names it asked the registry for. */
+function behaviour(outcome: Outcome | undefined): string {
+  if (outcome === undefined) return 'none';
+  const { namesAdded, ...rest } = outcome;
+  void namesAdded;
+  return JSON.stringify(rest);
 }
 
 function differencesFrom1_0_0(
   byShape: ByShape,
-  selected: (f: BaselineFormula, s: string) => boolean,
+  selected: (index: number, shape: string) => boolean,
 ) {
   const differences: Array<{ shape: string; source: string; want: Outcome; got: unknown }> = [];
   formulas.forEach((formula, index) => {
     for (const shape of shapes) {
-      if (!selected(formula, shape)) continue;
+      if (!selected(index, shape)) continue;
       const want = wanted(formula, shape);
       const got = byShape[shape]?.[index];
-      if (JSON.stringify(got) !== JSON.stringify(want)) {
+      if (behaviour(got) !== behaviour(want)) {
         differences.push({ shape, source: formula.source, want, got });
       }
     }
@@ -96,12 +113,13 @@ describe('compatibility with 1.0.0', () => {
   it('gives every formula that names no function 1.1.0 adds its 1.0.0 outcome under every shape', () => {
     const differences = differencesFrom1_0_0(
       atHead,
-      (formula, shape) => !namesAnAddedFunction(formula, shape),
+      (index, shape) => !namesAnAddedFunction(atHead, index, shape),
     );
     expect(differences.slice(0, 20)).toStrictEqual([]);
     expect(differences.length).toBe(0);
     // Not vacuous: the corpus formulas name no function 1.1.0 adds.
-    expect(formulas.filter((f) => !namesAnAddedFunction(f, 'core')).length).toBeGreaterThan(400);
+    const unnamed = formulas.filter((_, index) => !namesAnAddedFunction(atHead, index, 'core'));
+    expect(unnamed.length).toBeGreaterThan(400);
   });
 
   it('gives every formula its 1.0.0 outcome once the definitions 1.1.0 adds are retired', async () => {
@@ -114,32 +132,47 @@ describe('compatibility with 1.0.0', () => {
     expect(differences.length).toBe(0);
   }, 120_000);
 
-  it('changes a formula that names a function 1.1.0 adds only in that it now calls the function', () => {
+  it('changes a formula that names a function 1.1.0 adds in one of three ways, each from its call', () => {
     // Such a formula writes the name, in any letter case, or a value or an expression produces it
-    // when the call runs. With the core registry it either failed to compile on 1.0.0, the name
-    // being unknown, or named the function as the callable of a nested higher-order call, which
-    // resolves the name when it runs and yielded null there. At the head it calls the new
-    // function; with the new definitions retired it gives the 1.0.0 outcome again (the test
-    // above), so that call is the whole change.
+    // when the call runs. With the core registry it changes in one of three ways. It failed to
+    // compile on 1.0.0, the name being unknown, and now resolves the name: it compiles and calls
+    // the function, or fails on the function's own checks. It compiled on 1.0.0, a nested
+    // higher-order call resolving the name when it runs and yielding null there, and now calls the
+    // function. Or it compiled on 1.0.0, whether the nested call ran or not, and now fails to
+    // compile, a literal it passes the function not being one the function lists. With the new
+    // definitions retired it gives the 1.0.0 outcome again (the test above), so the new function
+    // is the whole change.
     const unknownName = ['UNKNOWN_FUNCTION', 'UNKNOWN_FUNCTION_REFERENCE'];
+    const literalRule = ['LITERAL_VALUE_NOT_ALLOWED', 'EXPECTED_STRING_LITERAL_REFERENCE'];
     let failedToCompile = 0;
     let yieldedNull = 0;
+    let nowFailsToCompile = 0;
     let fromData = 0;
     let changed = 0;
+    let named = 0;
     formulas.forEach((formula, index) => {
-      // Every formula that writes an added name is in the class.
-      if (writesAnAddedName.test(formula.source)) {
-        expect(namesAnAddedFunction(formula, 'core'), formula.source).toBe(true);
-      }
-      if (!namesAnAddedFunction(formula, 'core')) return;
+      if (!namesAnAddedFunction(atHead, index, 'core')) return;
+      named++;
       if (!writesAnAddedName.test(formula.source)) fromData++;
       const before = wanted(formula, 'core');
+      const now = atHead.core?.[index];
       if (before.parse !== undefined) {
         expect(
           before.parse.every((code) => unknownName.includes(code)),
           formula.source,
         ).toBe(true);
+        // The name resolves now: the call compiles, or fails on the function's own checks.
+        expect(
+          (now?.parse ?? []).some((code) => unknownName.includes(code)),
+          formula.source,
+        ).toBe(false);
         failedToCompile++;
+      } else if (now?.parse !== undefined) {
+        expect(
+          now.parse.every((code) => literalRule.includes(code)),
+          formula.source,
+        ).toBe(true);
+        nowFailsToCompile++;
       } else {
         const values = before.run ? [before.run.value] : (before.runs ?? []).map((r) => r.value);
         expect(values.length, formula.source).toBeGreaterThan(0);
@@ -148,19 +181,58 @@ describe('compatibility with 1.0.0', () => {
         }
         yieldedNull++;
       }
-      if (JSON.stringify(atHead.core?.[index]) !== JSON.stringify(before)) changed++;
+      if (behaviour(now) !== behaviour(before)) changed++;
     });
-    expect(failedToCompile).toBeGreaterThan(0);
-    expect(yieldedNull).toBeGreaterThan(0);
+    // What the PR states, for this corpus and these probes.
+    expect([failedToCompile, yieldedNull, nowFailsToCompile]).toStrictEqual([144, 48, 20]);
     // Not vacuous: names written in lower case, and names a value or an expression produces.
     const lowerCase = formulas.filter(
-      (f) =>
+      (f, index) =>
         added.some((name) => f.source.includes(JSON.stringify(name.toLowerCase()))) &&
-        namesAnAddedFunction(f, 'core'),
+        namesAnAddedFunction(atHead, index, 'core'),
     );
     expect(lowerCase.length).toBe(added.length);
     expect(fromData).toBeGreaterThanOrEqual(harness.RUN_TIME_NAMES.length);
-    expect(changed).toBe(failedToCompile + yieldedNull);
+    expect(changed).toBe(named);
+    expect(named).toBe(failedToCompile + yieldedNull + nowFailsToCompile);
+  });
+
+  it('freezes the clock the functions read, not the one the runner measures its limits by', async () => {
+    // A function that takes 20 ms by a clock the harness leaves alone, against a 5 ms limit.
+    const { registry, implementations } = coreFunctions.createCoreFormulaRuntime();
+    registry.registerFunction({
+      signatureId: 'SLOW/v1',
+      name: 'SLOW',
+      category: 'custom',
+      description: 'Takes 20 ms.',
+      params: [],
+      returnType: definitions.FormulaTypes.boolean(true),
+      purity: 'uncached',
+    });
+    implementations.register('SLOW/v1', {
+      estimateCostsInSeconds: () => 0.0001,
+      evaluateMultiple: async (calls) => {
+        const until = performance.now() + 20;
+        while (performance.now() < until) {
+          // The time passes on the clock the runner reads.
+        }
+        return calls.map(() => definitions.makeOkBoolean('SLOW/v1', true));
+      },
+    });
+    const compiled = definitions.optimizeRule(parser.parseFormula('SLOW()', { registry }), {
+      registry,
+    });
+    const codes = await harness.withFrozenClock(async () => {
+      expect(new Date().getTime()).toBe(harness.FROZEN_CLOCK);
+      const out = await runner.evaluateRuleOutputAsync(compiled, {
+        registry,
+        resolver: implementations,
+        variables: {},
+        limits: { maxFunctionWallTimeMs: 5 },
+      });
+      return out.errors.map((error) => error.code);
+    });
+    expect(codes).toStrictEqual([definitions.FormulaErrorCodes.WALL_TIME_LIMIT_EXCEEDED]);
   });
 });
 
@@ -375,53 +447,97 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     }
   });
 
-  it('keeps a typed direct call of types the built-in does not take, not one of any-typed values', () => {
-    let refused = 0;
+  it('keeps typed calls of types the built-in does not take; a call of any-typed values binds what takes it', () => {
+    // A host function whose parameters are of types the built-in does not take, at every arity up
+    // to one past the built-in's parameters (a callable where the built-in takes one).
+    const outcomes: Record<'host' | 'builtIn' | 'refused', string[]> = {
+      host: [],
+      builtIn: [],
+      refused: [],
+    };
     for (const name of added) {
       const def = builtIn(name);
-      const required = def.params.filter((param) => param.optional !== true);
-      const params = required.map((param) =>
-        definitions.stripNullability(param.type).kind === 'callable'
-          ? param
-          : { name: param.name, type: disjoint(param.type) },
-      );
-      const { registry } = coreFunctions.createCoreFormulaRuntime();
-      registry.registerVariable({
-        name: 'value',
-        description: 'Input of any type.',
-        type: definitions.FormulaTypes.any(true),
-      });
-      registry.registerFunction(hostDefinition(def, params));
-      const typed = `${name}(${params.map(argumentFor).join('; ')})`;
-      const bound = parser.parseFormula(typed, { registry });
-      expect(bound.errors, typed).toStrictEqual([]);
-      expect(bound.root.signatureId, typed).toBe(`HOST_${name}/v1`);
-      // Values typed `any` (an untyped input) satisfy the built-in, which is registered first.
-      const untyped = `${name}(${params
-        .map((param) =>
-          definitions.stripNullability(param.type).kind === 'callable' ? '"ISTEXT"' : 'value',
-        )
-        .join('; ')})`;
-      const rebound = parser.parseFormula(untyped, { registry });
-      const literalOnly = required.some(
-        (param) =>
-          param.literalOnly === true &&
-          definitions.stripNullability(param.type).kind !== 'callable',
-      );
-      if (literalOnly) {
-        // The built-in takes a literal there, which a value is not: the call no longer compiles.
-        expect(
-          rebound.errors.map((error) => error.code),
-          untyped,
-        ).toStrictEqual(['EXPECTED_STRING_LITERAL_REFERENCE']);
-        refused++;
-      } else {
-        expect(rebound.errors, untyped).toStrictEqual([]);
-        expect(rebound.root.signatureId, untyped).toBe(def.signatureId);
+      const required = def.params.filter((param) => param.optional !== true).length;
+      for (let arity = 1; arity <= def.params.length + 1; arity++) {
+        const params = Array.from({ length: arity }, (_, index) => {
+          const own = def.params[index];
+          return own !== undefined && definitions.stripNullability(own.type).kind === 'callable'
+            ? own
+            : {
+                name: `p${index}`,
+                type: disjoint(own?.type ?? definitions.FormulaTypes.any(true)),
+              };
+        });
+        const { registry } = coreFunctions.createCoreFormulaRuntime();
+        registry.registerVariable({
+          name: 'value',
+          description: 'Input of any type.',
+          type: definitions.FormulaTypes.any(true),
+        });
+        registry.registerFunction(hostDefinition(def, params));
+        const typed = `${name}(${params.map(argumentFor).join('; ')})`;
+        const bound = parser.parseFormula(typed, { registry });
+        expect(bound.errors, typed).toStrictEqual([]);
+        expect(bound.root.signatureId, typed).toBe(`HOST_${name}/v1`);
+        // Values typed `any` (an untyped input) satisfy the built-in where it takes that many
+        // arguments, and it is registered first.
+        const untyped = `${name}(${params
+          .map((param) =>
+            definitions.stripNullability(param.type).kind === 'callable' ? '"AND"' : 'value',
+          )
+          .join('; ')})`;
+        const rebound = parser.parseFormula(untyped, { registry });
+        const label = `${name}/${arity}`;
+        const takes = arity >= required && arity <= def.params.length;
+        // A literal-only mode of the built-in among the arguments: a value is no literal there.
+        const mode = def.params
+          .slice(0, arity)
+          .some(
+            (param) =>
+              param.literalOnly === true &&
+              definitions.stripNullability(param.type).kind !== 'callable',
+          );
+        if (!takes) {
+          expect(rebound.errors, untyped).toStrictEqual([]);
+          expect(rebound.root.signatureId, untyped).toBe(`HOST_${name}/v1`);
+          outcomes.host.push(label);
+        } else if (mode) {
+          expect(
+            rebound.errors.map((error) => error.code),
+            untyped,
+          ).toStrictEqual(['EXPECTED_STRING_LITERAL_REFERENCE']);
+          outcomes.refused.push(label);
+        } else {
+          expect(rebound.errors, untyped).toStrictEqual([]);
+          expect(rebound.root.signatureId, untyped).toBe(def.signatureId);
+          outcomes.builtIn.push(label);
+        }
       }
     }
-    // PLAIN_TEXT and MARKDOWN_BLOCKS require their mode.
-    expect(refused).toBe(2);
+    // What the PR states: PLAIN_TEXT and MARKDOWN_BLOCKS refuse at the built-in's required arity,
+    // nine more names one argument past it, six of those also two past.
+    expect(outcomes.refused.sort()).toStrictEqual(
+      [
+        'PLAIN_TEXT/2',
+        'MARKDOWN_BLOCKS/2',
+        'WORDS/2',
+        'WORD_COUNT/2',
+        'SENTENCES/2',
+        'LINES/2',
+        'LINE_COUNT/2',
+        'LEADING_WORDS/3',
+        'FIRST_CONTAINED/3',
+        'CONTAINS_ANY/3',
+        'MISSING_FROM/3',
+        'WORDS/3',
+        'WORD_COUNT/3',
+        'SENTENCES/3',
+        'LEADING_WORDS/4',
+        'FIRST_CONTAINED/4',
+        'CONTAINS_ANY/4',
+      ].sort(),
+    );
+    expect([outcomes.host.length, outcomes.builtIn.length]).toStrictEqual([26, 16]);
   });
 
   it('keeps its own direct calls, and through EACH the name reaches the built-in', async () => {

@@ -2,7 +2,7 @@
   "provenance": {
     "generator": "scripts/compat/generate-baseline.js",
     "commit": "699d57efa2c51e8f32747b1aa081c00538c0fa05",
-    "corpusSha256": "392413fc401efb438dc6fade7560d83c357f166264b08102ab438db72c8c4bdf",
+    "corpusSha256": "88e122248232104c783fabc6389c8aa368a691da9f927d7d425df88f20f4a906",
     "node": "v22.23.3"
   },
   "shapes": [
@@ -8576,6 +8576,85 @@
               "MAP_ALL-0/LIST-0/NUMBER-1": [2],
               "MAP_ALL-0/TEXT-0": [">"]
             }
+          }
+        }
+      }
+    },
+    {
+      "source": "EACH(value; \"EACH\"; \"WORD_COUNT\"; \"whitespce\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [null, null, null],
+            "warnings": [],
+            "errors": [],
+            "nodes": {
+              "EACH-0": [[null, null, null]],
+              "EACH-0/TEXT-0": ["EACH"],
+              "EACH-0/TEXT-1": ["WORD_COUNT"],
+              "EACH-0/TEXT-2": ["whitespce"],
+              "EACH-0/VAR_VALUE-0": [[3, 1, 2]]
+            }
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": [],
+            "nodes": {
+              "EACH-0": [null],
+              "EACH-0/TEXT-0": ["EACH"],
+              "EACH-0/TEXT-1": ["WORD_COUNT"],
+              "EACH-0/TEXT-2": ["whitespce"],
+              "EACH-0/VAR_VALUE-0": ["Hello, world. Bye!"]
+            }
+          },
+          {
+            "value": [null, null, null],
+            "warnings": [],
+            "errors": [],
+            "nodes": {
+              "EACH-0": [[null, null, null]],
+              "EACH-0/TEXT-0": ["EACH"],
+              "EACH-0/TEXT-1": ["WORD_COUNT"],
+              "EACH-0/TEXT-2": ["whitespce"],
+              "EACH-0/VAR_VALUE-0": [[3, 1, 2]]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(FALSE; EACH(LIST(LIST(\"a b\")); \"EACH\"; \"WORD_COUNT\"; \"whitespce\"); EMPTY())",
+      "outcome": {
+        "run": {
+          "value": null,
+          "warnings": [],
+          "errors": [],
+          "nodes": {
+            "IF-0": [null],
+            "IF-0/BOOLEAN-0": [false],
+            "IF-0/EACH-0": {
+              "skipped": true
+            },
+            "IF-0/EACH-0/LIST-0": {
+              "skipped": true
+            },
+            "IF-0/EACH-0/LIST-0/LIST-0": {
+              "skipped": true
+            },
+            "IF-0/EACH-0/LIST-0/LIST-0/TEXT-0": {
+              "skipped": true
+            },
+            "IF-0/EACH-0/TEXT-0": {
+              "skipped": true
+            },
+            "IF-0/EACH-0/TEXT-1": {
+              "skipped": true
+            },
+            "IF-0/EACH-0/TEXT-2": {
+              "skipped": true
+            },
+            "IF-0/EMPTY-0": [null]
           }
         }
       }
