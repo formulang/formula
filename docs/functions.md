@@ -1273,12 +1273,16 @@ await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
 
 The first occurrence of each distinct item, in order, with empty items
 dropped. Text, numbers and booleans are equal by value and type (`1` and `"1"`
-stay apart, text is compared case-sensitively); lists and objects are equal
-when their structure is.
+stay apart, text is compared case-sensitively); dates, times and datetimes are
+equal when their kind and `iso` text are. A list that holds a list or any
+other object returns `null` with a `TYPE` warning: an object's properties may
+include ones its type does not allowlist, which a formula must not be able to
+compare, so no answer is built from them.
 
 ```ts
 await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
 await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))'); // 2
+await evalOk('DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2)))'); // [{ iso: "2024-01-02", ... }]
 ```
 
 ### GROUP_COUNTS
@@ -1286,7 +1290,9 @@ await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))'); // 2
 `GROUP_COUNTS(list: list<any>) -> list<number>`
 
 For each item of `DISTINCT(list)`, in the same order, how many items of `list`
-equal it — so the two lists line up position by position.
+equal it — so the two lists line up position by position. Items compare as in
+`DISTINCT`, and a list that holds a list or any other object returns `null`
+with a `TYPE` warning.
 
 ```ts
 await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))'); // [2, 1]

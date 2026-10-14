@@ -1,4 +1,8 @@
-import { FormulaErrorCodes } from '@formulang/definitions';
+import {
+  FormulaErrorCodes,
+  FormulaTypes,
+  type MutableFormulaRegistry,
+} from '@formulang/definitions';
 import {
   collectAllErrors,
   evalFormula,
@@ -181,56 +185,141 @@ describe('List ops', () => {
       expect(await evalOk('GROUP_COUNTS(LIST())')).toStrictEqual([]);
     });
 
-    it('compares text, numbers and booleans by value and lists and objects by structure', async () => {
-      const value = [
-        1,
-        '1',
-        true,
-        1,
-        'true',
-        { a: 1, b: [2] },
-        { b: [2], a: 1 },
-        [1, 2],
-        [1, 2],
-        [2, 1],
-      ];
+    it('compares text, numbers and booleans by value, with no conversion between them', async () => {
+      const value = [1, '1', true, 1, 'true', false, 0, '', null, 'true'];
       expect(await evalOk('DISTINCT(value)', { value })).toStrictEqual([
         1,
         '1',
         true,
         'true',
-        { a: 1, b: [2] },
-        [1, 2],
-        [2, 1],
+        false,
+        0,
       ]);
-      expect(await evalOk('GROUP_COUNTS(value)', { value })).toStrictEqual([2, 1, 1, 1, 2, 2, 1]);
+      expect(await evalOk('GROUP_COUNTS(value)', { value })).toStrictEqual([2, 1, 1, 2, 1, 1]);
       // Text is compared exactly, case included.
       expect(await evalOk('DISTINCT(LIST("a"; "A"; "a"))')).toStrictEqual(['a', 'A']);
       expect(await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))')).toBe(2);
     });
 
-    it('keys deeply nested, shared and self-containing values without recursion', async () => {
-      const nested = (depth: number, leaf: unknown): unknown => {
-        let value = leaf;
-        for (let level = 0; level < depth; level += 1) value = [value];
-        return value;
-      };
-      // 20,000 levels: a recursive key exhausts the call stack long before.
+    it('compares dates, times and datetimes by kind and ISO text', async () => {
+      expect(
+        await evalOk('GROUP_COUNTS(LIST(DATE(2024; 1; 2); DATE(2024; 1; 3); DATE(2024; 1; 2)))'),
+      ).toStrictEqual([2, 1]);
+      expect(
+        await evalOk('COUNT(DISTINCT(LIST(TIME(9; 30; 0); TIME(9; 30; 0); TIME(9; 30; 1))))'),
+      ).toBe(2);
+      const day = (extra: Record<string, unknown>) => ({
+        __formula_object_kind: 'date',
+        iso: '2024-01-02',
+        year: 2024,
+        month: 1,
+        day: 2,
+        ...extra,
+      });
+      // A property outside the date type does not split a group; the ISO text alone is no date.
       expect(
         await evalOk('GROUP_COUNTS(value)', {
-          value: [nested(20_000, 1), nested(20_000, 1), nested(20_000, 2)],
+          value: [day({ note: 'a' }), day({ note: 'b' }), '2024-01-02'],
         }),
       ).toStrictEqual([2, 1]);
-      // One object shared 2^40 ways over 40 levels is keyed once, not once per path.
-      let shared: unknown = { leaf: 1 };
-      for (let level = 0; level < 40; level += 1) shared = { left: shared, right: shared };
-      expect(await evalOk('COUNT(DISTINCT(value))', { value: [shared, shared] })).toBe(1);
-      // A value that contains itself is keyed with a marker where it repeats.
-      const cyclic: Record<string, unknown> = { name: 'a' };
-      cyclic.self = cyclic;
-      expect(await evalOk('GROUP_COUNTS(value)', { value: [cyclic, cyclic, 'a'] })).toStrictEqual([
-        2, 1,
-      ]);
+    });
+
+    it('answers null with TYPE for a list holding a list or an object', async () => {
+      for (const value of [
+        ['a', { a: 1 }],
+        [
+          [1, 2],
+          [1, 2],
+        ],
+        [1, 'b', [3]],
+      ]) {
+        for (const fn of ['DISTINCT', 'GROUP_COUNTS']) {
+          expect(
+            await warningCodes(`${fn}(value)`, { value }),
+            `${fn} ${JSON.stringify(value)}`,
+          ).toStrictEqual({ value: null, codes: ['TYPE'] });
+        }
+      }
+      // An empty member is skipped as before, an empty list included.
+      expect(await evalOk('GROUP_COUNTS(value)', { value: ['a', [], 'a'] })).toStrictEqual([2]);
+    });
+
+    it('answers alike for objects that differ only in properties the type does not allowlist', async () => {
+      // `staff.*.salary` is refused at parse time, so no answer may depend on salaries.
+      const setup = (registry: MutableFormulaRegistry) =>
+        registry.registerVariable({
+          name: 'staff',
+          description: 'People whose type allowlists only the name.',
+          type: FormulaTypes.list(
+            FormulaTypes.object('person', { name: FormulaTypes.text(true) }),
+            true,
+          ),
+        });
+      const differing = [
+        { name: 'Ann', salary: 90000 },
+        { name: 'Ann', salary: 50000 },
+      ];
+      const equal = [
+        { name: 'Ann', salary: 90000 },
+        { name: 'Ann', salary: 90000 },
+      ];
+      const { parsed } = await evalFormula('staff.*.salary', { staff: differing }, { setup });
+      expect(parsed.errors.map((e) => e.code)).toContain(
+        FormulaErrorCodes.PROPERTY_NOT_ALLOWLISTED,
+      );
+      for (const source of ['GROUP_COUNTS(staff)', 'COUNT(DISTINCT(staff))', 'DISTINCT(staff)']) {
+        const answers = [];
+        for (const staff of [differing, equal]) {
+          const { output } = await evalOkWithOutput(source, { staff }, { setup });
+          answers.push({ value: output.value, codes: (output.warnings ?? []).map((w) => w.code) });
+        }
+        expect(answers[0], source).toStrictEqual(answers[1]);
+      }
+      const { output } = await evalOkWithOutput(
+        'GROUP_COUNTS(staff)',
+        { staff: differing },
+        { setup },
+      );
+      expect(output.value).toBe(null);
+      expect((output.warnings ?? []).map((w) => w.code)).toStrictEqual(['TYPE']);
+    });
+
+    it('answers shared and self-containing values at once, without walking them', async () => {
+      // One object shared 2^depth ways down a chain, its bottom pointing back to the top: keying
+      // contents walked every path (doubling per level). Two cyclic values of different shape:
+      // keying contents gave both one key.
+      const sharedChain = (depth: number, backEdge: boolean) => {
+        const top: Record<string, unknown> = { level: 0 };
+        let current = top;
+        for (let level = 1; level <= depth; level += 1) {
+          const next: Record<string, unknown> = { level };
+          current.left = next;
+          current.right = next;
+          current = next;
+        }
+        if (backEdge) current.back = top;
+        return top;
+      };
+      const p: Record<string, unknown> = { x: {} };
+      (p.x as Record<string, unknown>).y = p;
+      const n: Record<string, unknown> = {};
+      n.y = n;
+      const q = { x: n };
+      const values = [
+        [sharedChain(14, true)],
+        [sharedChain(16, true)],
+        [sharedChain(18, true)],
+        [sharedChain(18, false), sharedChain(18, false)],
+        [p, q],
+      ];
+      for (const value of values) {
+        for (const fn of ['DISTINCT', 'GROUP_COUNTS']) {
+          expect(await warningCodes(`${fn}(value)`, { value })).toStrictEqual({
+            value: null,
+            codes: ['TYPE'],
+          });
+        }
+      }
     });
 
     it('answers group balance questions', async () => {

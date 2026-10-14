@@ -265,120 +265,54 @@ function notAList(fn: string, raw: unknown): FormulaNodeOutput {
   return isEmptyValue(raw) ? makeOkNull(fn) : typeWarning(fn, `${fn} expects a list`);
 }
 
+/** A list holding a list or an object answers null with `TYPE`: only scalars are compared. */
+function notScalars(fn: string): FormulaNodeOutput {
+  return typeWarning(
+    fn,
+    `${fn} compares text, numbers, booleans, dates and times, not lists or objects`,
+  );
+}
+
 function listCost(list: unknown): number {
   return 0.00002 + 0.00002 * assumedListLength(list);
 }
 
-/** The key of a value that holds no other values; `null` for a list or an object. */
-function scalarKey(value: unknown): string | null {
-  if (value === null || value === undefined) return 'null';
-  if (typeof value === 'string') return `t${JSON.stringify(value)}`;
-  if (typeof value === 'number') return `n${value}`;
-  if (typeof value === 'boolean') return value ? 'true' : 'false';
-  if (typeof value !== 'object') return `${typeof value}:${String(value)}`;
-  return null;
-}
-
-/** Where a value repeats inside itself: it has no finite structure, so the repetition gets one marker. */
-const CYCLE_KEY = 'cycle';
-
-/** A list or object being keyed: its members, the next one to key, and the keys so far. */
-type KeyFrame = {
-  value: object;
-  members: ReadonlyArray<readonly [string | null, unknown]>;
-  next: number;
-  keys: string[];
-  cyclic: boolean;
-};
+/** The kinds of the library's date and time values, which carry their `iso` text. */
+const TEMPORAL_KINDS: ReadonlySet<unknown> = new Set(['date', 'time', 'datetime']);
 
 /**
- * Keys that are equal exactly for equal values: by value for text, numbers and booleans (with no
- * conversion between them), by structure for lists and objects. A list or object is reduced to
- * the id of its structure, built from its members' keys without recursion, so nesting depth
- * costs no stack; an object met again is keyed once.
+ * The key of a text, number or boolean, equal exactly for equal values (no conversion between
+ * them), and of a date, time or datetime value, equal when its kind and `iso` text are; `null` for
+ * anything else. A list or another object gets no key: one built from its contents would read
+ * properties the formula may not read, because an object type allowlists only some.
  */
-class StructuralKeys {
-  private readonly structureIds = new Map<string, number>();
-  private readonly objectKeys = new Map<object, string>();
-
-  keyOf(value: unknown): string {
-    const scalar = scalarKey(value);
-    if (scalar !== null) return scalar;
-    const onPath = new Set<object>();
-    const stack: KeyFrame[] = [];
-    const enter = (object: object): void => {
-      onPath.add(object);
-      stack.push({ value: object, members: membersOf(object), next: 0, keys: [], cyclic: false });
-    };
-    enter(value as object);
-    for (;;) {
-      const frame = stack[stack.length - 1];
-      if (frame.next < frame.members.length) {
-        const [name, member] = frame.members[frame.next];
-        frame.next += 1;
-        const known = this.knownKey(member, onPath);
-        if (known === null) {
-          enter(member as object);
-          continue;
-        }
-        if (known === CYCLE_KEY) frame.cyclic = true;
-        frame.keys.push(name === null ? known : `${JSON.stringify(name)}:${known}`);
-        continue;
-      }
-      stack.pop();
-      onPath.delete(frame.value);
-      const key = this.structureKey(frame);
-      const parent = stack[stack.length - 1];
-      if (parent === undefined) return key;
-      if (frame.cyclic) parent.cyclic = true;
-      const name = parent.members[parent.next - 1][0];
-      parent.keys.push(name === null ? key : `${JSON.stringify(name)}:${key}`);
-    }
-  }
-
-  /** The key of a member without walking it, or `null` when it is a list or object to walk. */
-  private knownKey(value: unknown, onPath: ReadonlySet<object>): string | null {
-    const scalar = scalarKey(value);
-    if (scalar !== null) return scalar;
-    const object = value as object;
-    if (onPath.has(object)) return CYCLE_KEY;
-    return this.objectKeys.get(object) ?? null;
-  }
-
-  private structureKey(frame: KeyFrame): string {
-    const signature = Array.isArray(frame.value)
-      ? `[${frame.keys.join(',')}]`
-      : `{${frame.keys.join(',')}}`;
-    let id = this.structureIds.get(signature);
-    if (id === undefined) {
-      id = this.structureIds.size;
-      this.structureIds.set(signature, id);
-    }
-    const key = `#${id}`;
-    // A key built around a cycle marker depends on where the walk entered the cycle.
-    if (!frame.cyclic) this.objectKeys.set(frame.value, key);
-    return key;
-  }
+function scalarKey(value: unknown): string | null {
+  if (typeof value === 'string') return `text:${JSON.stringify(value)}`;
+  if (typeof value === 'number') return `number:${value}`;
+  if (typeof value === 'boolean') return `boolean:${value}`;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const own = (property: string): unknown =>
+    Object.prototype.hasOwnProperty.call(value, property)
+      ? (value as Record<string, unknown>)[property]
+      : undefined;
+  const kind = own('__formula_object_kind');
+  const iso = own('iso');
+  if (!TEMPORAL_KINDS.has(kind) || typeof iso !== 'string') return null;
+  return `${String(kind)}:${JSON.stringify(iso)}`;
 }
 
-/** The members of a list (unnamed) or of an object (named, in key order). */
-function membersOf(value: object): ReadonlyArray<readonly [string | null, unknown]> {
-  if (Array.isArray(value)) return value.map((item): [null, unknown] => [null, item]);
-  const record = value as Record<string, unknown>;
-  return Object.keys(record)
-    .sort()
-    .map((key): [string, unknown] => [key, record[key]]);
-}
-
-/** The distinct non-empty members of a list, in first-occurrence order, and how often each occurs. */
-function groupMembers(list: readonly unknown[]): { members: unknown[]; counts: number[] } {
-  const keys = new StructuralKeys();
+/**
+ * The distinct non-empty members of a list, in first-occurrence order, and how often each occurs;
+ * `null` when a member is a list or an object.
+ */
+function groupMembers(list: readonly unknown[]): { members: unknown[]; counts: number[] } | null {
   const positions = new Map<string, number>();
   const members: unknown[] = [];
   const counts: number[] = [];
   for (const item of list) {
     if (isEmptyValue(item)) continue;
-    const key = keys.keyOf(item);
+    const key = scalarKey(item);
+    if (key === null) return null;
     const position = positions.get(key);
     if (position === undefined) {
       positions.set(key, members.length);
@@ -450,7 +384,9 @@ export class DistinctImplementation extends AbstractEagerBatchImplementation {
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
     const list = readList(args[0], ctx);
     if (list === null) return notAList('DISTINCT', args[0]);
-    return makeOkList('DISTINCT', groupMembers(list).members);
+    const groups = groupMembers(list);
+    if (groups === null) return notScalars('DISTINCT');
+    return makeOkList('DISTINCT', groups.members);
   }
 }
 
@@ -466,6 +402,8 @@ export class GroupCountsImplementation extends AbstractEagerBatchImplementation 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
     const list = readList(args[0], ctx);
     if (list === null) return notAList('GROUP_COUNTS', args[0]);
-    return makeOkList('GROUP_COUNTS', groupMembers(list).counts);
+    const groups = groupMembers(list);
+    if (groups === null) return notScalars('GROUP_COUNTS');
+    return makeOkList('GROUP_COUNTS', groups.counts);
   }
 }
