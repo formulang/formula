@@ -156,9 +156,13 @@ describe('compatibility with 1.0.0', () => {
     const differences = differencesFrom1_0_0(retired, (index, shape) => !checkedNow(index, shape));
     expect(differences.slice(0, 20)).toStrictEqual([]);
     expect(differences.length).toBe(0);
-    // The exception, stated: three formulas of the corpus call the host's FILTER_BY naming a
-    // callable that takes one argument, to which FILTER_BY's invocation passes two (the key and
-    // the fourth argument); each ran on 1.0.0 and now fails to compile.
+    // The exception, stated: of the 13 formulas that write FILTER_BY, three call the host's
+    // FILTER_BY naming a callable that takes one argument, to which FILTER_BY's invocation passes
+    // two (the key and the fourth argument); each ran on 1.0.0 and now fails to compile.
+    const exempted = keyedByName.flatMap((name) =>
+      formulas.filter((_, index) => checkedNow(index, `${harness.HOST_FUNCTION_SHAPE}${name}`)),
+    );
+    expect(exempted.length).toBe(13);
     const checked = differencesFrom1_0_0(retired, checkedNow);
     expect(checked.length).toBe(3);
     for (const { source, want, got } of checked) {
