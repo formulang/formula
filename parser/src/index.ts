@@ -981,11 +981,14 @@ function bindTypesAndRequirements(
 
       const baseReturnType = instantiateGenericReturnType(def, argTypes);
 
-      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)): every argument a
-      // literal-only parameter takes, each argument of a variadic one included.
+      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)) at each parameter's own
+      // position. The extra arguments a variadic literal-only parameter takes are validated only
+      // when it lists its admitted values; without that list it keeps 1.0.0 behaviour, where only
+      // the first argument it takes was checked.
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
         const p = paramAt(def.params, i);
         if (!p || p.literalOnly !== true) continue;
+        if (i >= def.params.length && p.literalValues === undefined) continue;
         const arg = node.args[i];
         // Optional literal-only parameters may be omitted.
         if (!arg && p.optional === true) continue;
@@ -1397,17 +1400,23 @@ function callableCandidates(
 }
 
 /**
- * A literal-only parameter that another definition of the callable's name has at `position`, with
- * its literal rule only: the run time may hand that definition the argument, so the argument must
- * be a literal, but which literals that definition admits is for it to check when it runs.
+ * The parameter whose `literalValues` constrain the argument at `position`: the chosen overload's
+ * when it lists them, otherwise any overload's at that position, because `EACH`, `FILTER`,
+ * `FILTER_PROPERTY` and `REDUCE` may invoke a different overload than the parser chose. A
+ * literal-only parameter that lists no admitted values is not returned: an argument reaching it
+ * keeps 1.0.0 behaviour, so a property path or a callable reference passed through a higher-order
+ * call is not a new parse error.
  */
-function literalOnlyElsewhere(
+function enumeratedTarget(
+  chosen: FunctionDefinition,
   candidates: readonly FunctionDefinition[],
   position: number,
 ): FunctionParamDefinition | undefined {
+  const chosenParam = paramAt(chosen.params, position);
+  if (chosenParam?.literalValues !== undefined) return chosenParam;
   for (const candidate of candidates) {
     const param = paramAt(candidate.params, position);
-    if (param?.literalOnly === true) return { ...param, literalValues: undefined };
+    if (param?.literalValues !== undefined) return param;
   }
   return undefined;
 }
@@ -1420,15 +1429,15 @@ function literalOnlyElsewhere(
 type PassedArgument = { type: FormulaType; source: number | undefined };
 
 /**
- * Holds every argument a core higher-order function passes to the callable it names to that
- * callable's literal-only rules. An argument passed on must be a string literal, and one of the
- * parameter's `literalValues` when it lists them; a parameter the higher-order function fills at run
- * time must not be literal-only. The literal rule also holds where another definition of the same
- * name has a literal-only parameter, since the run time may invoke that one instead. When the
- * callable is itself a core higher-order function, the
- * argument that names ITS callable is followed into the invocation it makes in turn, so the rules
- * hold at any depth. A name passed on is resolved when the call runs, so a name the registry does
- * not know is no error here: the nested call invokes nothing and yields null.
+ * Holds the arguments a core higher-order function passes to the callable it names to the
+ * callable's enumerated-literal rule: an argument reaching a parameter that lists its admitted
+ * `literalValues` must be a string literal naming one of them. The rule also holds where another
+ * overload of the same name lists them, since the run time may invoke that overload. A literal-only
+ * parameter that lists no admitted values — a property path, a callable reference — keeps 1.0.0
+ * behaviour and is not constrained here. When the callable is itself a core higher-order function,
+ * the literal naming ITS callable is followed into the invocation it makes in turn, so the rule
+ * holds at any depth; a name passed on is resolved when the call runs, so one the registry does not
+ * know is no error here.
  */
 function checkPassedArguments(
   registry: FormulaRegistry,
@@ -1454,35 +1463,38 @@ function checkPassedArguments(
   },
 ): void {
   at.passed.forEach((passed, position) => {
-    const chosenTarget = paramAt(at.callable.params, position);
-    const target =
-      chosenTarget?.literalOnly === true
-        ? chosenTarget
-        : literalOnlyElsewhere(at.candidates, position);
-    if (target === undefined) return;
     const arg = passed.source === undefined ? undefined : at.call.args[passed.source];
-    const literal = readLiteralArgument(target, arg, {
-      subject: `Parameter '${target.name}' of ${at.callable.name}`,
-      span: arg?.span ?? at.named.span,
-      path: ['call', at.call.signatureId, 'arg', String(passed.source ?? at.named.index)],
-      suppliedBy: passed.source === undefined ? at.host.name : undefined,
-    });
-    if (!literal.ok) {
-      errors.push(literal.error);
-      return;
+    const enumerated = enumeratedTarget(at.callable, at.candidates, position);
+    if (enumerated !== undefined) {
+      const literal = readLiteralArgument(enumerated, arg, {
+        subject: `Parameter '${enumerated.name}' of ${at.callable.name}`,
+        span: arg?.span ?? at.named.span,
+        path: ['call', at.call.signatureId, 'arg', String(passed.source ?? at.named.index)],
+        suppliedBy: passed.source === undefined ? at.host.name : undefined,
+      });
+      if (!literal.ok) {
+        errors.push(literal.error);
+        return;
+      }
     }
 
-    // Only the chosen overload is followed into a nested invocation. Each nested callable is named
-    // by a different formula argument, so a call with n arguments nests at most n levels; the
-    // depth bound makes that a guarantee.
-    if (target !== chosenTarget) return;
-    const targetBase = stripNullability(target.type);
+    // Follow a nested higher-order call so an enumerated-literal rule deeper down still holds.
+    // Only the chosen overload is followed, and only through a literal that names its callable in
+    // the source: each nested callable is named by a different formula argument, so a call with n
+    // arguments nests at most n levels, which the depth bound makes a guarantee. A non-literal or
+    // host-filled argument is left alone, as in 1.0.0.
+    const chosenTarget = paramAt(at.callable.params, position);
+    if (chosenTarget === undefined) return;
+    const targetBase = stripNullability(chosenTarget.type);
     const invocation = CALLABLE_INVOCATIONS.get(at.callable.signatureId);
     if (targetBase.kind !== 'callable' || invocation === undefined) return;
     if (passed.source === undefined || at.depth >= at.call.args.length) return;
+    if (arg === undefined || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
+      return;
+    }
     const invoked = invocation(at.passed.map((p) => p.type));
     const invokedTypes = invoked.map((invokedArg) => invokedArg.type);
-    const candidates = callableCandidates(registry, targetBase.reference, literal.value);
+    const candidates = callableCandidates(registry, targetBase.reference, arg.predictableValue);
     // The overload the types select; a lone definition also when they select none, so its
     // literal rules hold even where the arity is off.
     const callable: FunctionDefinition | null =
@@ -1498,7 +1510,7 @@ function checkPassedArguments(
         source:
           invokedArg.forwards === undefined ? undefined : at.passed[invokedArg.forwards]?.source,
       })),
-      named: { index: passed.source, span: literal.span },
+      named: { index: passed.source, span: arg.span },
       depth: at.depth + 1,
     });
   });

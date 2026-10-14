@@ -527,28 +527,22 @@ parsing:
 - Its return type must fit: `FILTER(LIST("a";"bb"); "LEN")` fails with
   `ARGUMENT_TYPE_MISMATCH` because a filter check must return a boolean,
   and `LEN` returns a number.
-- Its literal-only parameters keep their rules, also when the referenced
-  function is itself a higher-order function that passes arguments on in
-  turn. An argument the host function passes on (the extra arguments of
-  `EACH`, the `x` of the filters) must be a string literal, and one of the
-  admitted values when the parameter lists them; a literal-only parameter the
-  host function fills at run time with an item, a key or an accumulator can
-  never hold a literal. A mode, a property path or a function name therefore
-  never becomes a value chosen at run time:
+- An argument the host function passes to a parameter that lists its admitted
+  values (see [Enumerated literals](#enumerated-literals)) must be one of them,
+  also when the referenced function is itself a higher-order function that
+  passes it on in turn. So a mode never becomes a value chosen at run time:
 
   ```
   EACH(LIST("a b"); "WORD_COUNT"; "whitespce")               -- LITERAL_VALUE_NOT_ALLOWED
   EACH(LIST(LIST("a b")); "EACH"; "WORD_COUNT"; "whitespce") -- LITERAL_VALUE_NOT_ALLOWED
   EACH(LIST("a b"); "WORD_COUNT"; value)                     -- EXPECTED_STRING_LITERAL_REFERENCE
-  EACH(LIST(value); "SORT_BY_PROPERTY"; value)               -- EXPECTED_STRING_LITERAL_REFERENCE
-  REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")            -- EXPECTED_STRING_LITERAL_REFERENCE
   ```
 
-  A function name passed on this way — `"NOPE"` in
-  `EACH(value; "FILTER"; "NOPE")` — is looked up when the call runs: a name
-  the registry does not know makes that call yield `null`. Only the name
-  written as the higher-order function's own argument is checked against the
-  registry while parsing.
+  A function name, operator token or property path passed on this way is not
+  constrained while parsing — only a string literal written directly as a
+  reference argument is. A name passed on is looked up when the call runs
+  (`"NOPE"` in `EACH(value; "FILTER"; "NOPE")` makes that call yield `null`),
+  and a property path passed on is read when the call runs.
 
 How each host function invokes the reference:
 

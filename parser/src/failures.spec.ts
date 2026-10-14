@@ -297,6 +297,37 @@ describe('parseFormula failures', () => {
       ]);
     });
 
+    it('checks only the first argument of a variadic literal-only parameter that lists no values', () => {
+      // 1.0.0 behaviour: a variadic literal-only parameter without literalValues is validated at
+      // its own position only; the extra arguments it takes are not re-checked.
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'JOIN_MODES/v1',
+        name: 'JOIN_MODES',
+        category: 'core',
+        description: 'Test function with a variadic literal-only parameter and no admitted values.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'parts',
+            type: FormulaTypes.text(false),
+            optional: true,
+            variadic: true,
+            literalOnly: true,
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      const codes = (source: string) =>
+        parseFormula(source, { registry }).errors.map((e) => e.code);
+      expect(codes('JOIN_MODES("x")')).toStrictEqual([]);
+      expect(codes('JOIN_MODES("x"; "a"; value; value)')).toStrictEqual([]);
+      expect(codes('JOIN_MODES("x"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+    });
+
     it("applies the callable's literal rules to every argument a higher-order call forwards", () => {
       const source = 'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")';
       const errors = errorsOf(source);
@@ -347,27 +378,25 @@ describe('parseFormula failures', () => {
       );
     });
 
-    it('holds property paths and callable references passed through a higher-order call to the literal rule', () => {
-      // A property path and a callable reference stay literals however they reach the parameter.
+    it('leaves a property path or callable reference passed through a higher-order call to 1.0.0 behaviour', () => {
+      // These parameters are literal-only but list no admitted values, so an argument reaching
+      // them through a higher-order call is not constrained at parse time, exactly as in 1.0.0.
       expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; "name")')).toStrictEqual([]);
-      expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; value)')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-      ]);
-      expect(codesOf('REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-      ]);
-      expect(codesOf('EACH(value; "FILTER_PROPERTY"; value; ">"; 1)')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-      ]);
+      expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; value)')).toStrictEqual([]);
+      expect(codesOf('REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")')).toStrictEqual([]);
+      expect(codesOf('EACH(value; "FILTER_PROPERTY"; value; ">"; 1)')).toStrictEqual([]);
       expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; ">"; 0)')).toStrictEqual([]);
-      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; value; 0)')).toStrictEqual([
+      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; value; 0)')).toStrictEqual([]);
+      // A property path written directly in the call is still required to be a literal, as in 1.0.0.
+      expect(codesOf('SORT_BY_PROPERTY(value; "name")')).toStrictEqual([]);
+      expect(codesOf('SORT_BY_PROPERTY(value; value)')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
       ]);
     });
 
-    it('holds an argument passed on to the literal rule of every overload the name has', () => {
+    it('holds an argument to the admitted values of every overload the name has', () => {
       // EACH invokes the first PICK that has an implementation, whichever overload the parser
-      // chose, so PICK(text; mode)'s literal-only mode binds the argument PICK(list; key) takes.
+      // chose, so PICK(text; mode)'s enumerated mode binds the argument PICK(list; key) takes too.
       const registry = makeTagRegistry();
       registry.registerFunction({
         signatureId: 'PICK/v1',
@@ -390,7 +419,7 @@ describe('parseFormula failures', () => {
         signatureId: 'PICK_LIST/v1',
         name: 'PICK',
         category: 'core',
-        description: 'Test overload without a literal-only parameter.',
+        description: 'Test overload whose second parameter lists no admitted values.',
         params: [
           { name: 'list', type: FormulaTypes.list(FormulaTypes.text(true), true) },
           { name: 'key', type: FormulaTypes.text(true) },
@@ -400,19 +429,22 @@ describe('parseFormula failures', () => {
       });
       const codes = (source: string) =>
         parseFormula(source, { registry }).errors.map((e) => e.code);
-      // A list item selects PICK(list; key): any literal, but a literal.
-      expect(codes('EACH(LIST(LIST("x")); "PICK"; "zzz")')).toStrictEqual([]);
+      // Whichever item type selects which overload, a non-admitted literal at the mode position is
+      // refused and an admitted one compiles.
+      expect(codes('EACH(LIST("x"); "PICK"; "a")')).toStrictEqual([]);
+      expect(codes('EACH(LIST(LIST("x")); "PICK"; "a")')).toStrictEqual([]);
+      expect(codes('EACH(LIST("x"); "PICK"; "zzz")')).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
+      expect(codes('EACH(LIST(LIST("x")); "PICK"; "zzz")')).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
       expect(codes('EACH(LIST(LIST("x")); "PICK"; value)')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
       ]);
       expect(codes('EACH(LIST(LIST(LIST("x"))); "EACH"; "PICK"; value)')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
       ]);
-      // A text item selects PICK(text; mode), whose admitted values hold.
-      expect(codes('EACH(LIST("x"); "PICK"; "zzz")')).toStrictEqual([
-        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-      ]);
-      expect(codes('EACH(LIST("x"); "PICK"; "a")')).toStrictEqual([]);
     });
 
     it('resolves a function name passed on when the call runs, so an unknown one compiles', () => {
@@ -465,22 +497,21 @@ describe('parseFormula failures', () => {
           FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
         ]);
       }
-      for (const notLiteralThere of [
-        'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; value)',
+      // A non-literal reaching an enumerated parameter, however deep, is refused.
+      expect(codesOf('EACH(value; "EACH"; "EACH"; "WORD_COUNT"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+      // A non-literal reaching a value-less literal-only parameter, or naming a nested callable,
+      // keeps 1.0.0 behaviour and compiles.
+      for (const compiles of [
         'EACH(value; "EACH"; value; "whitespace")',
         'EACH(value; "EACH"; "SORT_BY_PROPERTY"; value)',
-      ]) {
-        expect(codesOf(notLiteralThere), notLiteralThere).toStrictEqual([
-          FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-        ]);
-      }
-      for (const admitted of [
         'EACH(value; "EACH"; "WORD_COUNT"; "whitespace")',
         'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; "letters")',
         'EACH(value; "FILTER"; "IS_MODE"; "upper")',
         'EACH(value; "EACH"; "SORT_BY_PROPERTY"; "name")',
       ]) {
-        expect(codesOf(admitted), admitted).toStrictEqual([]);
+        expect(codesOf(compiles), compiles).toStrictEqual([]);
       }
     });
   });
