@@ -287,6 +287,59 @@ describe('parseFormula failures', () => {
       expect(absent[1]).toStrictEqual([FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE]);
       expect(absent.filter((errors) => errors.length === 0).length).toBe(4);
     });
+
+    it('reads admitted values handed on as written that are not a list of texts as none', () => {
+      // Registration refuses them; a registry that hands the parser a definition as written can
+      // still carry one, and the parser answers as for no list instead of throwing.
+      const listing = (literalValues: unknown) => ({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'A literal-only mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            literalValues: literalValues as string[],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure' as const,
+      });
+      const handing = (literalValues: unknown) => {
+        const registry = makeRegistry();
+        registry.registerFunction(listing(undefined));
+        const def = listing(literalValues);
+        const asWritten = Object.create(registry) as typeof registry;
+        asWritten.getFunction = (id) => (id === def.signatureId ? def : registry.getFunction(id));
+        asWritten.listFunctionsByName = (name) =>
+          name.toUpperCase() === 'MODE' ? [def] : registry.listFunctionsByName(name);
+        return asWritten;
+      };
+      const sources = [
+        'MODE("a"; "x")',
+        'MODE("a"; "w")',
+        'EACH(LIST("a"); "MODE"; "x")',
+        'EACH(LIST(LIST("a")); "EACH"; "MODE"; "x")',
+      ];
+      const codes = (literalValues: unknown) =>
+        sources.map((source) =>
+          parseFormula(source, { registry: handing(literalValues) }).errors.map((e) => e.code),
+        );
+      const none = codes(undefined);
+      const holed: unknown[] = [];
+      holed[1] = 'x';
+      for (const malformed of ['whitespace', { length: 2 }, [1, 2], [null], ['x', 2], holed]) {
+        expect(codes(malformed), JSON.stringify(malformed)).toStrictEqual(none);
+      }
+      // Not vacuous: a list of texts is read, at a direct call and through EACH.
+      expect(none.every((errors) => errors.length === 0)).toBe(true);
+      expect(codes(['y'])).toStrictEqual(
+        sources.map(() => [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]),
+      );
+    });
   });
 
   describe('literal-only arguments: variadic parameters and higher-order calls', () => {

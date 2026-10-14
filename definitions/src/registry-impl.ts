@@ -38,13 +38,19 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
       throw new Error(`Function already registered: ${def.signatureId}`);
     }
 
-    // An admitted-value list only takes effect on a literal-only parameter, and an empty
-    // list would refuse every call; both are definition mistakes, so they fail here.
+    // An admitted-value list only takes effect on a literal-only parameter, it is a list of texts
+    // (the literals a formula writes), and an empty list would refuse every call; anything else is
+    // a definition mistake, so it fails here.
     for (const param of def.params) {
       if (param.literalValues === undefined) continue;
       if (param.literalOnly !== true) {
         throw new Error(
           `Parameter '${param.name}' of ${def.signatureId} declares literalValues but is not literalOnly`,
+        );
+      }
+      if (!isListOfTexts(param.literalValues)) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues that are not a list of texts`,
         );
       }
       if (param.literalValues.length === 0) {
@@ -216,6 +222,15 @@ function withoutNullLiteralValues(def: FunctionDefinition): FunctionDefinition {
       return stored;
     }),
   };
+}
+
+/** Whether `values` is a list whose every entry is a text (a hole in a sparse list is none). */
+function isListOfTexts(values: unknown): boolean {
+  if (!Array.isArray(values)) return false;
+  for (let index = 0; index < values.length; index++) {
+    if (typeof values[index] !== 'string') return false;
+  }
+  return true;
 }
 
 function typeKey(t: FormulaType): string {

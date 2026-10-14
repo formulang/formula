@@ -206,6 +206,37 @@ describe('InMemoryFormulaRegistry', () => {
     ).toThrow(/empty literalValues list/);
   });
 
+  it('rejects admitted values that are not a list of texts', () => {
+    // As an untyped transport (JSON, YAML, a JavaScript host) can give them.
+    const holed: unknown[] = [];
+    holed[1] = 'second';
+    const malformed: unknown[] = ['whitespace', { length: 2 }, [1, 2], [null], ['first', 2], holed];
+    for (const literalValues of malformed) {
+      const registry = createRegistry();
+      expect(
+        () =>
+          registry.registerFunction({
+            signatureId: 'MODE/v1',
+            name: 'MODE',
+            category: 'core',
+            description: 'Admitted values that are not texts (expected to throw).',
+            params: [
+              {
+                name: 'mode',
+                type: FormulaTypes.text(false),
+                literalOnly: true,
+                literalValues: literalValues as string[],
+              },
+            ],
+            returnType: FormulaTypes.text(false),
+            purity: 'pure',
+          }),
+        JSON.stringify(literalValues),
+      ).toThrow(/declares literalValues that are not a list of texts/);
+      expect(registry.getFunction('MODE/v1')).toBeUndefined();
+    }
+  });
+
   it('reads a null admitted-value list as none, and stores the definition without it', () => {
     const registry = createRegistry();
     const params = [

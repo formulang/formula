@@ -1322,11 +1322,19 @@ function bindTypesAndRequirements(
 }
 
 /**
- * The values a literal-only parameter admits; undefined where it lists none, `null` included (a
- * registry that is not an `InMemoryFormulaRegistry` may hand the parser `null` as written).
+ * The values a literal-only parameter admits: its `literalValues`, a list of texts; undefined where
+ * it lists none. Registration refuses any other value, but a registry that is not an
+ * `InMemoryFormulaRegistry` may hand the parser a definition as written: `null` there lists nothing,
+ * as on the other optional fields, and so does a value that is not a list of texts, which the
+ * parser reads rather than throws on (the function refuses, when it runs, a mode it does not list).
  */
 function admittedValues(param: FunctionParamDefinition): readonly string[] | undefined {
-  return param.literalValues ?? undefined;
+  const values: unknown = param.literalValues;
+  if (!Array.isArray(values)) return undefined;
+  for (let index = 0; index < values.length; index++) {
+    if (typeof values[index] !== 'string') return undefined;
+  }
+  return values as string[];
 }
 
 /** The parameter that takes argument `index`; a variadic last parameter takes every extra one. */
