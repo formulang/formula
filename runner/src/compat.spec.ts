@@ -651,11 +651,11 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
           own.parsed.errors.map((error) => error.code),
           direct,
         ).toStrictEqual(['NO_MATCHING_OVERLOAD', 'NO_MATCHING_OVERLOAD']);
-        continue;
+      } else {
+        expect(own.parsed.errors, direct).toStrictEqual([]);
+        expect(own.value, direct).toBe(3);
+        expect(own.invoked.has(def.signatureId), direct).toBe(false);
       }
-      expect(own.parsed.errors, direct).toStrictEqual([]);
-      expect(own.value, direct).toBe(3);
-      expect(own.invoked.has(def.signatureId), direct).toBe(false);
 
       const throughEach = `EACH(LIST(LIST(1; 2; 3)); "${name}"; "ISNUMBER"; 1; 2)`;
       const expected = THROUGH_EACH[name];
