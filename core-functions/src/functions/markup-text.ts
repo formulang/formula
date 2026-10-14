@@ -44,6 +44,12 @@ export const MARKDOWN_BLOCK_KINDS: readonly MarkdownBlockKind[] = [
   'code',
 ];
 
+/**
+ * The work of one scan in characters visited. Every loop and search of the scanners below adds
+ * the characters it visits, so a spec can bound a scan's work by the length of its input.
+ */
+type ScanWork = { steps: number };
+
 const WHITESPACE_RUN = /\s+/gu;
 
 function collapseWhitespace(value: string): string {
@@ -60,41 +66,13 @@ function plainLines(lines: Iterable<string>): string {
   return out.join('\n');
 }
 
-/**
- * `indexOf` for a scanner that only moves forward: a hit is reused while the scan has not passed
- * it and a miss is final, so all searches over one text take linear time together.
- */
-class ForwardSearch {
-  private hitFrom = -1;
-  private hit = -1;
-  private missFrom = Number.POSITIVE_INFINITY;
-
-  constructor(
-    private readonly text: string,
-    private readonly needle: string,
-  ) {}
-
-  next(from: number): number {
-    if (from >= this.missFrom) return -1;
-    if (from >= this.hitFrom && from <= this.hit) return this.hit;
-    const at = this.text.indexOf(this.needle, from);
-    if (at < 0) {
-      this.missFrom = from;
-      return -1;
-    }
-    this.hitFrom = from;
-    this.hit = at;
-    return at;
-  }
-}
-
 // HTML
 
-/** Elements dropped together with their content. */
-const RAW_CONTENT_CLOSING_TAGS: ReadonlyMap<string, RegExp> = new Map([
-  ['script', /<\/script(?![A-Za-z0-9:-])/gi],
-  ['style', /<\/style(?![A-Za-z0-9:-])/gi],
-  ['head', /<\/head(?![A-Za-z0-9:-])/gi],
+/** Elements dropped together with their content, each with the end tag that closes it. */
+const HIDDEN_CONTENT_END_TAGS: ReadonlyMap<string, RegExp> = new Map([
+  ['script', /<\/script(?=[\t\n\f\r />])/gi],
+  ['style', /<\/style(?=[\t\n\f\r />])/gi],
+  ['head', /<\/head(?=[\t\n\f\r />])/gi],
 ]);
 
 /** Elements whose opening and closing tags end a line. */
@@ -133,19 +111,36 @@ const LINE_ENDING_ELEMENTS: ReadonlySet<string> = new Set([
   'ul',
 ]);
 
-const TAG_NAME = /[A-Za-z][A-Za-z0-9:-]*/y;
+const ASCII_LETTER = /^[A-Za-z]$/;
+const ASCII_UPPER_CASE = /[A-Z]+/g;
 const CHARACTER_REFERENCE =
   /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g;
 const SOURCE_LINE_BREAK = /\r\n|\r|\n/g;
 const REPLACEMENT_CHARACTER = '\uFFFD';
 
-type HtmlTag = { name: string; closing: boolean; end: number };
-
-type HtmlSearches = {
-  gt: ForwardSearch;
-  doubleQuote: ForwardSearch;
-  singleQuote: ForwardSearch;
+type HtmlTag = {
+  /** The tag name, ASCII letters lower-cased. */
+  name: string;
+  closing: boolean;
+  /** The index after the tag's `>`; -1 when the markup ends inside the tag. */
+  end: number;
 };
+
+/** The states of the HTML tokenizer between a tag's name and its `>`. */
+type TagState =
+  | 'before-attribute-name'
+  | 'attribute-name'
+  | 'after-attribute-name'
+  | 'before-attribute-value'
+  | 'double-quoted-value'
+  | 'single-quoted-value'
+  | 'unquoted-value'
+  | 'after-quoted-value'
+  | 'self-closing';
+
+function isHtmlSpace(char: string): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\f' || char === '\r';
+}
 
 function fromNumericReference(code: number): string {
   const windows1252 = WINDOWS_1252_NUMERIC_REFERENCES.get(code);
@@ -176,60 +171,132 @@ function decodeCharacterReferences(text: string): string {
   );
 }
 
-function earliestBefore(limit: number, first: number, second: number): number {
-  const candidates = [first, second].filter((at) => at >= 0 && at < limit);
-  return candidates.length === 0 ? -1 : Math.min(...candidates);
-}
-
 /**
- * Reads the tag that starts at the `<` at `lt`: its lower-cased name and the index after its
- * closing `>`, skipping `>` inside quoted attribute values. Declarations and processing
- * instructions (`<!DOCTYPE html>`, `<?xml ...?>`) come back named `!`. `null` when no tag starts
- * at `lt`.
+ * The index after the `>` that ends a tag whose attributes start at `from`, read with the HTML
+ * tokenizer's attribute states: a quote opens a value only right after `=`, a quoted value may
+ * hold `>`, and a quote anywhere else is an ordinary character. -1 when the markup ends inside
+ * the tag.
  */
-function readTag(markup: string, lt: number, searches: HtmlSearches): HtmlTag | null {
-  const first = markup.charAt(lt + 1);
-  if (first === '!' || first === '?') {
-    const end = searches.gt.next(lt + 2);
-    return end < 0 ? null : { name: '!', closing: false, end: end + 1 };
+function endOfTag(markup: string, from: number, work: ScanWork): number {
+  let state: TagState = 'before-attribute-name';
+  for (let index = from; index < markup.length; index += 1) {
+    work.steps += 1;
+    const char = markup.charAt(index);
+    switch (state) {
+      case 'double-quoted-value':
+        if (char === '"') state = 'after-quoted-value';
+        break;
+      case 'single-quoted-value':
+        if (char === "'") state = 'after-quoted-value';
+        break;
+      case 'unquoted-value':
+        if (char === '>') return index + 1;
+        if (isHtmlSpace(char)) state = 'before-attribute-name';
+        break;
+      case 'before-attribute-value':
+        if (char === '>') return index + 1;
+        if (char === '"') state = 'double-quoted-value';
+        else if (char === "'") state = 'single-quoted-value';
+        else if (!isHtmlSpace(char)) state = 'unquoted-value';
+        break;
+      default: {
+        if (char === '>') return index + 1;
+        const inName: boolean = state === 'attribute-name' || state === 'after-attribute-name';
+        if (char === '/') {
+          state = 'self-closing';
+        } else if (char === '=' && inName) {
+          state = 'before-attribute-value';
+        } else if (isHtmlSpace(char)) {
+          state = inName ? 'after-attribute-name' : 'before-attribute-name';
+        } else {
+          state = 'attribute-name';
+        }
+      }
+    }
   }
-  const closing = first === '/';
-  TAG_NAME.lastIndex = closing ? lt + 2 : lt + 1;
-  const nameMatch = TAG_NAME.exec(markup);
-  if (nameMatch === null) return null;
-  const name = nameMatch[0].toLowerCase();
-  let position = TAG_NAME.lastIndex;
-  for (;;) {
-    const close = searches.gt.next(position);
-    if (close < 0) return null;
-    const quote = earliestBefore(
-      close,
-      searches.doubleQuote.next(position),
-      searches.singleQuote.next(position),
-    );
-    if (quote < 0) return { name, closing, end: close + 1 };
-    const quoteSearch = markup.charAt(quote) === '"' ? searches.doubleQuote : searches.singleQuote;
-    const quoteEnd = quoteSearch.next(quote + 1);
-    // An unterminated quoted value: the tag ends at the first `>`.
-    if (quoteEnd < 0) return { name, closing, end: close + 1 };
-    position = quoteEnd + 1;
+  return -1;
+}
+
+/** Reads the tag whose name starts at `nameStart`: the name runs to whitespace, `/` or `>`. */
+function readTag(markup: string, nameStart: number, closing: boolean, work: ScanWork): HtmlTag {
+  let nameEnd = nameStart;
+  while (nameEnd < markup.length) {
+    const char = markup.charAt(nameEnd);
+    if (char === '>' || char === '/' || isHtmlSpace(char)) break;
+    nameEnd += 1;
+  }
+  work.steps += nameEnd - nameStart;
+  const name = markup
+    .slice(nameStart, nameEnd)
+    .replace(ASCII_UPPER_CASE, (upper) => upper.toLowerCase());
+  return { name, closing, end: endOfTag(markup, nameEnd, work) };
+}
+
+/**
+ * The index after the comment whose text starts at `from` (after `<!--`): after the first `-->`
+ * or `--!>`, at once for `<!-->` and `<!--->`, and at the end of the markup when none follows.
+ */
+function endOfComment(markup: string, from: number, work: ScanWork): number {
+  if (markup.startsWith('>', from)) {
+    work.steps += 1;
+    return from + 1;
+  }
+  if (markup.startsWith('->', from)) {
+    work.steps += 2;
+    return from + 2;
+  }
+  for (let search = from; ;) {
+    const dashes = markup.indexOf('--', search);
+    if (dashes < 0) {
+      work.steps += markup.length - search;
+      return markup.length;
+    }
+    work.steps += dashes + 2 - search;
+    if (markup.startsWith('>', dashes + 2)) return dashes + 3;
+    if (markup.startsWith('!>', dashes + 2)) return dashes + 4;
+    search = dashes + 1;
   }
 }
 
 /**
- * The text of an HTML document: comments and the content of `script`, `style` and `head`
+ * The index after the `>` that ends a declaration (`<!DOCTYPE html>`), a processing instruction
+ * (`<?xml ...?>`) or another bogus comment; the end of the markup when no `>` follows.
+ */
+function endOfBogusComment(markup: string, from: number, work: ScanWork): number {
+  const close = markup.indexOf('>', from);
+  const end = close < 0 ? markup.length : close + 1;
+  work.steps += end - from;
+  return end;
+}
+
+/**
+ * The index after the end tag that closes the dropped element `name` whose content starts at
+ * `from`; the end of the markup when no end tag follows.
+ */
+function endOfHiddenContent(markup: string, name: string, from: number, work: ScanWork): number {
+  const endTag = HIDDEN_CONTENT_END_TAGS.get(name);
+  if (endTag === undefined) return from;
+  endTag.lastIndex = from;
+  const found = endTag.exec(markup);
+  if (found === null) {
+    work.steps += markup.length - from;
+    return markup.length;
+  }
+  const nameEnd = found.index + found[0].length;
+  work.steps += nameEnd - from;
+  const end = endOfTag(markup, nameEnd, work);
+  return end < 0 ? markup.length : end;
+}
+
+/**
+ * The text of an HTML document, read in one forward pass with the HTML tokenizer's rules for
+ * tags, comments and declarations: comments and the content of `script`, `style` and `head`
  * dropped, the line-ending elements ending a line, every other tag removed, character references
  * decoded, whitespace collapsed within each line (inside `pre`, each source line break ends a
- * line) and blank lines dropped.
+ * line) and blank lines dropped. A tag, comment or dropped element that the markup ends inside
+ * is dropped with the rest of the markup, as an HTML parser drops it.
  */
-function htmlToPlainText(markup: string): string {
-  const searches: HtmlSearches = {
-    gt: new ForwardSearch(markup, '>'),
-    doubleQuote: new ForwardSearch(markup, '"'),
-    singleQuote: new ForwardSearch(markup, "'"),
-  };
-  const lessThan = new ForwardSearch(markup, '<');
-  const commentEnd = new ForwardSearch(markup, '-->');
+function htmlToPlainText(markup: string, work: ScanWork): string {
   const out: string[] = [];
   let inPre = false;
   let index = 0;
@@ -243,31 +310,55 @@ function htmlToPlainText(markup: string): string {
   };
 
   while (index < markup.length) {
-    const lt = lessThan.next(index);
-    if (lt < 0) {
-      appendText(markup.slice(index));
-      break;
-    }
-    appendText(markup.slice(index, lt));
-    if (markup.startsWith('<!--', lt)) {
-      const end = commentEnd.next(lt + 4);
-      index = end < 0 ? markup.length : end + 3;
+    const lt = markup.indexOf('<', index);
+    const textEnd = lt < 0 ? markup.length : lt;
+    work.steps += textEnd - index;
+    appendText(markup.slice(index, textEnd));
+    if (lt < 0) break;
+    work.steps += 1;
+    const next = markup.charAt(lt + 1);
+    if (markup.startsWith('!--', lt + 1)) {
+      work.steps += 3;
+      index = endOfComment(markup, lt + 4, work);
       continue;
     }
-    const tag = readTag(markup, lt, searches);
-    if (tag === null) {
+    if (next === '!' || next === '?') {
+      work.steps += 1;
+      index = endOfBogusComment(markup, lt + 2, work);
+      continue;
+    }
+    let tag: HtmlTag;
+    if (next === '/') {
+      work.steps += 1;
+      const afterSlash = markup.charAt(lt + 2);
+      if (afterSlash === '>') {
+        // `</>` is dropped.
+        work.steps += 1;
+        index = lt + 3;
+        continue;
+      }
+      if (afterSlash === '') {
+        appendText('</');
+        index = lt + 2;
+        continue;
+      }
+      if (!ASCII_LETTER.test(afterSlash)) {
+        index = endOfBogusComment(markup, lt + 2, work);
+        continue;
+      }
+      tag = readTag(markup, lt + 2, true, work);
+    } else if (ASCII_LETTER.test(next)) {
+      tag = readTag(markup, lt + 1, false, work);
+    } else {
+      // A `<` that starts no tag is text.
       appendText('<');
       index = lt + 1;
       continue;
     }
+    if (tag.end < 0) break;
     index = tag.end;
-    const rawContentClose = tag.closing ? undefined : RAW_CONTENT_CLOSING_TAGS.get(tag.name);
-    if (rawContentClose !== undefined) {
-      rawContentClose.lastIndex = tag.end;
-      const closeTag = rawContentClose.exec(markup);
-      const closeEnd =
-        closeTag === null ? -1 : searches.gt.next(closeTag.index + closeTag[0].length);
-      index = closeEnd < 0 ? markup.length : closeEnd + 1;
+    if (!tag.closing && HIDDEN_CONTENT_END_TAGS.has(tag.name)) {
+      index = endOfHiddenContent(markup, tag.name, tag.end, work);
       continue;
     }
     if (tag.name === 'pre') inPre = !tag.closing;
@@ -293,14 +384,14 @@ type OpenFence = {
   lines: string[];
 };
 
+// A line holds no CR or LF; `[\s\S]*` takes the rest of it, U+2028 and U+2029 included.
 const MARKDOWN_LINE_BREAK = /\r\n|\r|\n/;
-const QUOTE_MARKER = /^ {0,3}> ?/;
-const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/;
-const CLOSING_HASHES = /(?:^|[ \t]+)#+$/;
-const FENCE_OPEN = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
+const QUOTE_MARKER = / {0,3}> ?/y;
+const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+([\s\S]*))?$/;
+const FENCE_OPEN = /^([ \t]*)(`{3,}|~{3,})([\s\S]*)/;
 const FENCE_CLOSE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/;
 const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
-const LIST_ITEM = /^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+(.*))?$/;
+const LIST_ITEM = /^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+([\s\S]*))?$/;
 const TABLE_DELIMITER_CELL = /^:?-+:?$/;
 
 const ASCII_PUNCTUATION = /^[!-\/:-@[-`{-~]$/;
@@ -319,17 +410,26 @@ type DelimiterRun = {
   canOpen: boolean;
   canClose: boolean;
   matched: boolean;
+  /** The run's position among the delimiter runs of its text. */
+  order: number;
 };
 
-function endOfRun(source: string, start: number): number {
+function endOfRun(source: string, start: number, work: ScanWork): number {
   const marker = source.charCodeAt(start);
   let end = start;
   while (source.charCodeAt(end) === marker) end += 1;
+  work.steps += end - start;
   return end;
 }
 
 /** The emphasis delimiter run `[start, end)`, classified by the CommonMark flanking rules. */
-function delimiterRun(source: string, start: number, end: number, marker: '*' | '_'): DelimiterRun {
+function delimiterRun(
+  source: string,
+  start: number,
+  end: number,
+  marker: '*' | '_',
+  order: number,
+): DelimiterRun {
   const before = characterBefore(source, start);
   const after = characterAt(source, end);
   const spaceBefore = before === null || UNICODE_WHITESPACE.test(before);
@@ -344,43 +444,69 @@ function delimiterRun(source: string, start: number, end: number, marker: '*' | 
     canOpen: marker === '*' ? leftFlanking : leftFlanking && (!rightFlanking || punctuationBefore),
     canClose: marker === '*' ? rightFlanking : rightFlanking && (!leftFlanking || punctuationAfter),
     matched: false,
+    order,
   };
 }
 
-/** Pairs each closing delimiter run with the nearest open run of the same marker. */
-function pairDelimiterRuns(runs: readonly DelimiterRun[]): void {
-  const openers: DelimiterRun[] = [];
+/**
+ * Pairs each closing delimiter run with the nearest open run of the same marker; the open runs
+ * of the other marker between the two can then no longer pair. One stack per marker, so each run
+ * is pushed and popped at most once.
+ */
+function pairDelimiterRuns(runs: readonly DelimiterRun[], work: ScanWork): void {
+  const open: Record<DelimiterRun['marker'], DelimiterRun[]> = { '*': [], _: [] };
   for (const run of runs) {
-    if (run.canClose) {
-      let index = openers.length - 1;
-      while (index >= 0 && openers[index].marker !== run.marker) index -= 1;
-      if (index >= 0) {
-        openers[index].matched = true;
-        run.matched = true;
-        openers.length = index;
-        continue;
-      }
+    work.steps += 1;
+    const own = open[run.marker];
+    const opener = run.canClose ? own.pop() : undefined;
+    if (opener === undefined) {
+      if (run.canOpen) own.push(run);
+      continue;
     }
-    if (run.canOpen) openers.push(run);
+    opener.matched = true;
+    run.matched = true;
+    const other = open[run.marker === '*' ? '_' : '*'];
+    while (other.length > 0 && other[other.length - 1].order > opener.order) {
+      other.pop();
+      work.steps += 1;
+    }
   }
 }
 
-/** The start of the next backtick run of exactly `length` at or after `from`; -1 when none. */
-function closingBacktickRun(
-  source: string,
-  from: number,
-  length: number,
-  misses: Map<number, number>,
-): number {
-  const missFrom = misses.get(length);
-  if (missFrom !== undefined && from >= missFrom) return -1;
-  for (let at = source.indexOf('`', from); at >= 0;) {
-    const end = endOfRun(source, at);
-    if (end - at === length) return at;
-    at = source.indexOf('`', end);
+/**
+ * The maximal backtick runs of a text by length, for finding the run that closes a code span:
+ * one pass builds it, and one forward cursor per length answers, as the inline scan only moves
+ * forward.
+ */
+class BacktickRuns {
+  private readonly starts = new Map<number, number[]>();
+  private readonly cursors = new Map<number, number>();
+
+  constructor(source: string, work: ScanWork) {
+    let at = source.indexOf('`');
+    work.steps += at < 0 ? source.length : at;
+    while (at >= 0) {
+      const end = endOfRun(source, at, work);
+      const starts = this.starts.get(end - at);
+      if (starts === undefined) this.starts.set(end - at, [at]);
+      else starts.push(at);
+      at = source.indexOf('`', end);
+      work.steps += (at < 0 ? source.length : at) - end;
+    }
   }
-  misses.set(length, from);
-  return -1;
+
+  /** The start of the first run of exactly `length` backticks at or after `from`; -1 when none. */
+  next(length: number, from: number, work: ScanWork): number {
+    const starts = this.starts.get(length);
+    if (starts === undefined) return -1;
+    let cursor = this.cursors.get(length) ?? 0;
+    while (cursor < starts.length && starts[cursor] < from) {
+      cursor += 1;
+      work.steps += 1;
+    }
+    this.cursors.set(length, cursor);
+    return cursor < starts.length ? starts[cursor] : -1;
+  }
 }
 
 /** Code span content: one surrounding space is stripped when both ends have one. */
@@ -393,13 +519,14 @@ function codeSpanContent(content: string): string {
  * Removes inline markdown: emphasis (`*`, `_`, `**`, `__`), code-span backticks, backslash
  * escapes, links and images (`[t](u)` to `t`, `![a](u)` to `a`) and autolinks (`<u>` to `u`).
  */
-function stripInlineMarkdown(source: string): string {
+function stripInlineMarkdown(source: string, work: ScanWork): string {
   const pieces: Array<string | DelimiterRun> = [];
   const runs: DelimiterRun[] = [];
-  const backtickMisses = new Map<number, number>();
+  let backtickRuns: BacktickRuns | null = null;
   let text = '';
   let index = 0;
   while (index < source.length) {
+    work.steps += 1;
     const char = source.charAt(index);
     const next = source.charAt(index + 1);
     if (char === '\\' && next.length > 0 && ASCII_PUNCTUATION.test(next)) {
@@ -408,13 +535,15 @@ function stripInlineMarkdown(source: string): string {
       continue;
     }
     if (char === '`') {
-      const runEnd = endOfRun(source, index);
+      const runEnd = endOfRun(source, index, work);
       const length = runEnd - index;
-      const close = closingBacktickRun(source, runEnd, length, backtickMisses);
+      if (backtickRuns === null) backtickRuns = new BacktickRuns(source, work);
+      const close = backtickRuns.next(length, runEnd, work);
       if (close < 0) {
         text += source.slice(index, runEnd);
         index = runEnd;
       } else {
+        work.steps += close + length - runEnd;
         text += codeSpanContent(source.slice(runEnd, close));
         index = close + length;
       }
@@ -424,8 +553,9 @@ function stripInlineMarkdown(source: string): string {
       INLINE_LINK.lastIndex = index;
       const link = INLINE_LINK.exec(source);
       if (link !== null) {
+        work.steps += link[0].length;
         index += link[0].length;
-        text += stripInlineMarkdown(link[1] ?? '');
+        text += stripInlineMarkdown(link[1] ?? '', work);
         continue;
       }
     }
@@ -433,16 +563,17 @@ function stripInlineMarkdown(source: string): string {
       AUTOLINK.lastIndex = index;
       const autolink = AUTOLINK.exec(source);
       if (autolink !== null) {
+        work.steps += autolink[0].length;
         index += autolink[0].length;
         text += autolink[1] ?? '';
         continue;
       }
     }
     if (char === '*' || char === '_') {
-      const runEnd = endOfRun(source, index);
+      const runEnd = endOfRun(source, index, work);
       if (text.length > 0) pieces.push(text);
       text = '';
-      const run = delimiterRun(source, index, runEnd, char);
+      const run = delimiterRun(source, index, runEnd, char, runs.length);
       pieces.push(run);
       runs.push(run);
       index = runEnd;
@@ -452,7 +583,7 @@ function stripInlineMarkdown(source: string): string {
     index += 1;
   }
   if (text.length > 0) pieces.push(text);
-  pairDelimiterRuns(runs);
+  pairDelimiterRuns(runs, work);
   return pieces
     .map((piece) =>
       typeof piece === 'string' ? piece : piece.matched ? '' : piece.marker.repeat(piece.length),
@@ -460,24 +591,40 @@ function stripInlineMarkdown(source: string): string {
     .join('');
 }
 
-function inlineText(source: string): string {
-  return collapseWhitespace(stripInlineMarkdown(source));
-}
-
 /** Strips up to `maxDepth` blockquote markers (`>`) from the start of a line. */
 function stripQuoteMarkers(
   line: string,
+  work: ScanWork,
   maxDepth = Number.POSITIVE_INFINITY,
 ): { depth: number; content: string } {
-  let content = line;
+  let start = 0;
   let depth = 0;
   while (depth < maxDepth) {
-    const marker = QUOTE_MARKER.exec(content);
+    QUOTE_MARKER.lastIndex = start;
+    const marker = QUOTE_MARKER.exec(line);
     if (marker === null) break;
-    content = content.slice(marker[0].length);
+    start += marker[0].length;
     depth += 1;
   }
-  return { depth, content };
+  work.steps += start + 1;
+  return { depth, content: line.slice(start) };
+}
+
+/**
+ * Heading content without its closing sequence: a final run of `#` that follows a space, a tab
+ * or nothing, together with the spaces and tabs before it.
+ */
+function withoutClosingHashes(content: string, work: ScanWork): string {
+  const trimmed = content.trimEnd();
+  let hashes = trimmed.length;
+  while (hashes > 0 && trimmed.charAt(hashes - 1) === '#') hashes -= 1;
+  if (hashes === trimmed.length) return trimmed;
+  let end = hashes;
+  while (end > 0 && (trimmed.charAt(end - 1) === ' ' || trimmed.charAt(end - 1) === '\t')) {
+    end -= 1;
+  }
+  work.steps += trimmed.length - end;
+  return end === hashes && hashes > 0 ? trimmed : trimmed.slice(0, end);
 }
 
 function stripIndent(line: string, indent: number): string {
@@ -525,17 +672,23 @@ class MarkdownBlockReader {
   private listItem: string[] | null = null;
   private tableColumns = 0;
 
+  constructor(private readonly work: ScanWork) {}
+
   closeOpenBlocks(): void {
     if (this.paragraph.length > 0) {
       this.blocks.push({
         kind: 'paragraph',
         level: 0,
-        text: inlineText(joinLines(this.paragraph)),
+        text: this.inlineText(joinLines(this.paragraph)),
       });
       this.paragraph = [];
     }
     if (this.listItem !== null) {
-      this.blocks.push({ kind: 'list-item', level: 0, text: inlineText(joinLines(this.listItem)) });
+      this.blocks.push({
+        kind: 'list-item',
+        level: 0,
+        text: this.inlineText(joinLines(this.listItem)),
+      });
       this.listItem = null;
     }
     this.tableColumns = 0;
@@ -543,7 +696,7 @@ class MarkdownBlockReader {
 
   addHeading(level: number, content: string): void {
     this.closeOpenBlocks();
-    const text = inlineText(content.trimEnd().replace(CLOSING_HASHES, ''));
+    const text = this.inlineText(withoutClosingHashes(content, this.work));
     this.blocks.push({ kind: 'heading', level, text });
   }
 
@@ -562,9 +715,10 @@ class MarkdownBlockReader {
   }
 
   addTableRow(line: string): void {
+    this.work.steps += line.length;
     const cells = splitTableCells(line).slice(0, this.tableColumns);
     const text = cells
-      .map(inlineText)
+      .map((cell) => this.inlineText(cell))
       .filter((cell) => cell.length > 0)
       .join(' ');
     this.blocks.push({ kind: 'table-row', level: 0, text });
@@ -573,6 +727,7 @@ class MarkdownBlockReader {
   /** Opens a table when `line` is a header row and `next` its delimiter row. */
   startsTable(line: string, next: string): boolean {
     if (!line.includes('|') || !next.includes('|')) return false;
+    this.work.steps += line.length + next.length;
     const header = splitTableCells(line);
     const delimiter = splitTableCells(next);
     if (delimiter.length !== header.length) return false;
@@ -587,6 +742,10 @@ class MarkdownBlockReader {
     if (this.listItem !== null) this.listItem.push(line);
     else this.paragraph.push(line);
   }
+
+  private inlineText(source: string): string {
+    return collapseWhitespace(stripInlineMarkdown(source, this.work));
+  }
 }
 
 /**
@@ -594,14 +753,17 @@ class MarkdownBlockReader {
  * list items (nested items each count), GFM tables, paragraphs and fenced code. Blockquote
  * markers are transparent.
  */
-function parseMarkdownBlocks(source: string): MarkdownBlock[] {
+function parseMarkdownBlocks(source: string, work: ScanWork): MarkdownBlock[] {
   const lines = source.split(MARKDOWN_LINE_BREAK);
-  const reader = new MarkdownBlockReader();
+  work.steps += source.length;
+  const reader = new MarkdownBlockReader(work);
   let fence: OpenFence | null = null;
   for (let index = 0; index < lines.length; index += 1) {
     const raw = lines[index];
+    // The line patterns below each read the line once.
+    work.steps += raw.length;
     if (fence !== null) {
-      const content = stripQuoteMarkers(raw, fence.quoteDepth).content;
+      const content = stripQuoteMarkers(raw, work, fence.quoteDepth).content;
       const close = FENCE_CLOSE.exec(content);
       if (close !== null && close[1].startsWith(fence.marker) && close[1].length >= fence.length) {
         reader.addCode(fence.lines);
@@ -611,7 +773,7 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
       }
       continue;
     }
-    const { depth, content: line } = stripQuoteMarkers(raw);
+    const { depth, content: line } = stripQuoteMarkers(raw, work);
     if (line.trim().length === 0) {
       reader.closeOpenBlocks();
       continue;
@@ -646,7 +808,7 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
       reader.addTableRow(line);
       continue;
     }
-    const next = index + 1 < lines.length ? stripQuoteMarkers(lines[index + 1]).content : '';
+    const next = index + 1 < lines.length ? stripQuoteMarkers(lines[index + 1], work).content : '';
     if (reader.startsTable(line, next)) {
       index += 1;
       continue;
@@ -658,12 +820,26 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   return reader.blocks;
 }
 
-function markdownToPlainText(source: string): string {
+function markdownToPlainText(source: string, work: ScanWork): string {
   return plainLines(
-    parseMarkdownBlocks(source).flatMap((block) =>
+    parseMarkdownBlocks(source, work).flatMap((block) =>
       block.kind === 'code' ? block.text.split('\n') : [block.text],
     ),
   );
+}
+
+/** `PLAIN_TEXT`'s reading of HTML, with the characters its scan visited. */
+export function scanHtml(markup: string): { text: string; steps: number } {
+  const work: ScanWork = { steps: 0 };
+  const text = htmlToPlainText(markup, work);
+  return { text, steps: work.steps };
+}
+
+/** `PLAIN_TEXT`'s reading of markdown, with the characters its scan visited. */
+export function scanMarkdown(source: string): { text: string; steps: number } {
+  const work: ScanWork = { steps: 0 };
+  const text = markdownToPlainText(source, work);
+  return { text, steps: work.steps };
 }
 
 const HEADING_KIND_LEVELS: ReadonlyMap<MarkdownBlockKind, number> = new Map([
@@ -698,7 +874,7 @@ export class PlainTextImplementation extends AbstractEagerBatchImplementation {
     if (typeof markup !== 'string') return markup;
     const format = readRequiredMode('PLAIN_TEXT', 'format', args[1], MARKUP_FORMATS);
     if (typeof format !== 'string') return format;
-    const text = format === 'html' ? htmlToPlainText(markup) : markdownToPlainText(markup);
+    const text = format === 'html' ? scanHtml(markup).text : scanMarkdown(markup).text;
     return makeOkText('PLAIN_TEXT', text);
   }
 }
@@ -717,7 +893,7 @@ export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementati
     if (typeof text !== 'string') return text;
     const kind = readRequiredMode('MARKDOWN_BLOCKS', 'kind', args[1], MARKDOWN_BLOCK_KINDS);
     if (typeof kind !== 'string') return kind;
-    const blocks = selectBlocks(parseMarkdownBlocks(text), kind);
+    const blocks = selectBlocks(parseMarkdownBlocks(text, { steps: 0 }), kind);
     return makeOkList('MARKDOWN_BLOCKS', boundedListResult(blocks, ctx.limits));
   }
 }

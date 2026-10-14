@@ -1017,7 +1017,12 @@ each line and blank lines dropped. `format` is a required literal:
   U+27E8); a reference needs its closing `;`, and unknown names stay as
   written. Source line breaks are whitespace, except inside `pre`, where each
   one ends a line. The result is plain text, not sanitised HTML: `&lt;b&gt;`
-  comes back as `<b>`.
+  comes back as `<b>`. Tags, comments and declarations are read as the HTML
+  tokenizer reads them: a quote opens an attribute value only right after
+  `=`, so a `>` inside a quoted value does not end the tag, and a `<` that is
+  not followed by a letter, `/`, `!` or `?` is text. Markup that ends inside
+  a tag, a comment or a dropped element loses that unterminated part, as it
+  does in a browser: `PLAIN_TEXT("Hello <b"; "html")` is `"Hello"`.
 - `"markdown"` — ATX heading markers, `>` quote markers, list markers (`-`,
   `*`, `+`, `1.`, `1)`), table pipes and the delimiter row, code fences,
   emphasis (`*`, `_`, `**`, `__`), inline-code backticks and backslash escapes
@@ -1025,6 +1030,9 @@ each line and blank lines dropped. `format` is a required literal:
   `<url>` becomes `url`. A paragraph's lines join into one line and each line
   of a fenced code block stays a line. The document is read as
   [MARKDOWN_BLOCKS](#markdown_blocks) reads it.
+
+Both formats are read in one forward pass, in time linear in the length of
+`markup`.
 
 ```ts
 await evalOk('PLAIN_TEXT("<p>A&amp;B</p><p>C&nbsp;D</p><script>x</script>"; "html")'); // "A&B\nC D"
@@ -1052,7 +1060,7 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 The reading is a line-based subset of CommonMark with GFM tables: ATX
 headings only (no `===` or `---` underlines), fenced code only (no indented
 code blocks), list items recognised by their marker at any indentation, and
-`>` quote markers read through.
+`>` quote markers read through. The text is read in time linear in its length.
 
 ```ts
 // value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'

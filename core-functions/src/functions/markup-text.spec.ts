@@ -6,7 +6,7 @@ import {
   evalOk,
 } from '../test-helpers/eval-formula';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
-import { MARKDOWN_BLOCK_KINDS, MARKUP_FORMATS } from './markup-text';
+import { MARKDOWN_BLOCK_KINDS, MARKUP_FORMATS, scanHtml, scanMarkdown } from './markup-text';
 
 async function errorCodes(source: string, vars: Record<string, unknown> = {}) {
   const { parsed, compiled, res } = await evalFormula(source, vars);
@@ -47,6 +47,26 @@ describe('Markup text', () => {
         'Hello bold link',
       );
       expect(await html('a < b and b > c')).toBe('a < b and b > c');
+      expect(await html("<a title='a > b' href=x>link</a>")).toBe('link');
+    });
+
+    it('reads tags as the HTML tokenizer does: a quote opens a value only after =', async () => {
+      expect(await html('<a title=">" x">link</a>')).toBe('link');
+      expect(await html('<a " > b">text')).toBe('b">text');
+      expect(await html('<a/b>c<br/>d')).toBe('c\nd');
+      expect(await html('x </ y> z')).toBe('x z');
+      expect(await html('a</>b')).toBe('ab');
+      expect(await html('<!-->A<!--->B<!-- c --!>C')).toBe('ABC');
+    });
+
+    it('drops a tag, comment or dropped element that the markup ends inside', async () => {
+      expect(await evalOk('PLAIN_TEXT("Hello <b"; "html")')).toBe('Hello');
+      expect(await html('<p>A</p><p title="x>B')).toBe('A');
+      expect(await html('<p>A</p><script>if (a < b) {')).toBe('A');
+      expect(await html('<p>A</p><!DOCTYPE')).toBe('A');
+      // A `<` or `</` at the very end starts no tag.
+      expect(await html('a<')).toBe('a<');
+      expect(await html('a</')).toBe('a</');
     });
 
     it('decodes numeric and named character references', async () => {
@@ -196,13 +216,176 @@ describe('Markup text', () => {
     });
   });
 
-  it('scans pathological markup in linear time', async () => {
-    expect(await html(`${'<a "'.repeat(20_000)}>after`)).toBe('after');
-    expect(await html('<a'.repeat(50_000))).toBe('<a'.repeat(50_000));
-    expect(await html(`<p title="${'x'.repeat(100_000)}`)).toBe(`<p title="${'x'.repeat(100_000)}`);
-    expect(await markdown(`${'['.repeat(50_000)}]`)).toBe(`${'['.repeat(50_000)}]`);
-    expect(await markdown('`a'.repeat(30_000))).toBe('a'.repeat(30_000));
-    expect(await markdown('*a'.repeat(30_000))).toBe('a'.repeat(30_000));
+  describe('scan work', () => {
+    // A scan that reaches the end of its input visits every character at least once; a linear
+    // scan visits each at most STEPS_PER_CHARACTER times, plus a fixed allowance. Each input
+    // below is measured at two sizes; a scan that re-reads its input per tag, per delimiter run
+    // or per backtick run exceeds the bound by orders of magnitude at either size.
+    const STEPS_PER_CHARACTER = 16;
+    const FIXED_STEPS = 1_000;
+
+    type AdversarialInput = {
+      build: (size: number) => string;
+      text: (size: number) => string;
+      sizes: readonly [number, number];
+    };
+
+    const backtickRuns = (lengths: readonly number[]) =>
+      lengths.map((length) => `${'`'.repeat(length)} x `).join('');
+    const rising = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
+
+    const htmlInputs: Record<string, AdversarialInput> = {
+      'a quoted > after each tag name': {
+        build: (m) => '<a ">"'.repeat(m),
+        text: (m) => '"'.repeat(m),
+        sizes: [1_000, 4_000],
+      },
+      'unterminated double-quoted values': {
+        build: (m) => '<a title="x'.repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'unterminated single-quoted values': {
+        build: (m) => "<a title='x".repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'one unterminated quoted value': {
+        build: (m) => `<p title="${'x'.repeat(m)}`,
+        text: () => '',
+        sizes: [10_000, 40_000],
+      },
+      'tags without >': {
+        build: (m) => '<a'.repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'quoted values holding >': {
+        build: (m) => '<a b=">">x'.repeat(m),
+        text: (m) => 'x'.repeat(m),
+        sizes: [1_000, 4_000],
+      },
+      'unterminated comments': {
+        build: (m) => '<!-- x --'.repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'declarations without >': {
+        build: (m) => '<!x'.repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'end tags with unterminated values': {
+        build: (m) => '</a b="'.repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'script without its end tag': {
+        build: (m) => '<script>'.repeat(m),
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'near-miss script end tags': {
+        build: (m) => `<script>${'</scriptx'.repeat(m)}`,
+        text: () => '',
+        sizes: [1_000, 4_000],
+      },
+      'a < that starts no tag': {
+        build: (m) => 'a < b '.repeat(m),
+        text: (m) => 'a < b '.repeat(m).trim(),
+        sizes: [1_000, 4_000],
+      },
+    };
+
+    const markdownInputs: Record<string, AdversarialInput> = {
+      'emphasis openers without closers': {
+        build: (k) => '_a '.repeat(k) + 'a* '.repeat(k),
+        text: (k) => ('_a '.repeat(k) + 'a* '.repeat(k)).trim(),
+        sizes: [2_000, 8_000],
+      },
+      'unmatched openers of both markers': {
+        build: (k) => '*a _a '.repeat(k),
+        text: (k) => '*a _a '.repeat(k).trim(),
+        sizes: [2_000, 8_000],
+      },
+      'emphasis pairs': {
+        build: (k) => '*a* _b_ '.repeat(k),
+        text: (k) => 'a b '.repeat(k).trim(),
+        sizes: [2_000, 8_000],
+      },
+      'backtick runs of rising lengths': {
+        build: (k) => backtickRuns(rising(k)),
+        text: (k) => backtickRuns(rising(k)).trim(),
+        sizes: [100, 300],
+      },
+      'backtick runs of falling lengths': {
+        build: (k) => backtickRuns(rising(k).reverse()),
+        text: (k) => backtickRuns(rising(k).reverse()).trim(),
+        sizes: [100, 300],
+      },
+      'unclosed brackets': {
+        build: (k) => `${'['.repeat(k)}]`,
+        text: (k) => `${'['.repeat(k)}]`,
+        sizes: [10_000, 40_000],
+      },
+      'nested quote markers': {
+        build: (k) => `${'>'.repeat(k)} x`,
+        text: () => 'x',
+        sizes: [10_000, 40_000],
+      },
+      'closing hashes after a space run': {
+        build: (k) => `# a${' '.repeat(k)}b ##`,
+        text: () => 'a b',
+        sizes: [10_000, 40_000],
+      },
+      'many short lines': {
+        build: (k) => 'a\n'.repeat(k),
+        text: (k) => 'a '.repeat(k).trim(),
+        sizes: [10_000, 40_000],
+      },
+    };
+
+    const expectLinearWork = (
+      scan: (input: string) => { text: string; steps: number },
+      input: AdversarialInput,
+    ) => {
+      for (const size of input.sizes) {
+        const source = input.build(size);
+        const { text, steps } = scan(source);
+        expect(steps).toBeGreaterThanOrEqual(source.length);
+        expect(steps).toBeLessThanOrEqual(STEPS_PER_CHARACTER * source.length + FIXED_STEPS);
+        expect(text).toBe(input.text(size));
+      }
+    };
+
+    it.each(Object.entries(htmlInputs))('reads HTML with %s in linear work', (_name, input) => {
+      expectLinearWork(scanHtml, input);
+    });
+
+    it.each(Object.entries(markdownInputs))(
+      'reads markdown with %s in linear work',
+      (_name, input) => {
+        expectLinearWork(scanMarkdown, input);
+      },
+    );
+
+    it('matches the markdown line patterns in linear time', () => {
+      // The step count does not see inside a regular expression: these lines made the line
+      // patterns backtrack quadratically (seconds at this size); a linear match takes
+      // milliseconds.
+      const spaces = ' '.repeat(60_000);
+      const lines: Array<[string, string]> = [
+        [`# a${spaces}b`, 'a b'],
+        [`# Title${spaces}\u2028more`, 'Title more'],
+        [`-${spaces}\u2028item`, 'item'],
+        [`${'`'.repeat(60_000)}\u2028`, ''],
+      ];
+      for (const [line, text] of lines) {
+        const started = performance.now();
+        expect(scanMarkdown(line).text).toBe(text);
+        expect(performance.now() - started).toBeLessThan(1_000);
+      }
+    }, 60_000);
   });
 
   describe('reference tables', () => {
