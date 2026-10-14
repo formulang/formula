@@ -1,7 +1,5 @@
 import type {
   FunctionDefinition,
-  FunctionParamDefinition,
-  InvokedArgumentDeclaration,
   MutableFormulaRegistry,
   OperatorDefinition,
   VariableDefinition,
@@ -25,8 +23,7 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     { signatureId: string; from: FormulaType; to: FormulaType }
   >();
 
-  registerFunction(given: FunctionDefinition): void {
-    const def = withoutNullFields(given);
+  registerFunction(def: FunctionDefinition): void {
     // Basic versioning rule: signature ids must be stable and versioned.
     // Convention: NAME/vN (e.g. FILTER/v1). This keeps requirements + caching stable across future changes.
     if (!/^[A-Z0-9_]+\/v\d+$/.test(def.signatureId)) {
@@ -54,8 +51,6 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
         );
       }
     }
-
-    if (def.callableInvocation !== undefined) checkCallableInvocation(def);
 
     // Legacy definitions are retired from authoring: they never enter the name index or
     // the cast map, and they are skipped by the ambiguity checks (ambiguity is a
@@ -140,9 +135,8 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     // Idempotent: retiring an already-legacy definition is a no-op.
     if (def.legacy === true) return;
 
-    // Definitions are stored by caller reference (a copy only where a `null` field was dropped),
-    // so replace the stored entry with a legacy-marked copy instead of mutating an object the
-    // caller may share/reuse.
+    // Definitions are stored by caller reference, so replace the stored entry with a
+    // legacy-marked copy instead of mutating an object the caller may share/reuse.
     this.functionsBySignatureId.set(signatureId, { ...def, legacy: true });
 
     const nameKeys = [...new Set([def.name, ...(def.aliases ?? [])].map((n) => n.toUpperCase()))];
@@ -200,103 +194,6 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
   listVariables(): VariableDefinition[] {
     return [...this.variablesByName.values()];
   }
-}
-
-/**
- * `def` as the registry stores it: `null` given for `callableInvocation`, or for an argument's
- * `typeOf`, stands for an absent field, as it does for `aliases` and `casts`, so a definition from
- * a format that writes absent fields as `null` registers as written and no reader sees `null`.
- */
-function withoutNullFields(def: FunctionDefinition): FunctionDefinition {
-  const declared: unknown = def.callableInvocation;
-  if (declared === null) {
-    const stored = { ...def };
-    delete stored.callableInvocation;
-    return stored;
-  }
-  if (!Array.isArray(declared) || !declared.some(hasNullTypeOf)) return def;
-  return {
-    ...def,
-    callableInvocation: declared.map(
-      (source: InvokedArgumentDeclaration): InvokedArgumentDeclaration =>
-        hasNullTypeOf(source) ? { kind: 'value' } : source,
-    ),
-  };
-}
-
-function hasNullTypeOf(source: unknown): boolean {
-  if (typeof source !== 'object' || source === null) return false;
-  const { kind, typeOf } = source as { kind?: unknown; typeOf?: unknown };
-  return kind === 'value' && typeOf === null;
-}
-
-/**
- * Refuses a `callableInvocation` the parser could not apply as written, by the rule stated on
- * `FunctionDefinition.callableInvocation`: the parser checks a callable only where one literal-only
- * parameter names it, applies an index only where a call passes an argument, and walks nested
- * callables over finitely many states only while no invocation passes on more arguments than the
- * call has or the declaration lists. A spec enumerates declarations and reconciles this check with
- * what the parser applies, both ways.
- */
-function checkCallableInvocation(def: FunctionDefinition): void {
-  const refuse = (reason: string): never => {
-    throw new Error(`callableInvocation of ${def.signatureId} ${reason}`);
-  };
-  const declared: unknown = def.callableInvocation;
-  if (!Array.isArray(declared)) return refuse('is not a list of arguments');
-  const callables = def.params.filter((param) => stripNullability(param.type).kind === 'callable');
-  if (callables.length !== 1) refuse('needs exactly one callable parameter');
-  if (callables[0]?.literalOnly !== true) refuse('needs its callable parameter to be literalOnly');
-  // The parameter that takes a call's argument at `index`, where a call can pass one there.
-  const taking = (index: unknown, field: string): FunctionParamDefinition => {
-    const param =
-      typeof index === 'number' && Number.isInteger(index) && index >= 0
-        ? parameterTaking(def.params, index)
-        : undefined;
-    return param ?? refuse(`gives ${field} ${String(index)}, where no call passes an argument`);
-  };
-  let tail: number | undefined;
-  for (const source of declared as unknown[]) {
-    const { kind, of, at, from, typeOf } = (
-      typeof source === 'object' && source !== null ? source : {}
-    ) as Record<string, unknown>;
-    switch (kind) {
-      case 'item':
-        if (stripNullability(taking(of, 'of').type).kind !== 'list') {
-          refuse(`takes items from argument ${String(of)}, which is not a list`);
-        }
-        break;
-      case 'argument':
-        taking(at, 'at');
-        break;
-      case 'arguments':
-        taking(from, 'from');
-        if (tail !== undefined) refuse('passes on the arguments from an index more than once');
-        tail = from as number;
-        break;
-      case 'value':
-        if (typeOf !== undefined) taking(typeOf, 'typeOf');
-        break;
-      default:
-        refuse('declares an argument of no known kind');
-    }
-  }
-  const others = declared.length - (tail === undefined ? 0 : 1);
-  if (tail !== undefined && tail < others) {
-    refuse(
-      `passes on the arguments from ${tail} and ${others} more, so its callable can receive more arguments than the call has`,
-    );
-  }
-}
-
-/** The parameter that takes a call's argument at `index`; a variadic last one takes every extra. */
-function parameterTaking(
-  params: readonly FunctionParamDefinition[],
-  index: number,
-): FunctionParamDefinition | undefined {
-  if (index < params.length) return params[index];
-  const last = params[params.length - 1];
-  return last?.variadic === true ? last : undefined;
 }
 
 function typeKey(t: FormulaType): string {

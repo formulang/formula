@@ -1,4 +1,4 @@
-import type { FormulaType, InvokedArgumentDeclaration } from '@formulang/definitions';
+import type { FormulaType } from '@formulang/definitions';
 import { FormulaTypes, stripNullability } from '@formulang/definitions';
 
 /**
@@ -8,8 +8,23 @@ import { FormulaTypes, stripNullability } from '@formulang/definitions';
  */
 export type InvokedArgument = { type: FormulaType; forwards?: number };
 
+/**
+ * One argument a higher-order function passes to the function its callable parameter names, by
+ * where the value comes from; every index is the position of an argument in the call.
+ * - `item`: an item of the list the call passes at `of`.
+ * - `argument`: the call's argument at `at`, passed on unchanged; nothing when the call omits it.
+ * - `arguments`: every call argument from `from` on, each passed on unchanged.
+ * - `value`: a value the function supplies when it runs, typed as the call's argument at `typeOf`,
+ *   or of any type without it.
+ */
+export type InvokedSource =
+  | { kind: 'item'; of: number }
+  | { kind: 'argument'; at: number }
+  | { kind: 'arguments'; from: number }
+  | { kind: 'value'; typeOf?: number };
+
 /** How a higher-order function invokes its callable: the arguments it passes, in order. */
-export type CallableInvocation = readonly InvokedArgumentDeclaration[];
+export type CallableInvocation = readonly InvokedSource[];
 
 function itemOf(listType: FormulaType | undefined): FormulaType {
   const base = stripNullability(listType ?? FormulaTypes.any(true));
@@ -49,14 +64,15 @@ export function invokedArguments(
 }
 
 /**
- * How the core higher-order functions of 1.0.0 invoke their callables, keyed by function name in
- * upper case, as 1.0.0 keyed this validation: a definition under one of these names that declares
- * no invocation — every 1.0.0 definition, the core one re-registered under another signature id
- * (the documented way to change a function's behaviour), a host's — keeps the treatment 1.0.0
- * gave it. A definition that declares its invocation (`callableInvocation`), as every higher-order
- * function added since does, is checked by its declaration under any name. Specs reconcile the
- * table and the declarations with every core definition that has a callable parameter, both ways,
- * and register every entry as a declaration, which holds the table to the registration rule.
+ * How the core higher-order functions invoke their callables, keyed by function name in upper
+ * case, as 1.0.0 keyed this validation for EACH, FILTER, FILTER_PROPERTY and REDUCE. Every
+ * definition under one of these names gets the entry: the core one, the core one re-registered
+ * under another signature id (the documented way to change a function's behaviour), and a host's;
+ * a definition under any other name invokes nothing the parser knows, so a copy of one of these
+ * functions under a new name is a plain function. The table is closed: a definition cannot add to
+ * it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
+ * and check that every entry passes the callable fewer arguments than its call holds whenever it
+ * passes one on, which ends the parser's walk through nested callables.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
@@ -89,16 +105,41 @@ export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new 
       { kind: 'item', of: 1 },
     ],
   ],
+  // FILTER_BY(target; keys; operator; operatorValue?) calls operator(key[; operatorValue]), the key
+  // taken from `keys` at the item's position.
+  [
+    'FILTER_BY',
+    [
+      { kind: 'item', of: 1 },
+      { kind: 'argument', at: 3 },
+    ],
+  ],
 ]);
 
 /**
- * How the higher-order function `def` invokes its callable: the invocation it declares, or, for a
- * definition that declares none (`null` included), the one 1.0.0 gave its name; undefined for any
- * other function.
+ * How the higher-order function `def` invokes its callable: the table's entry for its name;
+ * undefined for any other function.
  */
-export function invocationOf(def: {
-  name: string;
-  callableInvocation?: CallableInvocation;
-}): CallableInvocation | undefined {
-  return def.callableInvocation ?? INVOCATIONS_BY_NAME.get(def.name.toUpperCase());
+export function invocationOf(def: { name: string }): CallableInvocation | undefined {
+  return INVOCATIONS_BY_NAME.get(def.name.toUpperCase());
+}
+
+/**
+ * The key of one state of the parser's walk through nested callables: the formula argument that
+ * names the callable, the name of the function that invokes it, the definitions the name can
+ * reference, and the formula argument each position receives (`undefined` for a value the
+ * function supplies). Distinct states have distinct keys, the number of positions included.
+ */
+export function walkStateKey(state: {
+  named: number;
+  host: string;
+  candidates: readonly string[];
+  sources: readonly (number | undefined)[];
+}): string {
+  return JSON.stringify([
+    state.named,
+    state.host,
+    state.candidates,
+    state.sources.map((source) => source ?? null),
+  ]);
 }

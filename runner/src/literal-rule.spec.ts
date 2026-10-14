@@ -6,7 +6,6 @@ import type {
   FunctionImplementation,
   FunctionImplementationResolver,
   FunctionParamDefinition,
-  InvokedArgumentDeclaration,
 } from '@formulang/definitions';
 import {
   BuiltinSignatureIds,
@@ -46,13 +45,8 @@ const coreHigherOrder = createCoreFormulaRuntime()
   .registry.listFunctions()
   .filter((def) => def.params.some((p) => stripNullability(p.type).kind === 'callable'));
 
-/** The higher-order functions whose invocation the parser knows: its name table, its declarations. */
-const VEHICLES: readonly string[] = [
-  ...INVOCATIONS_BY_NAME.keys(),
-  ...coreHigherOrder
-    .filter((def) => def.callableInvocation !== undefined)
-    .map((def) => def.name.toUpperCase()),
-].sort();
+/** The higher-order functions whose invocation the parser knows: its table's entries. */
+const VEHICLES: readonly string[] = [...INVOCATIONS_BY_NAME.keys()].sort();
 
 /** An item of an overload set: how the formula writes it, its value, the overload its type selects. */
 type Item = { item: string; value: unknown; selects: string | null };
@@ -121,7 +115,7 @@ function reachesOf(vehicle: string): Reach[] {
   let count = def.params.length;
   while (passesOnTail && invokedArguments(invocation, argTypes(count)).length <= LONGEST) count++;
   const invoked = invokedArguments(invocation, argTypes(count));
-  // The declaration entry behind each invoked position.
+  // The table entry's source behind each invoked position.
   const entries = invocation.flatMap((source) =>
     invokedArguments([source], argTypes(count)).map(() => source),
   );
@@ -303,18 +297,7 @@ function nestIn(levels: number, inner: string): string {
   return out;
 }
 
-/**
- * The formula of a cell: the vehicle written under `vehicle` (its own name by default), nested
- * `depth` levels below calls of `carrier`, which passes on its item and every argument after it.
- */
-function formulaFor(
-  set: OverloadSet,
-  placement: Placement,
-  item: string,
-  literal: string,
-  vehicle?: string,
-  carrier = 'EACH',
-) {
+function formulaFor(set: OverloadSet, placement: Placement, item: string, literal: string) {
   const lit = JSON.stringify(literal);
   if (placement.kind === 'direct') {
     const { position } = placement;
@@ -325,16 +308,15 @@ function formulaFor(
     return `${set.name}(${args.join('; ')})`;
   }
   const { reach, depth } = placement;
-  const name = vehicle ?? reach.vehicle;
   const args = reach.args.map((arg) =>
     arg.replace(ITEM, item).replace(NAME, JSON.stringify(set.name)).replace(LITERAL, lit),
   );
-  if (depth === 0) return `${name}(${args.join('; ')})`;
-  // `depth` levels of the carrier below the written call, the innermost naming the vehicle, which
-  // the carrier calls with the item first and every argument after it.
+  if (depth === 0) return `${reach.vehicle}(${args.join('; ')})`;
+  // `depth` levels of EACH below the written call, the innermost naming the vehicle, which EACH
+  // calls with the item first and every argument after it.
   const [first = '', ...rest] = args;
-  const outer = `"${carrier}"; `.repeat(depth - 1);
-  return `${carrier}(${nestIn(depth, first)}; ${outer}"${name}"; ${rest.join('; ')})`;
+  const outer = '"EACH"; '.repeat(depth - 1);
+  return `EACH(${nestIn(depth, first)}; ${outer}"${reach.vehicle}"; ${rest.join('; ')})`;
 }
 
 function paramsOf(overload: Overload, position: number): FunctionParamDefinition[] {
@@ -447,38 +429,6 @@ function runtimeFor(
   return { registry, resolver };
 }
 
-/**
- * The registry of `runtimeFor` with the vehicle `core` copied under `name`, declaring `invocation`,
- * every definition `name` named before retired; and CARRY, a copy of EACH that declares EACH's
- * invocation, to carry nested cells whatever `name` is.
- */
-function declaringRegistry(
-  set: OverloadSet,
-  position: number,
-  core: FunctionDefinition,
-  invocation: readonly InvokedArgumentDeclaration[],
-  name: string,
-) {
-  const { registry } = runtimeFor('core', set, 'listed', [], position);
-  for (const def of registry.listFunctionsByName(name)) registry.retireFunction(def.signatureId);
-  registry.registerFunction({
-    ...core,
-    name,
-    signatureId: `${name}/v7`,
-    callableInvocation: [...invocation],
-  });
-  const each = coreHigherOrder.find((def) => def.name === 'EACH');
-  const carried = each && invocationOf(each);
-  if (each === undefined || carried === undefined) throw new Error('no EACH to carry cells');
-  registry.registerFunction({
-    ...each,
-    name: 'CARRY',
-    signatureId: 'CARRY/v1',
-    callableInvocation: [...carried],
-  });
-  return registry;
-}
-
 /** The implementation sets to run under: all overloads, and each overload alone. */
 function implementedSets(set: OverloadSet): Array<ReadonlySet<string> | undefined> {
   return [undefined, ...set.overloads.map((overload) => new Set([overload.signatureId]))];
@@ -527,7 +477,7 @@ describe('the enumerated-literal rule, generated', () => {
   it('takes every vehicle from the parser’s invocations, and every position they pass on', () => {
     // Both ways: every vehicle has its undescribed arguments, and every entry names a vehicle.
     expect(Object.keys(UNDESCRIBED).sort()).toStrictEqual([...VEHICLES]);
-    // Not vacuous: 1.0.0's four by name, and FILTER_BY by declaration.
+    // Not vacuous: 1.0.0's four, and FILTER_BY since.
     expect(VEHICLES.length).toBeGreaterThanOrEqual(5);
     for (const vehicle of VEHICLES) {
       expect(
@@ -645,45 +595,6 @@ describe('the enumerated-literal rule, generated', () => {
     },
     300_000,
   );
-
-  it('compiles every cell alike under every name its vehicle’s declaration is registered under', () => {
-    // Each invocation the matrix holds, declared on a copy of its vehicle registered under each
-    // name 1.0.0 keyed invocations by and under a new name: the declaration decides, not the name.
-    const names = [...INVOCATIONS_BY_NAME.keys(), 'DECLARED'];
-    const registries = new Map<string, ReturnType<typeof declaringRegistry>>();
-    const differing: unknown[] = [];
-    let compared = 0;
-    for (const vehicle of VEHICLES) {
-      const core = coreHigherOrder.find((def) => def.name.toUpperCase() === vehicle);
-      const invocation = core && invocationOf(core);
-      if (core === undefined || invocation === undefined) throw new Error(`no ${vehicle}`);
-      for (const cell of cells.filter((candidate) => candidate.vehicle === vehicle)) {
-        const outcomes = names.map((name) => {
-          const key = `${cell.set.name} ${cell.position} ${vehicle} ${name}`;
-          const registry =
-            registries.get(key) ??
-            declaringRegistry(cell.set, cell.position, core, invocation, name);
-          registries.set(key, registry);
-          const { placement, item, literal } = cell;
-          const source = formulaFor(cell.set, placement, item.item, literal, name, 'CARRY');
-          return parseFormula(source, { registry }).errors.map((error) => [
-            error.code,
-            error.path?.[3],
-            error.message.replaceAll(name, '<vehicle>'),
-          ]);
-        });
-        compared++;
-        const [first, ...others] = outcomes.map((outcome) => JSON.stringify(outcome));
-        if (others.some((other) => other !== first)) {
-          differing.push({ vehicle, cell: cell.source, outcomes });
-        }
-      }
-    }
-    expect(differing).toStrictEqual([]);
-    // Not vacuous: every vehicle, under every name, on more than a few hundred cells.
-    expect(compared).toBeGreaterThan(500);
-    expect(registries.size).toBeGreaterThanOrEqual(VEHICLES.length * names.length);
-  });
 
   it('keeps FILTER_BY’s checks when it is registered again under another signature id', () => {
     const check = runtimeFor('reversioned', SETS[0] as OverloadSet, 'listed', []);

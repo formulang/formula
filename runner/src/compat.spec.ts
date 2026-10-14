@@ -2,6 +2,7 @@ import * as coreFunctions from '@formulang/core-functions';
 import * as definitions from '@formulang/definitions';
 import * as parser from '@formulang/parser';
 import { createHash } from 'node:crypto';
+import { INVOCATIONS_BY_NAME, invokedArguments } from '../../parser/src/callable-invocations';
 import baseline from '../../scripts/compat/baseline-1.0.0.json';
 import corpus from '../../scripts/compat/corpus.json';
 import harness from '../../scripts/compat/harness.js';
@@ -23,8 +24,18 @@ const shapes: string[] = baseline.shapes;
 /** The function names the core registry adds to those of 1.0.0, from the live registry. */
 const added: string[] = harness.addedFunctionNames(packages, baseline.functionNames);
 
-/** A formula whose text calls a function 1.1.0 adds, or names it as a callable, in any case. */
-const writesAnAddedName = new RegExp(`\\b(${added.join('|')})\\s*\\(|"(${added.join('|')})"`, 'i');
+/** A formula whose text calls one of `names`, or names it as a callable, in any case. */
+function writing(names: readonly string[]): RegExp {
+  return new RegExp(`\\b(${names.join('|')})\\s*\\(|"(${names.join('|')})"`, 'i');
+}
+
+const writesAnAddedName = writing(added);
+
+/**
+ * The names 1.1.0 adds that the parser checks by name, as 1.0.0 checks EACH, FILTER,
+ * FILTER_PROPERTY and REDUCE: every function registered under one gets the table's invocation.
+ */
+const keyedByName: string[] = added.filter((name) => INVOCATIONS_BY_NAME.has(name));
 
 function wanted(formula: BaselineFormula, shape: string): Outcome {
   return formula.byShape?.[shape] ?? formula.outcome;
@@ -123,15 +134,36 @@ describe('compatibility with 1.0.0', () => {
   });
 
   it('gives every formula its 1.0.0 behaviour once the definitions 1.1.0 adds are retired', async () => {
-    // What 1.1.0 adds is never keyed by a name a host may have used as well, so with the new
-    // definitions retired the head behaves as 1.0.0 did: also for a function a host registered
-    // under one of the new names, and for every formula that names one. Which names a formula
-    // asks the registry for is no behaviour, and can differ: the head looks up a nested callable
-    // a string literal names when it parses, where 1.0.0 did so only when the nested call ran.
+    // With the new definitions retired the head behaves as 1.0.0 did, also for a function a host
+    // registered under one of the new names and for every formula that names one, with one
+    // exception: the parser checks a call of any function named FILTER_BY by FILTER_BY's entry in
+    // its table, as 1.0.0 checks one named EACH, so where a host registered its own FILTER_BY, a
+    // formula that writes the name is checked now. Which names a formula asks the registry for is
+    // no behaviour, and can differ: the head looks up a nested callable a string literal names
+    // when it parses, where 1.0.0 did so only when the nested call ran.
+    expect(keyedByName).toStrictEqual(['FILTER_BY']);
     const retired = await harness.runCorpus(packages, corpus, baseline.addedFunctionNames, added);
-    const differences = differencesFrom1_0_0(retired, () => true);
+    const checkedNow = (index: number, shape: string) =>
+      keyedByName.some(
+        (name) =>
+          shape === `${harness.HOST_FUNCTION_SHAPE}${name}` &&
+          writing([name]).test(formulas[index]?.source ?? ''),
+      );
+    const differences = differencesFrom1_0_0(retired, (index, shape) => !checkedNow(index, shape));
     expect(differences.slice(0, 20)).toStrictEqual([]);
     expect(differences.length).toBe(0);
+    // The exception, stated: three formulas of the corpus call the host's FILTER_BY naming a
+    // callable that takes one argument, to which FILTER_BY's invocation passes two (the key and
+    // the fourth argument); each ran on 1.0.0 and now fails to compile.
+    const checked = differencesFrom1_0_0(retired, checkedNow);
+    expect(checked.length).toBe(3);
+    for (const { source, want, got } of checked) {
+      expect(want.parse, source).toBeUndefined();
+      expect(
+        (got as Outcome).parse?.every((code) => code === 'NO_MATCHING_OVERLOAD'),
+        source,
+      ).toBe(true);
+    }
   }, 120_000);
 
   it('changes a formula that names a function 1.1.0 adds in one of three ways, each from its call', () => {
@@ -338,13 +370,12 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     if (def === undefined) throw new Error(`no built-in ${name}`);
     return def;
   };
-  /** The host's own definition under the name: its own id, no declared invocation. */
+  /** The host's own definition under the name: its own id and parameters, no templates. */
   const hostDefinition = (
     def: definitions.FunctionDefinition,
     params: definitions.FunctionParamDefinition[],
   ): definitions.FunctionDefinition => {
-    const { callableInvocation, templates, ...rest } = def;
-    void callableInvocation;
+    const { templates, ...rest } = def;
     void templates;
     return { ...rest, signatureId: `HOST_${def.name}/v1`, category: 'custom', params };
   };
@@ -449,7 +480,7 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     }
   });
 
-  it('keeps typed calls of types the built-in does not take; a call of any-typed values binds what takes it', () => {
+  it('keeps typed calls of types the built-in does not take, checked under FILTER_BY; any-typed calls bind what takes them', () => {
     // A host function whose parameters are of types the built-in does not take, at every arity up
     // to one past the built-in's parameters (a callable where the built-in takes one).
     const outcomes: Record<'host' | 'builtIn' | 'refused', string[]> = {
@@ -457,6 +488,7 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
       builtIn: [],
       refused: [],
     };
+    const typedChecked: string[] = [];
     for (const name of added) {
       const def = builtIn(name);
       const required = def.params.filter((param) => param.optional !== true).length;
@@ -479,8 +511,26 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
         registry.registerFunction(hostDefinition(def, params));
         const typed = `${name}(${params.map(argumentFor).join('; ')})`;
         const bound = parser.parseFormula(typed, { registry });
-        expect(bound.errors, typed).toStrictEqual([]);
         expect(bound.root.signatureId, typed).toBe(`HOST_${name}/v1`);
+        // Under a name the parser checks by name, the callable the call names (ISTEXT, which takes
+        // one argument) receives what the table's invocation passes it.
+        const entry = INVOCATIONS_BY_NAME.get(name);
+        const passed =
+          entry === undefined
+            ? []
+            : invokedArguments(
+                entry,
+                params.map((param) => param.type),
+              );
+        if (passed.length > 1) {
+          expect(
+            bound.errors.map((error) => error.code),
+            typed,
+          ).toStrictEqual(['NO_MATCHING_OVERLOAD']);
+          typedChecked.push(`${name}/${arity}`);
+        } else {
+          expect(bound.errors, typed).toStrictEqual([]);
+        }
         // Values typed `any` (an untyped input) satisfy the built-in where it takes that many
         // arguments, and it is registered first.
         const untyped = `${name}(${params
@@ -563,9 +613,11 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
       ].sort(),
     );
     expect([outcomes.host.length, outcomes.builtIn.length]).toStrictEqual([26, 16]);
+    // A typed call of the host's own FILTER_BY that passes a fourth argument no longer compiles.
+    expect(typedChecked).toStrictEqual(['FILTER_BY/4', 'FILTER_BY/5']);
   });
 
-  it('keeps its own direct calls, and through EACH the name reaches the built-in', async () => {
+  it('keeps its own direct calls, but under FILTER_BY, and through EACH the name reaches the built-in', async () => {
     expect(Object.keys(THROUGH_EACH).sort()).toStrictEqual([...added].sort());
     for (const name of added) {
       const def = builtIn(name);
@@ -575,8 +627,17 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
 
       const direct = `${name}(LIST(1; 2; 3); "ISNUMBER"; 1; 2)`;
       const own = await runRecorded(registry, implementations, direct);
-      expect(own.parsed.errors, direct).toStrictEqual([]);
       expect(own.parsed.root.signatureId, direct).toBe(host);
+      if (keyedByName.includes(name)) {
+        // The parser checks the host's own FILTER_BY by FILTER_BY's invocation, which passes the
+        // callable two arguments (the key and the fourth argument) where it takes one.
+        expect(
+          own.parsed.errors.map((error) => error.code),
+          direct,
+        ).toStrictEqual(['NO_MATCHING_OVERLOAD', 'NO_MATCHING_OVERLOAD']);
+        continue;
+      }
+      expect(own.parsed.errors, direct).toStrictEqual([]);
       expect(own.value, direct).toBe(3);
       expect(own.invoked.has(def.signatureId), direct).toBe(false);
 

@@ -25,22 +25,6 @@ export interface FunctionParamDefinition {
   variadic?: boolean;
 }
 
-/**
- * One argument a higher-order function passes to the function its callable parameter names, by
- * where the value comes from. Every index is the position of an argument in a call of the
- * higher-order function, written before or after the callable, or the callable itself.
- * - `item`: an item of the list the call passes at `of`.
- * - `argument`: the call's argument at `at`, passed on unchanged; nothing when the call omits it.
- * - `arguments`: every call argument from `from` on, each passed on unchanged.
- * - `value`: a value the function supplies when it runs, typed as the call's argument at `typeOf`,
- *   or of any type without it.
- */
-export type InvokedArgumentDeclaration =
-  | { kind: 'item'; of: number }
-  | { kind: 'argument'; at: number }
-  | { kind: 'arguments'; from: number }
-  | { kind: 'value'; typeOf?: number };
-
 export interface TemplateParamDefinition {
   /** Template/type-variable name (e.g. "T"). */
   name: string;
@@ -97,23 +81,6 @@ export interface FunctionDefinition {
 
   /** If true, the function controls evaluation of arguments (lazy short-circuit). */
   controlFlow?: boolean;
-
-  /**
-   * For a higher-order function: the arguments it passes, in order, to the function its callable
-   * parameter names. With it, the parser checks that function against them as it does for the
-   * core higher-order functions — arity, overload, result type, and the literal rules of the
-   * parameters they reach — under any name and signature id; a definition without it under a name
-   * 1.0.0 checked this way (EACH, FILTER, FILTER_PROPERTY, REDUCE) keeps 1.0.0's checks. `null`
-   * stands for absent, as for the other optional fields, here and for `typeOf`.
-   *
-   * Registration refuses a declaration the parser could not apply as written: the definition needs
-   * exactly one callable parameter, `literalOnly`; every index must be a position at which a call
-   * can pass an argument (an integer from 0, below the number of parameters unless the last one is
-   * variadic), and `item` must name a list parameter; and an `arguments` entry may appear once,
-   * from an index no smaller than the number of other entries, so the callable never receives more
-   * arguments than the call has or the declaration lists.
-   */
-  callableInvocation?: InvokedArgumentDeclaration[];
 
   /**
    * Optional explicit cast declarations provided by this function.

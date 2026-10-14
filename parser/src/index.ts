@@ -24,7 +24,12 @@ import {
   resolveFormulaLimits,
   stripNullability,
 } from '@formulang/definitions';
-import { invocationOf, invokedArguments, type CallableInvocation } from './callable-invocations';
+import {
+  invocationOf,
+  invokedArguments,
+  walkStateKey,
+  type CallableInvocation,
+} from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
 import { assignStableNodeIds } from './node-id';
 import { TokenStream } from './pratt';
@@ -1018,7 +1023,7 @@ function bindTypesAndRequirements(
           }
 
           // Strict callable validation for the higher-order functions whose invocation the parser
-          // knows (`invocationOf`: declared on the definition, or by name for a 1.0.0 name):
+          // knows (`invocationOf`: the table's entry for the definition's name):
           // arity, overload, return type, and the referenced function's literal-only rules for
           // every argument the invocation passes it.
           const outerBindings = inferGenericBindingsForCall(def, argTypes);
@@ -1505,7 +1510,12 @@ type PassedArgument = { type: FormulaType; source: number | undefined };
  * any depth of higher-order calls whose callables are written as string literals. A name passed on
  * is resolved when the call runs, so one the registry does not know is no error here. Each exit
  * below states why it lets no literal reach a parameter that lists admitted values unchecked.
- * `walked` holds the states this walk has checked, for the call written in the formula.
+ *
+ * The walk ends: an invocation of the closed table passes the callable fewer arguments than its
+ * call holds whenever it passes one on (a spec checks every entry), so the arguments a followed
+ * callable receives shrink at every level. `walked` holds the states this walk has checked, for
+ * the call written in the formula, so that overloads following the same callable along several
+ * reference kinds check each state once.
  */
 function checkPassedArguments(
   registry: FormulaRegistry,
@@ -1527,18 +1537,16 @@ function checkPassedArguments(
     named: { index: number; span: SourceSpan | undefined };
   },
 ): void {
-  // Exit: the walk has been here, at the callable named by the same formula argument, invoked by
-  // the same function with the same formula argument (or a value it supplies) at every position;
-  // the types the arguments carry decide no check and no follow, so the walk already made every
-  // check from here. These states are finitely many: no invocation passes on more arguments than
-  // the call has or it lists (registration refuses a declaration that would, and a spec registers
-  // every entry of the 1.0.0 table as one), so the walk ends, and only once nothing new is left.
-  const state = [
-    at.named.index,
-    at.host.signatureId,
-    at.candidates.map((def) => def.signatureId).join('+'),
-    at.passed.map((passed) => passed.source ?? '').join(','),
-  ].join('|');
+  // Exit: the walk has been here: the same candidates, named by the same formula argument and
+  // invoked by a function of the same name (which the refusals name), with the same formula
+  // argument or a supplied value at each position. The types the arguments carry decide no check
+  // and no follow, so every check from here is made.
+  const state = walkStateKey({
+    named: at.named.index,
+    host: at.host.name,
+    candidates: at.candidates.map((def) => def.signatureId),
+    sources: at.passed.map((passed) => passed.source),
+  });
   if (walked.has(state)) return;
   walked.add(state);
   at.passed.forEach((passed, position) => {
@@ -1575,9 +1583,9 @@ function checkPassedArguments(
       const targetBase = target === undefined ? undefined : stripNullability(target.type);
       const invocation = invocationOf(def);
       // Skipped: this definition does not invoke the literal as a callable in a way the parser
-      // knows. It takes no argument at this position, takes a plain value there, or is a
-      // higher-order function that declares no invocation; the function it calls refuses, when
-      // it runs, a mode it does not list.
+      // knows. It takes no argument at this position, takes a plain value there, or has a name
+      // the table does not hold; the function it calls refuses, when it runs, a mode it does not
+      // list.
       if (targetBase?.kind !== 'callable' || invocation === undefined) continue;
       // Skipped: an invocation already followed with this reference kind reaches the same
       // callables.
