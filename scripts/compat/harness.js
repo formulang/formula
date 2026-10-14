@@ -3,19 +3,19 @@
 /**
  * Compatibility harness. It parses and evaluates formulas under registry shapes and returns
  * outcomes that compare across versions: the parse error codes or, for each variable environment,
- * the value with its warning and error codes and the value (or error code) of every node. A
- * formula that reads the clock runs too; its outcome keeps the kind of each value, not the value.
+ * the value with its warning and error codes and the value (or error code) of every node, with
+ * the clock frozen, and whether the formula named a function the current source adds.
  *
  * `generate-baseline.js` ran it against the built packages of 1.0.0 to write
  * `baseline-1.0.0.json`; `runner/src/compat.spec.ts` runs it against the source and requires the
  * same outcomes. The packages are passed in, so one harness serves both, and so are the names the
  * current source adds to 1.0.0's: each gets a shape in which the host registered its own function
- * under that name, and probe formulas that name it.
+ * under that name, probe formulas that name it, and the first one is data in one environment.
  *
  * @typedef {{ definitions: any, parser: any, runner: any, coreFunctions: any }} Packages
  */
 
-/** The variable environments every formula that compiles is evaluated in. */
+/** Two variable environments of plain data (`environmentsFor` adds one holding an added name). */
 const ENVIRONMENTS = [
   { value: [3, 1, 2], other: 'a b' },
   { value: 'Hello, world. Bye!', other: [1, 'x'] },
@@ -272,7 +272,7 @@ function addHostFunction(packages, registry, implementations, name) {
  * Formulas that name `name`: calls of the host's function of that name (directly, on a list typed
  * when the formula compiles, in arithmetic, and through core higher-order functions), and calls of
  * the name with one argument and with two, and as the callable of a higher-order call at the first
- * and the second level.
+ * level (also written in lower case) and at the second.
  * @param {string} name
  */
 function probesFor(name) {
@@ -287,6 +287,7 @@ function probesFor(name) {
     `${name}(value; 1)`,
     `${name}(other; value)`,
     `EACH(LIST(value); ${reference})`,
+    `EACH(LIST(value); ${JSON.stringify(name.toLowerCase())})`,
     `EACH(LIST(value); "FILTER"; ${reference})`,
     `EACH(LIST(LIST(value)); "EACH"; ${reference})`,
     `EACH(LIST(LIST(value)); "EACH"; ${reference}; 1)`,
@@ -294,12 +295,38 @@ function probesFor(name) {
 }
 
 /**
- * The formulas the harness evaluates: the corpus, then the probes of every added name.
+ * Formulas whose nested higher-order call takes its callable's name from a value or an expression
+ * when it runs: in the last environment, `other` holds an added name.
+ */
+const RUN_TIME_NAMES = [
+  'EACH(LIST(LIST(value)); "EACH"; other)',
+  'EACH(LIST(LIST(value)); "EACH"; UPPER(other))',
+];
+
+/**
+ * The formulas the harness evaluates: the corpus, the probes of every added name, and the formulas
+ * that take a callable's name from a value or an expression.
  * @param {{ formulas: Array<{ source: string }> }} corpus
  * @param {readonly string[]} addedNames
  */
 function formulasFor(corpus, addedNames) {
-  return [...corpus.formulas.map((f) => f.source), ...addedNames.flatMap(probesFor)];
+  return [
+    ...corpus.formulas.map((f) => f.source),
+    ...addedNames.flatMap(probesFor),
+    ...RUN_TIME_NAMES,
+  ];
+}
+
+/**
+ * The variable environments every formula that compiles is evaluated in: two of plain data, and
+ * one whose `other` holds the first added name in lower case, a name a formula can pass on as data.
+ * @param {readonly string[]} addedNames
+ */
+function environmentsFor(addedNames) {
+  const [name] = addedNames;
+  return name === undefined
+    ? ENVIRONMENTS
+    : [...ENVIRONMENTS, { value: [3, 1, 2], other: name.toLowerCase() }];
 }
 
 function applyShape(packages, shape, registry, implementations) {
@@ -341,15 +368,47 @@ function runtimeFor(packages, shape, retired) {
   return { registry, implementations };
 }
 
-/** Names whose result depends on the clock: a call to one of them with no arguments. */
-function clockCalls(registry) {
-  const names = new Set(
-    registry
-      .listFunctions()
-      .filter((def) => def.purity === 'uncached')
-      .map((def) => def.name.toUpperCase()),
-  );
-  return new RegExp(`\\b(${[...names].join('|')})\\s*\\(\\s*\\)`, 'i');
+/** The instant the clock reads while the harness evaluates, so formulas that read it compare. */
+const FROZEN_CLOCK = Date.UTC(2024, 4, 15, 13, 45, 30);
+
+/** Runs `run` with `Date` reading `FROZEN_CLOCK` when built without arguments. */
+async function withFrozenClock(run) {
+  const RealDate = globalThis.Date;
+  class FrozenDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(FROZEN_CLOCK);
+      else super(...args);
+    }
+
+    static now() {
+      return FROZEN_CLOCK;
+    }
+  }
+  globalThis.Date = FrozenDate;
+  try {
+    return await run();
+  } finally {
+    globalThis.Date = RealDate;
+  }
+}
+
+/**
+ * `registry`, recording every function name it is asked for: a formula names a function when the
+ * parser or a higher-order function looks the name up, whether the formula writes it, in any letter
+ * case, or a value or an expression produces it when the call runs.
+ */
+function recordingLookups(registry, asked) {
+  return new Proxy(registry, {
+    get(target, property) {
+      const member = Reflect.get(target, property, target);
+      if (typeof member !== 'function') return member;
+      if (property !== 'listFunctionsByName') return member.bind(target);
+      return (name, ...rest) => {
+        asked.add(String(name).toUpperCase());
+        return member.call(target, name, ...rest);
+      };
+    },
+  });
 }
 
 /** A JSON round trip, so outcomes compare the way the committed baseline stores them. */
@@ -357,31 +416,21 @@ function plain(value) {
   return value === undefined ? null : JSON.parse(JSON.stringify(value));
 }
 
-/** The kind of a value that depends on the clock. */
-function kindOf(value) {
-  if (value === null || value === undefined) return 'null';
-  if (Array.isArray(value)) return 'list';
-  return typeof value;
-}
-
 function codes(entries) {
   return (entries ?? []).map((entry) => entry.code);
 }
 
 /**
- * Every node of a run by node id: its value (or, for a formula that reads the clock, the kind of
- * its value), its error code, and whether it was skipped, redacted or truncated. A node with a
- * value and nothing else is stored as `[value]`, any other as an object of those fields.
+ * Every node of a run by node id: its value, its error code, and whether it was skipped, redacted
+ * or truncated. A node with a value and nothing else is stored as `[value]`, any other as an object
+ * of those fields.
  */
-function nodesOf(perNode, withValues) {
+function nodesOf(perNode) {
   const nodes = {};
   for (const id of Object.keys(perNode).sort()) {
     const entry = perNode[id];
     const node = {};
-    if ('value' in entry) {
-      if (withValues) node.value = plain(entry.value);
-      else node.kind = kindOf(entry.value);
-    }
+    if ('value' in entry) node.value = plain(entry.value);
     if (entry.error) node.error = entry.error.code;
     if (entry.skipped) node.skipped = true;
     if (entry.redacted) node.redacted = true;
@@ -392,54 +441,57 @@ function nodesOf(perNode, withValues) {
   return nodes;
 }
 
-function runOf(out, readsClock) {
-  const root = readsClock
-    ? {
-        kind: out.output.valueKind ?? null,
-        objectKind: out.output.valueObjectKind ?? null,
-      }
-    : { value: plain(out.output.value) };
+function runOf(out) {
   return {
-    ...root,
+    value: plain(out.output.value),
     warnings: codes(out.output.warnings),
     errors: codes(out.errors),
-    nodes: nodesOf(out.perNode, !readsClock),
+    nodes: nodesOf(out.perNode),
   };
 }
 
-async function outcomeOf(packages, runtime, clock, source) {
+/** The outcome of `source`, without whether it names an added function. */
+async function evaluationOf(packages, registry, implementations, environments, source) {
   const { parser, definitions, runner } = packages;
-  try {
-    const parsed = parser.parseFormula(source, { registry: runtime.registry });
-    if (parsed.errors.length > 0) return { parse: codes(parsed.errors) };
-    const compiled = definitions.optimizeRule(parsed, { registry: runtime.registry });
-    if (compiled.errors.length > 0) return { optimize: codes(compiled.errors) };
-    // A formula reading the clock answers differently on every run: its runs keep what does not.
-    const readsClock = clock.test(source);
-    const runs = [];
-    for (const variables of ENVIRONMENTS) {
-      const out = await runner.evaluateRuleOutputAsync(compiled, {
-        registry: runtime.registry,
-        resolver: runtime.implementations,
-        variables,
-      });
-      runs.push(runOf(out, readsClock));
-    }
-    // Runs alike in every environment (a formula that reads no variable) are stored once.
-    const first = JSON.stringify(runs[0]);
-    if (runs.every((run) => JSON.stringify(run) === first)) {
-      return readsClock ? { clockRun: runs[0] } : { run: runs[0] };
-    }
-    return readsClock ? { clockRuns: runs } : { runs };
-  } catch (error) {
-    return { threw: error instanceof Error ? error.name : 'unknown' };
+  const parsed = parser.parseFormula(source, { registry });
+  if (parsed.errors.length > 0) return { parse: codes(parsed.errors) };
+  const compiled = definitions.optimizeRule(parsed, { registry });
+  if (compiled.errors.length > 0) return { optimize: codes(compiled.errors) };
+  const runs = [];
+  for (const variables of environments) {
+    const out = await runner.evaluateRuleOutputAsync(compiled, {
+      registry,
+      resolver: implementations,
+      variables,
+    });
+    runs.push(runOf(out));
   }
+  // Runs alike in every environment (a formula that reads no variable) are stored once.
+  const first = JSON.stringify(runs[0]);
+  return runs.every((run) => JSON.stringify(run) === first) ? { run: runs[0] } : { runs };
+}
+
+/**
+ * The outcome of `source`: its parse errors or its runs, and `namesAdded: true` when parsing or
+ * running it asked the registry for a name in `addedNames`.
+ */
+async function outcomeOf(packages, runtime, environments, addedNames, source) {
+  const asked = new Set();
+  const registry = recordingLookups(runtime.registry, asked);
+  let outcome;
+  try {
+    outcome = await evaluationOf(packages, registry, runtime.implementations, environments, source);
+  } catch (error) {
+    outcome = { threw: error instanceof Error ? error.name : 'unknown' };
+  }
+  return addedNames.some((name) => asked.has(name)) ? { ...outcome, namesAdded: true } : outcome;
 }
 
 /**
  * Outcomes of every formula of `formulasFor(corpus, addedNames)` under every shape of
- * `shapeNames(addedNames)`, as `{ [shape]: outcome[] }` aligned with the formulas. With `retired`,
- * every definition of those names is retired from the core registry before the shape is built.
+ * `shapeNames(addedNames)`, in the environments of `environmentsFor(addedNames)` and with the clock
+ * at `FROZEN_CLOCK`, as `{ [shape]: outcome[] }` aligned with the formulas. With `retired`, every
+ * definition of those names is retired from the core registry before the shape is built.
  * @param {Packages} packages
  * @param {{ formulas: Array<{ source: string }> }} corpus
  * @param {readonly string[]} addedNames
@@ -447,23 +499,28 @@ async function outcomeOf(packages, runtime, clock, source) {
  */
 async function runCorpus(packages, corpus, addedNames, retired = []) {
   const formulas = formulasFor(corpus, addedNames);
-  const byShape = {};
-  for (const shape of shapeNames(addedNames)) {
-    const runtime = runtimeFor(packages, shape, retired);
-    const clock = clockCalls(runtime.registry);
-    const outcomes = [];
-    for (const source of formulas) {
-      outcomes.push(await outcomeOf(packages, runtime, clock, source));
+  const environments = environmentsFor(addedNames);
+  return withFrozenClock(async () => {
+    const byShape = {};
+    for (const shape of shapeNames(addedNames)) {
+      const runtime = runtimeFor(packages, shape, retired);
+      const outcomes = [];
+      for (const source of formulas) {
+        outcomes.push(await outcomeOf(packages, runtime, environments, addedNames, source));
+      }
+      byShape[shape] = outcomes;
     }
-    byShape[shape] = outcomes;
-  }
-  return byShape;
+    return byShape;
+  });
 }
 
 module.exports = {
   ENVIRONMENTS,
+  FROZEN_CLOCK,
+  RUN_TIME_NAMES,
   BASE_SHAPES,
   HOST_FUNCTION_SHAPE,
+  environmentsFor,
   shapeNames,
   coreFunctionNames,
   addedFunctionNames,

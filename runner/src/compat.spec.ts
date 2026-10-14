@@ -12,28 +12,41 @@ const BASELINE_COMMIT = '699d57efa2c51e8f32747b1aa081c00538c0fa05';
 
 const packages = { definitions, parser, runner, coreFunctions };
 
-type Outcome = unknown;
+type Run = { value: unknown };
+type Outcome = { parse?: string[]; run?: Run; runs?: Run[]; namesAdded?: true };
 type BaselineFormula = { source: string; outcome: Outcome; byShape?: Record<string, Outcome> };
 type ByShape = Record<string, Outcome[]>;
 
-const formulas: BaselineFormula[] = baseline.formulas;
+const formulas: BaselineFormula[] = baseline.formulas as BaselineFormula[];
 const shapes: string[] = baseline.shapes;
 
 /** The function names the core registry adds to those of 1.0.0, from the live registry. */
 const added: string[] = harness.addedFunctionNames(packages, baseline.functionNames);
 
-/** A formula that calls a function 1.1.0 adds, or names it as a callable. */
-const namesAnAddedFunction = new RegExp(`\\b(${added.join('|')})\\s*\\(|"(${added.join('|')})"`);
+/** A formula whose text calls a function 1.1.0 adds, or names it as a callable, in any case. */
+const writesAnAddedName = new RegExp(`\\b(${added.join('|')})\\s*\\(|"(${added.join('|')})"`, 'i');
 
 function wanted(formula: BaselineFormula, shape: string): Outcome {
   return formula.byShape?.[shape] ?? formula.outcome;
 }
 
-function differencesFrom1_0_0(byShape: ByShape, selected: (source: string) => boolean) {
-  const differences: Array<{ shape: string; source: string; want: Outcome; got: Outcome }> = [];
+/**
+ * Whether the formula names a function 1.1.0 adds: written in its text, in any letter case, or
+ * produced when the call runs by a value or an expression. The harness records it from the names
+ * the formula asked the registry for on 1.0.0.
+ */
+function namesAnAddedFunction(formula: BaselineFormula, shape: string): boolean {
+  return wanted(formula, shape).namesAdded === true;
+}
+
+function differencesFrom1_0_0(
+  byShape: ByShape,
+  selected: (f: BaselineFormula, s: string) => boolean,
+) {
+  const differences: Array<{ shape: string; source: string; want: Outcome; got: unknown }> = [];
   formulas.forEach((formula, index) => {
-    if (!selected(formula.source)) return;
     for (const shape of shapes) {
+      if (!selected(formula, shape)) continue;
       const want = wanted(formula, shape);
       const got = byShape[shape]?.[index];
       if (JSON.stringify(got) !== JSON.stringify(want)) {
@@ -61,12 +74,12 @@ describe('compatibility with 1.0.0', () => {
     );
     expect(shapes).toStrictEqual(harness.shapeNames(baseline.addedFunctionNames));
     // Not vacuous: the 1.0.0 spec files, docs and probes, with outcomes some shapes change, runs
-    // that hold the value of every node, and runs of the formulas that read the clock.
+    // that hold the value of every node, and the formulas that read the clock compared by value.
     expect(sources.length).toBeGreaterThan(400);
     expect(formulas.filter((f) => f.byShape).length).toBeGreaterThan(0);
-    const stored = JSON.stringify(formulas);
-    expect(stored).toContain('"nodes"');
-    expect(stored).toContain('"clockRun');
+    expect(JSON.stringify(formulas)).toContain('"nodes"');
+    const day = formulas.find((f) => f.source === 'DAY()');
+    expect(day?.outcome.run?.value).toBe(new Date(harness.FROZEN_CLOCK).getUTCDate());
   });
 
   it('derives a host-function shape for every name 1.1.0 adds, and for no other name', () => {
@@ -83,20 +96,18 @@ describe('compatibility with 1.0.0', () => {
   it('gives every formula that names no function 1.1.0 adds its 1.0.0 outcome under every shape', () => {
     const differences = differencesFrom1_0_0(
       atHead,
-      (source) => !namesAnAddedFunction.test(source),
+      (formula, shape) => !namesAnAddedFunction(formula, shape),
     );
     expect(differences.slice(0, 20)).toStrictEqual([]);
     expect(differences.length).toBe(0);
     // Not vacuous: the corpus formulas name no function 1.1.0 adds.
-    expect(formulas.filter((f) => !namesAnAddedFunction.test(f.source)).length).toBeGreaterThan(
-      400,
-    );
+    expect(formulas.filter((f) => !namesAnAddedFunction(f, 'core')).length).toBeGreaterThan(400);
   });
 
   it('gives every formula its 1.0.0 outcome once the definitions 1.1.0 adds are retired', async () => {
-    // What 1.1.0 adds is keyed by signature id, never by a name a host may have used as well, so
-    // with the new definitions retired the head behaves as 1.0.0 did: also for a function a host
-    // registered under one of the new names, and for every formula that names one.
+    // What 1.1.0 adds is never keyed by a name a host may have used as well, so with the new
+    // definitions retired the head behaves as 1.0.0 did: also for a function a host registered
+    // under one of the new names, and for every formula that names one.
     const retired = await harness.runCorpus(packages, corpus, baseline.addedFunctionNames, added);
     const differences = differencesFrom1_0_0(retired, () => true);
     expect(differences.slice(0, 20)).toStrictEqual([]);
@@ -104,22 +115,25 @@ describe('compatibility with 1.0.0', () => {
   }, 120_000);
 
   it('changes a formula that names a function 1.1.0 adds only in that it now calls the function', () => {
-    // With the core registry, such a formula either failed to compile on 1.0.0, the name being
-    // unknown, or named the function as the callable of a nested higher-order call, which resolves
-    // the name when it runs and so yielded null there. At the head it calls the new function; with
-    // the new definitions retired it gives the 1.0.0 outcome again (the test above), so that call
-    // is the whole change.
+    // Such a formula writes the name, in any letter case, or a value or an expression produces it
+    // when the call runs. With the core registry it either failed to compile on 1.0.0, the name
+    // being unknown, or named the function as the callable of a nested higher-order call, which
+    // resolves the name when it runs and yielded null there. At the head it calls the new
+    // function; with the new definitions retired it gives the 1.0.0 outcome again (the test
+    // above), so that call is the whole change.
     const unknownName = ['UNKNOWN_FUNCTION', 'UNKNOWN_FUNCTION_REFERENCE'];
     let failedToCompile = 0;
     let yieldedNull = 0;
+    let fromData = 0;
     let changed = 0;
     formulas.forEach((formula, index) => {
-      if (!namesAnAddedFunction.test(formula.source)) return;
-      const before = wanted(formula, 'core') as {
-        parse?: string[];
-        run?: { value: unknown };
-        runs?: Array<{ value: unknown }>;
-      };
+      // Every formula that writes an added name is in the class.
+      if (writesAnAddedName.test(formula.source)) {
+        expect(namesAnAddedFunction(formula, 'core'), formula.source).toBe(true);
+      }
+      if (!namesAnAddedFunction(formula, 'core')) return;
+      if (!writesAnAddedName.test(formula.source)) fromData++;
+      const before = wanted(formula, 'core');
       if (before.parse !== undefined) {
         expect(
           before.parse.every((code) => unknownName.includes(code)),
@@ -138,6 +152,14 @@ describe('compatibility with 1.0.0', () => {
     });
     expect(failedToCompile).toBeGreaterThan(0);
     expect(yieldedNull).toBeGreaterThan(0);
+    // Not vacuous: names written in lower case, and names a value or an expression produces.
+    const lowerCase = formulas.filter(
+      (f) =>
+        added.some((name) => f.source.includes(JSON.stringify(name.toLowerCase()))) &&
+        namesAnAddedFunction(f, 'core'),
+    );
+    expect(lowerCase.length).toBe(added.length);
+    expect(fromData).toBeGreaterThanOrEqual(harness.RUN_TIME_NAMES.length);
     expect(changed).toBe(failedToCompile + yieldedNull);
   });
 });
@@ -167,21 +189,42 @@ const THROUGH_EACH: Record<string, { refused: string } | { builtInAnswers: unkno
   WORD_COUNT: { refused: 'LITERAL_VALUE_NOT_ALLOWED' },
 };
 
-/** A literal argument of the parameter's type: what a call the built-in accepts passes. */
+/** A literal of the parameter's type: what a call that takes it passes. */
 function argumentFor(param: definitions.FunctionParamDefinition): string {
   if (param.literalValues !== undefined) return JSON.stringify(param.literalValues[0]);
-  switch (definitions.stripNullability(param.type).kind) {
+  const type = definitions.stripNullability(param.type);
+  switch (type.kind) {
     case 'number':
       return '1';
     case 'boolean':
       return 'TRUE';
-    case 'list':
-      return 'LIST("a b"; "c")';
+    case 'list': {
+      const item = definitions.stripNullability(type.of).kind;
+      if (item === 'boolean') return 'LIST(TRUE)';
+      return item === 'number' ? 'LIST(1; 2)' : 'LIST("a b"; "c")';
+    }
     case 'callable':
       return '"ISTEXT"';
     default:
       return '"a b"';
   }
+}
+
+/** The type with `any`, templates and their lists narrowed to numbers. */
+function narrowed(type: definitions.FormulaType): definitions.FormulaType {
+  const base = definitions.stripNullability(type);
+  if (base.kind === 'any' || base.kind === 'template') return definitions.FormulaTypes.number(true);
+  if (base.kind === 'list') return definitions.FormulaTypes.list(narrowed(base.of), true);
+  return type;
+}
+
+/** A type the built-in's parameter does not take: a list becomes a boolean, the rest a list. */
+function disjoint(type: definitions.FormulaType): definitions.FormulaType {
+  const base = definitions.stripNullability(type);
+  if (base.kind === 'callable') return type;
+  return base.kind === 'list'
+    ? definitions.FormulaTypes.boolean(true)
+    : definitions.FormulaTypes.list(definitions.FormulaTypes.boolean(true), true);
 }
 
 /** Parses and runs `source`, recording the signature id of every implementation invoked. */
@@ -221,8 +264,18 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     if (def === undefined) throw new Error(`no built-in ${name}`);
     return def;
   };
+  /** The host's own definition under the name: its own id, no declared invocation. */
+  const hostDefinition = (
+    def: definitions.FunctionDefinition,
+    params: definitions.FunctionParamDefinition[],
+  ): definitions.FunctionDefinition => {
+    const { callableInvocation, templates, ...rest } = def;
+    void callableInvocation;
+    void templates;
+    return { ...rest, signatureId: `HOST_${def.name}/v1`, category: 'custom', params };
+  };
 
-  it('is refused under the built-in’s signature id, and with its parameters under another', () => {
+  it('is refused under the built-in’s id, with its parameters, or with its required ones only', () => {
     for (const name of added) {
       const def = builtIn(name);
       const sameId = { ...def, category: 'custom' };
@@ -233,10 +286,41 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
       expect(() => coreRegistry().registerFunction(sameParams), name).toThrow(
         `Ambiguous overload for ${name}`,
       );
+      // The simplest host function of the name: the built-in's required parameters, such as a
+      // one-argument WORD_COUNT(text).
+      const required = hostDefinition(
+        def,
+        def.params.filter((param) => param.optional !== true),
+      );
+      expect(() => coreRegistry().registerFunction(required), name).toThrow(
+        `Ambiguous overload for ${name}`,
+      );
     }
   });
 
-  it('is shadowed by the built-in for a direct call both accept', async () => {
+  it('is shadowed by the built-in for every call it takes, when its parameters are narrower', async () => {
+    let narrowable = 0;
+    for (const name of added) {
+      const def = builtIn(name);
+      const required = def.params.filter((param) => param.optional !== true);
+      const params = required.map((param) => ({ ...param, type: narrowed(param.type) }));
+      // A built-in whose parameters are concrete has no narrower form: that host function has the
+      // built-in's parameters, refused above.
+      if (JSON.stringify(params) === JSON.stringify(required)) continue;
+      narrowable++;
+      const { registry, implementations } = coreFunctions.createCoreFormulaRuntime();
+      registry.registerFunction(hostDefinition(def, params));
+      const source = `${name}(${params.map(argumentFor).join('; ')})`;
+      const { parsed, invoked } = await runRecorded(registry, implementations, source);
+      expect(parsed.errors, source).toStrictEqual([]);
+      expect(parsed.root.signatureId, source).toBe(def.signatureId);
+      expect(invoked.has(def.signatureId), source).toBe(true);
+    }
+    // TAKE, INDEX_OF, FILTER_BY, DISTINCT and GROUP_COUNTS take lists of any type.
+    expect(narrowable).toBe(5);
+  });
+
+  it('is shadowed by the built-in for a direct call both accept, when its first parameter is wider', async () => {
     for (const name of added) {
       const def = builtIn(name);
       const { registry, implementations } = coreFunctions.createCoreFormulaRuntime();
@@ -259,6 +343,55 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
       expect(invoked.has(def.signatureId), source).toBe(true);
       expect(invoked.has(`HOST_${name}/v1`), source).toBe(false);
     }
+  });
+
+  it('keeps a typed direct call of types the built-in does not take, not one of any-typed values', () => {
+    let refused = 0;
+    for (const name of added) {
+      const def = builtIn(name);
+      const required = def.params.filter((param) => param.optional !== true);
+      const params = required.map((param) =>
+        definitions.stripNullability(param.type).kind === 'callable'
+          ? param
+          : { name: param.name, type: disjoint(param.type) },
+      );
+      const { registry } = coreFunctions.createCoreFormulaRuntime();
+      registry.registerVariable({
+        name: 'value',
+        description: 'Input of any type.',
+        type: definitions.FormulaTypes.any(true),
+      });
+      registry.registerFunction(hostDefinition(def, params));
+      const typed = `${name}(${params.map(argumentFor).join('; ')})`;
+      const bound = parser.parseFormula(typed, { registry });
+      expect(bound.errors, typed).toStrictEqual([]);
+      expect(bound.root.signatureId, typed).toBe(`HOST_${name}/v1`);
+      // Values typed `any` (an untyped input) satisfy the built-in, which is registered first.
+      const untyped = `${name}(${params
+        .map((param) =>
+          definitions.stripNullability(param.type).kind === 'callable' ? '"ISTEXT"' : 'value',
+        )
+        .join('; ')})`;
+      const rebound = parser.parseFormula(untyped, { registry });
+      const literalOnly = required.some(
+        (param) =>
+          param.literalOnly === true &&
+          definitions.stripNullability(param.type).kind !== 'callable',
+      );
+      if (literalOnly) {
+        // The built-in takes a literal there, which a value is not: the call no longer compiles.
+        expect(
+          rebound.errors.map((error) => error.code),
+          untyped,
+        ).toStrictEqual(['EXPECTED_STRING_LITERAL_REFERENCE']);
+        refused++;
+      } else {
+        expect(rebound.errors, untyped).toStrictEqual([]);
+        expect(rebound.root.signatureId, untyped).toBe(def.signatureId);
+      }
+    }
+    // PLAIN_TEXT and MARKDOWN_BLOCKS require their mode.
+    expect(refused).toBe(2);
   });
 
   it('keeps its own direct calls, and through EACH the name reaches the built-in', async () => {
