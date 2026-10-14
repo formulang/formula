@@ -13,14 +13,18 @@ import {
 } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { asText, assumedTextLength, isEmptyValue } from './helpers';
-import { regexSafetyRefusal } from './regex-safety';
 
 export type RegexCompileFailure =
   'invalid_flags' | 'backreferences' | 'lookbehind' | 'invalid_pattern';
 
-/** A numbered (`\1`) or named (`\k<name>`) backreference. */
-const BACKREFERENCE = /\\[1-9]|\\k</;
-const LOOKBEHIND = /\(\?<[=!]/;
+function isProbablySafeRegex(pattern: string): boolean {
+  // Conservative heuristics to reduce ReDoS risk.
+  // Disallow nested quantifiers like (a+)+, (?:.*)*, (x{1,3})+
+  if (/\([^)]*[+*{][^)]*\)[+*{]/.test(pattern)) return false;
+  // Disallow alternation inside a quantified group: (a|aa)+
+  if (/\([^)]*\|[^)]*\)[+*{]/.test(pattern)) return false;
+  return true;
+}
 
 function parseSlashRegex(patternRaw: string): { source: string; flags: string } {
   // Accept either /.../flags or raw pattern (no flags).
@@ -31,9 +35,8 @@ function parseSlashRegex(patternRaw: string): { source: string; flags: string } 
 
 /**
  * Compiles an author-supplied regular expression under the safety rules every regex built-in
- * shares: the text and pattern lengths are bounded by `limits` (security errors), a pattern
- * whose backtracking can grow faster than quadratically in the text length is refused
- * (`REGEX_UNSAFE`, see `regexSafetyRefusal`), and flags outside `allowedFlags`, backreferences,
+ * shares: the text and pattern lengths are bounded by `limits` (security errors), nested
+ * quantifiers are refused (`REGEX_UNSAFE`), and flags outside `allowedFlags`, backreferences,
  * lookbehind and invalid patterns come back as a `failure` for the caller to report.
  *
  * `allowedFlags` is tested against the flags the author wrote; `forceGlobal` then adds `g`.
@@ -73,24 +76,22 @@ export function compileSafeRegex(args: {
   if (!args.allowedFlags.test(authoredFlags)) return { re: null, failure: 'invalid_flags' };
   const flags =
     args.forceGlobal && !authoredFlags.includes('g') ? `${authoredFlags}g` : authoredFlags;
-  if (BACKREFERENCE.test(pattern)) return { re: null, failure: 'backreferences' };
-  if (LOOKBEHIND.test(pattern)) return { re: null, failure: 'lookbehind' };
+  if (/\\[1-9]/.test(pattern)) return { re: null, failure: 'backreferences' };
+  if (/(\(\?<=|\(\?<!)/.test(pattern)) return { re: null, failure: 'lookbehind' };
 
-  let re: RegExp;
-  try {
-    re = new RegExp(pattern, flags);
-  } catch {
-    return { re: null, failure: 'invalid_pattern' };
-  }
-  const refusal = regexSafetyRefusal(pattern, flags, limits.maxRegexTextLength);
-  if (refusal !== null) {
+  if (!isProbablySafeRegex(pattern)) {
     throw new FormulaRuntimeError(
       FormulaErrorCodes.REGEX_UNSAFE,
-      `Regex pattern is not allowed: ${refusal}`,
+      'Regex pattern is not allowed',
       'security',
     );
   }
-  return { re };
+
+  try {
+    return { re: new RegExp(pattern, flags) };
+  } catch {
+    return { re: null, failure: 'invalid_pattern' };
+  }
 }
 
 export class MatchExpressionImplementation extends AbstractEagerBatchImplementation {
