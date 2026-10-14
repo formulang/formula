@@ -68,12 +68,46 @@ function plainLines(lines: Iterable<string>): string {
 
 // HTML
 
-/** Elements dropped together with their content, each with the end tag that closes it. */
+/**
+ * Elements whose content is dropped wherever they appear: `script` and `style` hold code, and
+ * `title` names the document without being part of its text.
+ */
+const HIDDEN_CONTENT_ELEMENTS: ReadonlySet<string> = new Set(['script', 'style', 'title']);
+
+/** Elements whose content is dropped inside `head`, where it is head content. */
+const HEAD_HIDDEN_CONTENT_ELEMENTS: ReadonlySet<string> = new Set([
+  'noframes',
+  'noscript',
+  'template',
+]);
+
+/** The end tag that closes each element whose content is dropped. */
 const HIDDEN_CONTENT_END_TAGS: ReadonlyMap<string, RegExp> = new Map([
   ['script', /<\/script(?=[\t\n\f\r />])/gi],
   ['style', /<\/style(?=[\t\n\f\r />])/gi],
-  ['head', /<\/head(?=[\t\n\f\r />])/gi],
+  ['title', /<\/title(?=[\t\n\f\r />])/gi],
+  ['noframes', /<\/noframes(?=[\t\n\f\r />])/gi],
+  ['noscript', /<\/noscript(?=[\t\n\f\r />])/gi],
+  ['template', /<\/template(?=[\t\n\f\r />])/gi],
 ]);
+
+/** The elements that live in `head`; any other start tag, and any text, starts the body. */
+const HEAD_ELEMENTS: ReadonlySet<string> = new Set([
+  'base',
+  'basefont',
+  'bgsound',
+  'link',
+  'meta',
+  'noframes',
+  'noscript',
+  'script',
+  'style',
+  'template',
+  'title',
+]);
+
+/** The end tags that end `head`; HTML ignores every other end tag there. */
+const HEAD_ENDING_END_TAGS: ReadonlySet<string> = new Set(['body', 'br', 'head', 'html']);
 
 /** Elements whose opening and closing tags end a line. */
 const LINE_ENDING_ELEMENTS: ReadonlySet<string> = new Set([
@@ -113,6 +147,7 @@ const LINE_ENDING_ELEMENTS: ReadonlySet<string> = new Set([
 
 const ASCII_LETTER = /^[A-Za-z]$/;
 const ASCII_UPPER_CASE = /[A-Z]+/g;
+const NOT_HTML_SPACE = /[^\t\n\f\r ]/;
 const CHARACTER_REFERENCE =
   /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g;
 const SOURCE_LINE_BREAK = /\r\n|\r|\n/g;
@@ -125,6 +160,9 @@ type HtmlTag = {
   /** The index after the tag's `>`; -1 when the markup ends inside the tag. */
   end: number;
 };
+
+/** Where the scan stands relative to `head`: before it, inside it, or past it. */
+type HeadState = 'before' | 'in' | 'after';
 
 /** The states of the HTML tokenizer between a tag's name and its `>`. */
 type TagState =
@@ -270,6 +308,18 @@ function endOfBogusComment(markup: string, from: number, work: ScanWork): number
 }
 
 /**
+ * The head state after a start or end tag, as HTML's insertion modes move it: `head` opens at
+ * `<head>` or at the first element that lives in it, and ends at `</head>` or where the body
+ * starts: at `<body>` or any other element that cannot live in `head`.
+ */
+function headStateAfterTag(state: HeadState, tag: HtmlTag): HeadState {
+  if (state === 'after') return state;
+  if (tag.closing) return HEAD_ENDING_END_TAGS.has(tag.name) ? 'after' : state;
+  if (tag.name === 'html') return state;
+  return tag.name === 'head' || HEAD_ELEMENTS.has(tag.name) ? 'in' : 'after';
+}
+
+/**
  * The index after the end tag that closes the dropped element `name` whose content starts at
  * `from`; the end of the markup when no end tag follows.
  */
@@ -290,19 +340,23 @@ function endOfHiddenContent(markup: string, name: string, from: number, work: Sc
 
 /**
  * The text of an HTML document, read in one forward pass with the HTML tokenizer's rules for
- * tags, comments and declarations: comments and the content of `script`, `style` and `head`
- * dropped, the line-ending elements ending a line, every other tag removed, character references
- * decoded, whitespace collapsed within each line (inside `pre`, each source line break ends a
- * line) and blank lines dropped. A tag, comment or dropped element that the markup ends inside
- * is dropped with the rest of the markup, as an HTML parser drops it.
+ * tags, comments and declarations: comments and the content of `script`, `style`, `title` and
+ * `head` dropped (`head` ends at `</head>` or where the body starts), the line-ending elements
+ * ending a line, every other tag removed, character references decoded, whitespace collapsed
+ * within each line (inside `pre`, each source line break ends a line) and blank lines dropped. A
+ * tag, comment or dropped element that the markup ends inside is dropped with the rest of the
+ * markup, as an HTML parser drops it.
  */
 function htmlToPlainText(markup: string, work: ScanWork): string {
   const out: string[] = [];
   let inPre = false;
+  let head: HeadState = 'before';
   let index = 0;
 
   const appendText = (raw: string): void => {
     if (raw.length === 0) return;
+    // Text other than whitespace cannot live in `head`: it starts the body.
+    if (head !== 'after' && NOT_HTML_SPACE.test(raw)) head = 'after';
     const decoded = decodeCharacterReferences(raw);
     out.push(
       inPre ? decoded.replace(SOURCE_LINE_BREAK, '\n') : decoded.replace(WHITESPACE_RUN, ' '),
@@ -357,7 +411,11 @@ function htmlToPlainText(markup: string, work: ScanWork): string {
     }
     if (tag.end < 0) break;
     index = tag.end;
-    if (!tag.closing && HIDDEN_CONTENT_END_TAGS.has(tag.name)) {
+    head = headStateAfterTag(head, tag);
+    const hidden =
+      HIDDEN_CONTENT_ELEMENTS.has(tag.name) ||
+      (head === 'in' && HEAD_HIDDEN_CONTENT_ELEMENTS.has(tag.name));
+    if (!tag.closing && hidden) {
       index = endOfHiddenContent(markup, tag.name, tag.end, work);
       continue;
     }

@@ -1007,8 +1007,13 @@ await evalOk('MISSING_FROM(LIST("\\"hallo\\""); value; "loose")', { value: 'Er s
 The text of `markup`, one line per block, with whitespace collapsed within
 each line and blank lines dropped. `format` is a required literal:
 
-- `"html"` — comments and the content of `script`, `style` and `head` are
-  dropped; `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
+- `"html"` — comments and the content of `script`, `style`, `title` and `head`
+  are dropped. `head` ends at `</head>` or, as HTML lets that end tag be
+  omitted, where the body starts: at `<body>`, at text, or at any element that
+  cannot live in `head` (only `base`, `basefont`, `bgsound`, `link`, `meta`,
+  `noframes`, `noscript`, `script`, `style`, `template` and `title` can; the
+  content of `noframes`, `noscript` and `template` inside `head` is head
+  content too). `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
   `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`,
   `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`, `tr`
   and `ul` end a line where they open or close; every other tag is removed.

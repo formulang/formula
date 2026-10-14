@@ -42,6 +42,34 @@ describe('Markup text', () => {
       expect(await html('<!DOCTYPE html><?xml version="1.0"?><p>Doc</p>')).toBe('Doc');
     });
 
+    it('ends head at </head> or where the body starts, as HTML does', async () => {
+      const head =
+        '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Angebot</title>';
+      const body = '<body><h1>Hallo</h1><p>Text</p>';
+      // With and without the optional end tag.
+      expect(await html(`${head}</head>${body}`)).toBe('Hallo\nText');
+      expect(await html(`${head}${body}`)).toBe('Hallo\nText');
+      // Without `head` and `body` tags, the title is head content all the same.
+      expect(await html('<title>Angebot</title><h1>Hallo</h1>')).toBe('Hallo');
+      // An element that cannot live in head, or text, starts the body.
+      expect(await html('<head><meta charset="utf-8"><p>Erster Absatz')).toBe('Erster Absatz');
+      expect(await html('<head><title>T</title>Gleich Text</head><p>Mehr</p>')).toBe(
+        'Gleich Text\nMehr',
+      );
+      // Inside head, noscript and template content is head content too.
+      expect(
+        await html(
+          '<head><script>x()</script><noscript>Bitte JavaScript</noscript><template><p>T</p></template></head><body>Hallo',
+        ),
+      ).toBe('Hallo');
+      // In the body, noscript keeps its text; a title (here an SVG title) never shows.
+      expect(
+        await html(
+          '<body><noscript>Ohne JavaScript</noscript> <svg><title>Icon</title></svg> Text',
+        ),
+      ).toBe('Ohne JavaScript Text');
+    });
+
     it('removes other tags and skips > inside quoted attributes', async () => {
       expect(await html('<p class="x">Hello <b>bold</b> <a title="a > b">link</a></p>')).toBe(
         'Hello bold link',
