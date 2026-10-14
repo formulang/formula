@@ -245,29 +245,84 @@ describe('InMemoryFormulaRegistry', () => {
     expect(registry.getFunction('KEYED/v1')?.callableInvocation).toStrictEqual(
       keyed.callableInvocation,
     );
-    expect(
-      register(
-        higherOrder([
-          { kind: 'value', typeOf: 0 },
-          { kind: 'arguments', from: 3 },
-        ]),
-      ),
-    ).not.toThrow();
+    // Any position a call passes an argument at, before the callable and the callable's own
+    // included, and an `arguments` entry that adds no more entries than it skips.
+    for (const invocation of [
+      [
+        { kind: 'value', typeOf: 0 },
+        { kind: 'arguments', from: 3 },
+      ],
+      [{ kind: 'argument', at: 1 }],
+      [{ kind: 'argument', at: 2 }],
+      [{ kind: 'value', typeOf: 2 }],
+      [{ kind: 'arguments', from: 0 }],
+      [{ kind: 'value' }, { kind: 'arguments', from: 1 }],
+      [],
+    ] as const) {
+      expect(
+        register(higherOrder(invocation as unknown as InvokedArgumentDeclaration[])),
+        JSON.stringify(invocation),
+      ).not.toThrow();
+    }
 
     for (const [invocation, message] of [
-      [[{ kind: 'item', of: 4 }], /names no parameter other than the callable at of/],
-      [[{ kind: 'item', of: 2 }], /names no parameter other than the callable at of/],
-      [[{ kind: 'item', of: 3 }], /takes items from parameter 3, which is not a list/],
-      [[{ kind: 'argument', at: 1 }], /passes on argument 1, before the callable/],
-      [[{ kind: 'arguments', from: 0 }], /passes on argument 0, before the callable/],
-      [[{ kind: 'value', typeOf: 9 }], /names no parameter other than the callable at typeOf/],
-      [[{ kind: 'element', of: 0 }], /declares an unknown argument kind/],
+      [[{ kind: 'item', of: 4 }], /gives of 4, where no call passes an argument/],
+      [[{ kind: 'item', of: 2 }], /takes items from argument 2, which is not a list/],
+      [[{ kind: 'item', of: 3 }], /takes items from argument 3, which is not a list/],
+      [[{ kind: 'argument', at: -1 }], /gives at -1, where no call passes an argument/],
+      [[{ kind: 'argument', at: 1.5 }], /gives at 1.5, where no call passes an argument/],
+      [[{ kind: 'argument', at: '1' }], /gives at 1, where no call passes an argument/],
+      [[{ kind: 'arguments', from: 4 }], /gives from 4, where no call passes an argument/],
+      [[{ kind: 'value', typeOf: 9 }], /gives typeOf 9, where no call passes an argument/],
+      [[{ kind: 'element', of: 0 }], /declares an argument of no known kind/],
+      [[null], /declares an argument of no known kind/],
+      [
+        [{ kind: 'value' }, { kind: 'value' }, { kind: 'arguments', from: 1 }],
+        /passes on the arguments from 1 and 2 more, so its callable can receive more arguments/,
+      ],
+      [
+        [
+          { kind: 'arguments', from: 2 },
+          { kind: 'arguments', from: 3 },
+        ],
+        /passes on the arguments from an index more than once/,
+      ],
+      [{ kind: 'item', of: 1 }, /is not a list of arguments/],
     ] as const) {
       expect(
         register(higherOrder(invocation as unknown as InvokedArgumentDeclaration[])),
         JSON.stringify(invocation),
       ).toThrow(message);
     }
+
+    // `null` stands for absent, as for the other optional fields: no reader sees it.
+    const nulls = createRegistry();
+    nulls.registerFunction({
+      ...higherOrder([]),
+      callableInvocation: null as unknown as InvokedArgumentDeclaration[],
+    });
+    expect(Object.keys(nulls.getFunction('KEYED/v1') ?? {})).not.toContain('callableInvocation');
+    const nullTypeOf = createRegistry();
+    nullTypeOf.registerFunction(
+      higherOrder([{ kind: 'value', typeOf: null as unknown as number }]),
+    );
+    expect(nullTypeOf.getFunction('KEYED/v1')?.callableInvocation).toStrictEqual([
+      { kind: 'value' },
+    ]);
+
+    // Past the parameters, a variadic last parameter takes every extra argument.
+    const variadic: FunctionParamDefinition[] = [
+      {
+        name: 'operator',
+        type: FormulaTypes.callable('function_or_operator', {}),
+        literalOnly: true,
+      },
+      { name: 'rest', type: FormulaTypes.any(true), variadic: true },
+    ];
+    expect(register(higherOrder([{ kind: 'argument', at: 7 }], variadic))).not.toThrow();
+    expect(register(higherOrder([{ kind: 'argument', at: 7 }], variadic.slice(0, 1)))).toThrow(
+      /gives at 7, where no call passes an argument/,
+    );
     const withoutCallable = higherOrder(
       [{ kind: 'item', of: 0 }],
       [{ name: 'list', type: FormulaTypes.list(FormulaTypes.any(true), true) }],
@@ -281,5 +336,7 @@ describe('InMemoryFormulaRegistry', () => {
       ],
     );
     expect(register(notLiteralOnly)).toThrow(/needs its callable parameter to be literalOnly/);
+    const twoCallables = higherOrder([{ kind: 'value' }], [...variadic.slice(0, 1), ...variadic]);
+    expect(register(twoCallables)).toThrow(/needs exactly one callable parameter/);
   });
 });

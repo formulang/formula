@@ -1018,7 +1018,7 @@ function bindTypesAndRequirements(
           }
 
           // Strict callable validation for the higher-order functions whose invocation the parser
-          // knows (`invocationOf`: by name for 1.0.0's, declared on the definition otherwise):
+          // knows (`invocationOf`: declared on the definition, or by name for a 1.0.0 name):
           // arity, overload, return type, and the referenced function's literal-only rules for
           // every argument the invocation passes it.
           const outerBindings = inferGenericBindingsForCall(def, argTypes);
@@ -1076,7 +1076,7 @@ function bindTypesAndRequirements(
                 }),
               );
             } else {
-              checkPassedArguments(registry, errors, {
+              checkPassedArguments(registry, errors, new Set(), {
                 call: { signatureId: def.signatureId, args: node.args },
                 host: def,
                 candidates,
@@ -1085,7 +1085,6 @@ function bindTypesAndRequirements(
                   source: invokedArg.forwards,
                 })),
                 named: { index: i, span: literal.span },
-                depth: 1,
               });
 
               if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
@@ -1500,17 +1499,18 @@ type PassedArgument = { type: FormulaType; source: number | undefined };
 /**
  * Holds the arguments a higher-order function whose invocation the parser knows passes to the
  * callable it names to the callable's enumerated-literal rule (`enumeratedTarget`): an argument
- * reaching a parameter that
- * lists admitted `literalValues` must be a string literal naming a value every definition of the
- * name lists there. A literal that names a callable in turn is followed into the invocation that
- * callable makes, for every definition of the name, so the rule holds at any depth of higher-order
- * calls whose callables are written as string literals. A name passed on is resolved when the call
- * runs, so one the registry does not know is no error here. Each exit below states why it lets no
- * literal reach a parameter that lists admitted values unchecked.
+ * reaching a parameter that lists admitted `literalValues` must be a string literal naming a value
+ * every definition of the name lists there. A literal that names a callable in turn is followed
+ * into the invocation that callable makes, for every definition of the name, so the rule holds at
+ * any depth of higher-order calls whose callables are written as string literals. A name passed on
+ * is resolved when the call runs, so one the registry does not know is no error here. Each exit
+ * below states why it lets no literal reach a parameter that lists admitted values unchecked.
+ * `walked` holds the states this walk has checked, for the call written in the formula.
  */
 function checkPassedArguments(
   registry: FormulaRegistry,
   errors: FormulaError[],
+  walked: Set<string>,
   at: {
     /** The call written in the formula: every `source` indexes its arguments. */
     call: { signatureId: string; args: readonly RuleNode[] };
@@ -1525,10 +1525,22 @@ function checkPassedArguments(
     passed: readonly PassedArgument[];
     /** The formula argument that names the callable. */
     named: { index: number; span: SourceSpan | undefined };
-    /** 1 for the callable written in the call, one more for each nested invocation. */
-    depth: number;
   },
 ): void {
+  // Exit: the walk has been here, at the callable named by the same formula argument, invoked by
+  // the same function with the same formula argument (or a value it supplies) at every position;
+  // the types the arguments carry decide no check and no follow, so the walk already made every
+  // check from here. These states are finitely many: no invocation passes on more arguments than
+  // the call has or it lists (registration refuses a declaration that would, and a spec registers
+  // every entry of the 1.0.0 table as one), so the walk ends, and only once nothing new is left.
+  const state = [
+    at.named.index,
+    at.host.signatureId,
+    at.candidates.map((def) => def.signatureId).join('+'),
+    at.passed.map((passed) => passed.source ?? '').join(','),
+  ].join('|');
+  if (walked.has(state)) return;
+  walked.add(state);
   at.passed.forEach((passed, position) => {
     const arg = passed.source === undefined ? undefined : at.call.args[passed.source];
     const enumerated = enumeratedTarget(at.candidates, position);
@@ -1557,13 +1569,6 @@ function checkPassedArguments(
     if (arg === undefined || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
       return;
     }
-    // Exit, never taken for the core definitions: every invocation passes on only arguments after
-    // the callable (the table spec checks it, and registration refuses a declared invocation that
-    // does not), so each nested callable is named by a formula argument to the right of the one
-    // naming the callable before it, and a call with n arguments nests fewer than n levels. A host
-    // definition reusing a name the table keys by name, with another parameter layout, gets the
-    // core invocation, and for it this bound keeps the walk finite.
-    if (at.depth >= at.call.args.length) return;
     const followed = new Map<CallableInvocation, Set<string>>();
     for (const def of at.candidates) {
       const target = paramAt(def.params, position);
@@ -1584,7 +1589,7 @@ function checkPassedArguments(
         at.passed.map((p) => p.type),
       );
       const candidates = callableCandidates(registry, targetBase.reference, arg.predictableValue);
-      checkPassedArguments(registry, errors, {
+      checkPassedArguments(registry, errors, walked, {
         call: at.call,
         host: def,
         candidates,
@@ -1594,7 +1599,6 @@ function checkPassedArguments(
             invokedArg.forwards === undefined ? undefined : at.passed[invokedArg.forwards]?.source,
         })),
         named: { index: passed.source, span: arg.span },
-        depth: at.depth + 1,
       });
     }
   });

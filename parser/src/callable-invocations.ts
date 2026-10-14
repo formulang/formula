@@ -50,12 +50,13 @@ export function invokedArguments(
 
 /**
  * How the core higher-order functions of 1.0.0 invoke their callables, keyed by function name in
- * upper case, as 1.0.0 keyed this validation: a definition re-registered under another signature
- * id with the same name — the documented way to change a function's behaviour — keeps it. A
- * higher-order function added since declares its invocation on its definition
- * (`callableInvocation`), so a copy of it keeps the declaration and a host's function under the
- * same name, which declares none, keeps the treatment 1.0.0 gave it. A spec reconciles the table
- * and the declarations with every core definition that has a callable parameter, both ways.
+ * upper case, as 1.0.0 keyed this validation: a definition under one of these names that declares
+ * no invocation — every 1.0.0 definition, the core one re-registered under another signature id
+ * (the documented way to change a function's behaviour), a host's — keeps the treatment 1.0.0
+ * gave it. A definition that declares its invocation (`callableInvocation`), as every higher-order
+ * function added since does, is checked by its declaration under any name. Specs reconcile the
+ * table and the declarations with every core definition that has a callable parameter, both ways,
+ * and register every entry as a declaration, which holds the table to the registration rule.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
@@ -91,12 +92,13 @@ export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new 
 ]);
 
 /**
- * How the higher-order function `def` invokes its callable: the invocation 1.0.0 gave its name, or
- * the one it declares; undefined for any other function.
+ * How the higher-order function `def` invokes its callable: the invocation it declares, or, for a
+ * definition that declares none (`null` included), the one 1.0.0 gave its name; undefined for any
+ * other function.
  */
 export function invocationOf(def: {
   name: string;
   callableInvocation?: CallableInvocation;
 }): CallableInvocation | undefined {
-  return INVOCATIONS_BY_NAME.get(def.name.toUpperCase()) ?? def.callableInvocation;
+  return def.callableInvocation ?? INVOCATIONS_BY_NAME.get(def.name.toUpperCase());
 }
