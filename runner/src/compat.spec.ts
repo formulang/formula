@@ -122,10 +122,12 @@ describe('compatibility with 1.0.0', () => {
     expect(unnamed.length).toBeGreaterThan(400);
   });
 
-  it('gives every formula its 1.0.0 outcome once the definitions 1.1.0 adds are retired', async () => {
+  it('gives every formula its 1.0.0 behaviour once the definitions 1.1.0 adds are retired', async () => {
     // What 1.1.0 adds is never keyed by a name a host may have used as well, so with the new
     // definitions retired the head behaves as 1.0.0 did: also for a function a host registered
-    // under one of the new names, and for every formula that names one.
+    // under one of the new names, and for every formula that names one. Which names a formula
+    // asks the registry for is no behaviour, and can differ: the head looks up a nested callable
+    // a string literal names when it parses, where 1.0.0 did so only when the nested call ran.
     const retired = await harness.runCorpus(packages, corpus, baseline.addedFunctionNames, added);
     const differences = differencesFrom1_0_0(retired, () => true);
     expect(differences.slice(0, 20)).toStrictEqual([]);
