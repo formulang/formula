@@ -567,7 +567,8 @@ mode on):
 - `"whitespace"` (default) — the text is trimmed and split at every run of
   whitespace. Whitespace is JavaScript's `\s`: tabs, line breaks and the
   no-break space U+00A0 separate words; U+0085 and U+001C–U+001F do not
-  (Python's `str.split()` also splits at those).
+  (Python's `str.split()` also splits at those), and the byte order mark
+  U+FEFF does (Python's `str.split()` does not).
 - `"letters"` — runs of letters, marks and numbers (`\p{L}`, `\p{M}`,
   `\p{N}`). An apostrophe (`'`, `’`) or a hyphen (`-`, U+2010, U+2011, the soft
   hyphen U+00AD) between two runs joins them into one word, and so does `.` or
@@ -940,10 +941,15 @@ The sentences of `text`, each trimmed, empty pieces dropped. `mode` is
 `"punctuation"` (default) or `"terminators"` (see
 [text segmentation](#text)). `keep` lists tokens that never end a sentence: a
 split that falls inside or at the end of an occurrence of a listed token is
-suppressed when the occurrence starts at a word boundary (matching is
-case-sensitive, empty entries are skipped). In `"terminators"` mode the
-terminator run stays with the sentence it ends, and a piece holding nothing
-but terminators is not a sentence.
+suppressed when the occurrence starts at a word boundary — a token starting
+with a letter, mark or number must not follow one (`"ca."` inside `Africa.`
+does not count), a token starting with anything else always counts (`"..."`
+in `Na ja...`). Matching is case-sensitive and empty entries are skipped. In
+`"terminators"` mode the terminator run stays with the sentence it ends, and a
+piece holding nothing but terminators is not a sentence. The `"punctuation"`
+mode splits as Python's `re.split(r"(?<=[.!?])\s+", text.strip())` does, with
+JavaScript's whitespace: U+FEFF separates sentences, U+0085 and U+001C–U+001F
+do not.
 
 ```ts
 await evalOk('SENTENCES("Hi. Ok!  Next? end")'); // ["Hi.", "Ok!", "Next?", "end"]
@@ -1083,9 +1089,12 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 
 - for a heading, its text without the opening and closing `#`s;
 - for a list item, its text and continuation lines — nested items are items
-  of their own;
-- for a table row, its non-empty cells joined by one space — the header row
-  is a row, the delimiter row is not, and a table needs its delimiter row;
+  of their own, and a bare marker with no text is no item. As in CommonMark,
+  an item interrupts a paragraph only when it has text and, if ordered, starts
+  at 1: a wrapped line opening with `2025.` continues its paragraph;
+- for a table row, its non-empty cells joined by one space — every row except
+  the delimiter row, the header row included, and a table needs its delimiter
+  row;
 - for a paragraph, its lines joined by one space;
 - for a fenced code block, its content unchanged.
 

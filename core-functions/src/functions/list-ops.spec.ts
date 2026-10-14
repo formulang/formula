@@ -209,6 +209,30 @@ describe('List ops', () => {
       expect(await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))')).toBe(2);
     });
 
+    it('keys deeply nested, shared and self-containing values without recursion', async () => {
+      const nested = (depth: number, leaf: unknown): unknown => {
+        let value = leaf;
+        for (let level = 0; level < depth; level += 1) value = [value];
+        return value;
+      };
+      // 20,000 levels: a recursive key exhausts the call stack long before.
+      expect(
+        await evalOk('GROUP_COUNTS(value)', {
+          value: [nested(20_000, 1), nested(20_000, 1), nested(20_000, 2)],
+        }),
+      ).toStrictEqual([2, 1]);
+      // One object shared 2^40 ways over 40 levels is keyed once, not once per path.
+      let shared: unknown = { leaf: 1 };
+      for (let level = 0; level < 40; level += 1) shared = { left: shared, right: shared };
+      expect(await evalOk('COUNT(DISTINCT(value))', { value: [shared, shared] })).toBe(1);
+      // A value that contains itself is keyed with a marker where it repeats.
+      const cyclic: Record<string, unknown> = { name: 'a' };
+      cyclic.self = cyclic;
+      expect(await evalOk('GROUP_COUNTS(value)', { value: [cyclic, cyclic, 'a'] })).toStrictEqual([
+        2, 1,
+      ]);
+    });
+
     it('answers group balance questions', async () => {
       const segments = ['craft', 'retail', 'craft', 'health', 'retail', 'craft'];
       expect(

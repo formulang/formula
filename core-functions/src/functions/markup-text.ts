@@ -449,7 +449,8 @@ const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+([\s\S]*))?$/;
 const FENCE_OPEN = /^([ \t]*)(`{3,}|~{3,})([\s\S]*)/;
 const FENCE_CLOSE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/;
 const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
-const LIST_ITEM = /^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+([\s\S]*))?$/;
+/** A list marker: a bullet, or the start number of an ordered item (group 1); the text in group 2. */
+const LIST_ITEM = /^[ \t]*(?:[-*+]|([0-9]{1,9})[.)])(?:[ \t]+([\s\S]*))?$/;
 const TABLE_DELIMITER_CELL = /^:?-+:?$/;
 
 const ASCII_PUNCTUATION = /^[!-\/:-@[-`{-~]$/;
@@ -742,14 +743,16 @@ class MarkdownBlockReader {
       this.paragraph = [];
     }
     if (this.listItem !== null) {
-      this.blocks.push({
-        kind: 'list-item',
-        level: 0,
-        text: this.inlineText(joinLines(this.listItem)),
-      });
+      const text = this.inlineText(joinLines(this.listItem));
+      // A bare marker with no text is no item.
+      if (text.length > 0) this.blocks.push({ kind: 'list-item', level: 0, text });
       this.listItem = null;
     }
     this.tableColumns = 0;
+  }
+
+  inParagraph(): boolean {
+    return this.paragraph.length > 0;
   }
 
   addHeading(level: number, content: string): void {
@@ -858,8 +861,14 @@ function parseMarkdownBlocks(source: string, work: ScanWork): MarkdownBlock[] {
       continue;
     }
     const listItem = LIST_ITEM.exec(line);
-    if (listItem !== null) {
-      reader.startListItem(listItem[1] ?? '');
+    // As in CommonMark, an item interrupts a paragraph only when it has text and, if ordered,
+    // starts at 1: a wrapped line opening with "2025." or "3." continues the paragraph.
+    const interrupts =
+      listItem !== null &&
+      (listItem[2] ?? '').trim().length > 0 &&
+      (listItem[1] === undefined || Number(listItem[1]) === 1);
+    if (listItem !== null && (interrupts || !reader.inParagraph())) {
+      reader.startListItem(listItem[2] ?? '');
       continue;
     }
     if (reader.inTable()) {

@@ -220,6 +220,19 @@ describe('Markup text', () => {
       expect(await blocks('```\nunclosed fence', 'code')).toStrictEqual(['unclosed fence']);
     });
 
+    it('drops a bare list marker; only an item with text, ordered from 1, interrupts a paragraph', async () => {
+      expect(await blocks('-\n- a\n1.', 'list-item')).toStrictEqual(['a']);
+      expect(await blocks('Sie sparen ab\n2025. weniger', 'paragraph')).toStrictEqual([
+        'Sie sparen ab 2025. weniger',
+      ]);
+      expect(await blocks('Sie sparen ab\n2025. weniger', 'list-item')).toStrictEqual([]);
+      expect(await blocks('Text\n-\nmehr', 'paragraph')).toStrictEqual(['Text - mehr']);
+      expect(await blocks('Text\n1. eins\n2. zwei', 'list-item')).toStrictEqual(['eins', 'zwei']);
+      expect(await blocks('Text\n- a', 'list-item')).toStrictEqual(['a']);
+      // Outside a paragraph an ordered item may start at any number.
+      expect(await blocks('# Kapitel\n2025. Jahr', 'list-item')).toStrictEqual(['Jahr']);
+    });
+
     it('needs a delimiter row to recognise a table', async () => {
       expect(await blocks('a | b\nc | d', 'table-row')).toStrictEqual([]);
       expect(await blocks('a | b\nc | d', 'paragraph')).toStrictEqual(['a | b c | d']);

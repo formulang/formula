@@ -269,35 +269,116 @@ function listCost(list: unknown): number {
   return 0.00002 + 0.00002 * assumedListLength(list);
 }
 
-/**
- * A key that is equal exactly for equal values: by value for text, numbers and booleans (with no
- * conversion between them), by structure for lists and objects.
- */
-function valueKey(value: unknown, ancestors: readonly unknown[] = []): string {
+/** The key of a value that holds no other values; `null` for a list or an object. */
+function scalarKey(value: unknown): string | null {
   if (value === null || value === undefined) return 'null';
   if (typeof value === 'string') return `t${JSON.stringify(value)}`;
   if (typeof value === 'number') return `n${value}`;
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value !== 'object') return `${typeof value}:${String(value)}`;
-  // A value that contains itself has no finite structure; its repetition gets one marker.
-  if (ancestors.includes(value)) return 'cycle';
-  const path = [...ancestors, value];
-  if (Array.isArray(value)) return `[${value.map((item) => valueKey(item, path)).join(',')}]`;
+  return null;
+}
+
+/** Where a value repeats inside itself: it has no finite structure, so the repetition gets one marker. */
+const CYCLE_KEY = 'cycle';
+
+/** A list or object being keyed: its members, the next one to key, and the keys so far. */
+type KeyFrame = {
+  value: object;
+  members: ReadonlyArray<readonly [string | null, unknown]>;
+  next: number;
+  keys: string[];
+  cyclic: boolean;
+};
+
+/**
+ * Keys that are equal exactly for equal values: by value for text, numbers and booleans (with no
+ * conversion between them), by structure for lists and objects. A list or object is reduced to
+ * the id of its structure, built from its members' keys without recursion, so nesting depth
+ * costs no stack; an object met again is keyed once.
+ */
+class StructuralKeys {
+  private readonly structureIds = new Map<string, number>();
+  private readonly objectKeys = new Map<object, string>();
+
+  keyOf(value: unknown): string {
+    const scalar = scalarKey(value);
+    if (scalar !== null) return scalar;
+    const onPath = new Set<object>();
+    const stack: KeyFrame[] = [];
+    const enter = (object: object): void => {
+      onPath.add(object);
+      stack.push({ value: object, members: membersOf(object), next: 0, keys: [], cyclic: false });
+    };
+    enter(value as object);
+    for (;;) {
+      const frame = stack[stack.length - 1];
+      if (frame.next < frame.members.length) {
+        const [name, member] = frame.members[frame.next];
+        frame.next += 1;
+        const known = this.knownKey(member, onPath);
+        if (known === null) {
+          enter(member as object);
+          continue;
+        }
+        if (known === CYCLE_KEY) frame.cyclic = true;
+        frame.keys.push(name === null ? known : `${JSON.stringify(name)}:${known}`);
+        continue;
+      }
+      stack.pop();
+      onPath.delete(frame.value);
+      const key = this.structureKey(frame);
+      const parent = stack[stack.length - 1];
+      if (parent === undefined) return key;
+      if (frame.cyclic) parent.cyclic = true;
+      const name = parent.members[parent.next - 1][0];
+      parent.keys.push(name === null ? key : `${JSON.stringify(name)}:${key}`);
+    }
+  }
+
+  /** The key of a member without walking it, or `null` when it is a list or object to walk. */
+  private knownKey(value: unknown, onPath: ReadonlySet<object>): string | null {
+    const scalar = scalarKey(value);
+    if (scalar !== null) return scalar;
+    const object = value as object;
+    if (onPath.has(object)) return CYCLE_KEY;
+    return this.objectKeys.get(object) ?? null;
+  }
+
+  private structureKey(frame: KeyFrame): string {
+    const signature = Array.isArray(frame.value)
+      ? `[${frame.keys.join(',')}]`
+      : `{${frame.keys.join(',')}}`;
+    let id = this.structureIds.get(signature);
+    if (id === undefined) {
+      id = this.structureIds.size;
+      this.structureIds.set(signature, id);
+    }
+    const key = `#${id}`;
+    // A key built around a cycle marker depends on where the walk entered the cycle.
+    if (!frame.cyclic) this.objectKeys.set(frame.value, key);
+    return key;
+  }
+}
+
+/** The members of a list (unnamed) or of an object (named, in key order). */
+function membersOf(value: object): ReadonlyArray<readonly [string | null, unknown]> {
+  if (Array.isArray(value)) return value.map((item): [null, unknown] => [null, item]);
   const record = value as Record<string, unknown>;
-  const fields = Object.keys(record)
+  return Object.keys(record)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${valueKey(record[key], path)}`);
-  return `{${fields.join(',')}}`;
+    .map((key): [string, unknown] => [key, record[key]]);
 }
 
 /** The distinct non-empty members of a list, in first-occurrence order, and how often each occurs. */
 function groupMembers(list: readonly unknown[]): { members: unknown[]; counts: number[] } {
+  const keys = new StructuralKeys();
   const positions = new Map<string, number>();
   const members: unknown[] = [];
   const counts: number[] = [];
   for (const item of list) {
     if (isEmptyValue(item)) continue;
-    const key = valueKey(item);
+    const key = keys.keyOf(item);
     const position = positions.get(key);
     if (position === undefined) {
       positions.set(key, members.length);

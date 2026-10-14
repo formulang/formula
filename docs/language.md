@@ -728,19 +728,19 @@ Formulas run inside conservative resource limits. The host can raise or
 lower them; the defaults below are what ships. Authors mostly notice these
 when a formula is generated or pathological.
 
-| Limit                                                                   | Default           | Error when exceeded         |
-| ----------------------------------------------------------------------- | ----------------- | --------------------------- |
-| Source length                                                           | 16,000 characters | `SOURCE_TOO_LONG`           |
-| Tokens                                                                  | 500               | `TOO_MANY_TOKENS`           |
-| String literal length                                                   | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
-| Identifier length                                                       | 64 characters     | `IDENTIFIER_TOO_LONG`       |
-| Parenthesis nesting                                                     | 16 levels         | `PARENS_TOO_DEEP`           |
-| AST nodes                                                               | 500               | `TOO_MANY_AST_NODES`        |
-| List size (EACH/FILTER/wildcard/REDUCE input)                           | 1,000 items       | `LIST_TOO_LARGE`            |
-| Wildcard output size                                                    | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
-| List results (`FLAT`, `WORDS`, `SENTENCES`, `LINES`, `MARKDOWN_BLOCKS`) | 5,000 items       | `LIST_TOO_LARGE`            |
-| Regex pattern length                                                    | 100 characters    | `REGEX_UNSAFE`              |
-| Regex input length                                                      | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
+| Limit                                                                                                                                               | Default           | Error when exceeded         |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | --------------------------- |
+| Source length                                                                                                                                       | 16,000 characters | `SOURCE_TOO_LONG`           |
+| Tokens                                                                                                                                              | 500               | `TOO_MANY_TOKENS`           |
+| String literal length                                                                                                                               | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
+| Identifier length                                                                                                                                   | 64 characters     | `IDENTIFIER_TOO_LONG`       |
+| Parenthesis nesting                                                                                                                                 | 16 levels         | `PARENS_TOO_DEEP`           |
+| AST nodes                                                                                                                                           | 500               | `TOO_MANY_AST_NODES`        |
+| List size (EACH/FILTER/wildcard/REDUCE input; the lists of `TAKE`, `INDEX_OF`, `FILTER_BY`, `DISTINCT`, `GROUP_COUNTS`; `keep`, `phrases`, `items`) | 1,000 items       | `LIST_TOO_LARGE`            |
+| Wildcard output size                                                                                                                                | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
+| List results (`FLAT`, `WORDS`, `SENTENCES`, `LINES`, `MARKDOWN_BLOCKS`)                                                                             | 5,000 items       | `LIST_TOO_LARGE`            |
+| Regex pattern length                                                                                                                                | 100 characters    | `REGEX_UNSAFE`              |
+| Regex input length                                                                                                                                  | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
 
 Evaluation is additionally bounded by step, cost, and wall-time budgets
 (`EVAL_LIMIT_EXCEEDED`, `COST_LIMIT_EXCEEDED`, `WALL_TIME_LIMIT_EXCEEDED`);

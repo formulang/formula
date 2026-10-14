@@ -59,6 +59,11 @@ describe('Text segmentation', () => {
         'c',
         'd',
       ]);
+      // JavaScript's whitespace, not Python's: U+FEFF separates, U+0085 and U+001F do not.
+      expect(await evalOk('WORD_COUNT(value)', { value: 'a\uFEFFb' })).toBe(2);
+      expect(await evalOk('WORD_COUNT(value)', { value: 'a\u0085b\u001Fc' })).toBe(1);
+      expect(await evalOk('COUNT(SENTENCES(value))', { value: 'Ja.\uFEFFNein.' })).toBe(2);
+      expect(await evalOk('COUNT(SENTENCES(value))', { value: 'Ja.\u0085Nein.' })).toBe(1);
     });
 
     it('joins letter runs on apostrophes, hyphens and digit separators in letters mode', async () => {
@@ -266,6 +271,13 @@ describe('Text segmentation', () => {
           'COUNT(SENTENCES("We flew to Africa. Then home."; "punctuation"; LIST("ca.")))',
         ),
       ).toBe(2);
+      // A token that starts with punctuation starts at a boundary even right after a word.
+      expect(await evalOk('SENTENCES("Na ja... Gut."; "terminators"; LIST("..."))')).toStrictEqual([
+        'Na ja... Gut.',
+      ]);
+      expect(await evalOk('SENTENCES("Na ja ... Gut."; "terminators"; LIST("..."))')).toStrictEqual(
+        ['Na ja ... Gut.'],
+      );
       // Empty keep entries are skipped; a non-text entry is null + TYPE.
       expect(await evalOk('COUNT(SENTENCES("Dr. A. B."; "punctuation"; LIST("Dr."; "")))')).toBe(2);
       expect(
