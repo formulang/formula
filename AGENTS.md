@@ -11,7 +11,7 @@ Formulang is an open-source, safe, embeddable, strongly-typed formula/expression
 | `runner/`         | `@formulang/runner`         | Asynchronous evaluation engine for compiled formulas, with caching, batching, limits, and per-node output.               |
 | `core-functions/` | `@formulang/core-functions` | Built-in function definitions and executable implementations; `createCoreFormulaRuntime()` wires a ready-to-use runtime. |
 | `docs/`           | —                           | Cross-package documentation: architecture, language reference, function reference, extending, best practices, releasing. |
-| `scripts/`        | —                           | Release helper: `set-version.js` sets (or verifies with `--check`) the single shared version across all packages.        |
+| `scripts/`        | —                           | `set-version.js` sets (or verifies with `--check`) the shared version; `compat/` holds the 1.0.0 compatibility baseline. |
 
 All four packages are published to npmjs.org and share a single version. Dependency direction: `definitions` has no internal dependencies; `parser` and `core-functions` depend on `definitions`; `runner` depends on `definitions` and `parser`.
 

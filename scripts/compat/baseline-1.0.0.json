@@ -1,0 +1,7651 @@
+{
+  "provenance": {
+    "generator": "scripts/compat/generate-baseline.js",
+    "commit": "699d57efa2c51e8f32747b1aa081c00538c0fa05",
+    "corpusSha256": "392413fc401efb438dc6fade7560d83c357f166264b08102ab438db72c8c4bdf",
+    "node": "v22.23.3"
+  },
+  "shapes": [
+    "core",
+    "reversioned-higher-order",
+    "host-overloads",
+    "custom-higher-order",
+    "combined"
+  ],
+  "functionNames": [
+    "ACOS",
+    "ADD",
+    "AND",
+    "ASIN",
+    "ATAN",
+    "AVG",
+    "CEILING",
+    "CHAR",
+    "CONCAT",
+    "CONTAINS",
+    "COS",
+    "COUNT",
+    "COUNT_UNIQUE",
+    "DATE",
+    "DATEDIF",
+    "DATEVALUE",
+    "DAY",
+    "DAYS",
+    "DIV",
+    "EACH",
+    "EMPTY",
+    "ENCODEURL",
+    "ENDS_WITH",
+    "EQ",
+    "EXP",
+    "FILTER",
+    "FILTER_PROPERTY",
+    "FLAT",
+    "FLOOR",
+    "GT",
+    "GTE",
+    "HOUR",
+    "IF",
+    "INCLUDES",
+    "INDEX",
+    "ISDATE",
+    "ISEVEN",
+    "ISNUMBER",
+    "ISODD",
+    "ISOWEEKNUM",
+    "ISTEXT",
+    "ISURL",
+    "IS_EMPTY",
+    "JOIN",
+    "LEFT",
+    "LEN",
+    "LIST",
+    "LOG",
+    "LOG10",
+    "LOWER",
+    "LT",
+    "LTE",
+    "MATCH_EXPRESSION",
+    "MAX",
+    "MEDIAN",
+    "MID",
+    "MIN",
+    "MINUTE",
+    "MOD",
+    "MONTH",
+    "MUL",
+    "NEQ",
+    "NOT",
+    "NOW",
+    "OR",
+    "PI",
+    "POW",
+    "PRODUCT",
+    "RANGE_SCORE",
+    "REDUCE",
+    "REGEXEXTRACT",
+    "REGEXREPLACE",
+    "REPLACE",
+    "RIGHT",
+    "ROUND",
+    "ROUNDDOWN",
+    "ROUNDUP",
+    "SECOND",
+    "SIN",
+    "SORT",
+    "SORT_BY_PROPERTY",
+    "SQRT",
+    "STARTS_WITH",
+    "SUB",
+    "SUBSTITUTE",
+    "SUM",
+    "SWITCH",
+    "TAN",
+    "TIME",
+    "TIMEVALUE",
+    "TODAY",
+    "TO_TEXT",
+    "TRIM",
+    "UPPER",
+    "WEEKDAY",
+    "WEEKNUM",
+    "YEAR"
+  ],
+  "formulas": [
+    {
+      "source": "1 + 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ADD(1/0; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "AND(TRUE; \"true\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "AND(FALSE; NOT(1))",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "AVG(LIST(1;2;3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "AVG(LIST(1; 1/0; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CONCAT(\"a\";\"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CONCAT(1; \"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CONTAINS(\"abc\"; \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CONTAINS(value; \"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT_UNIQUE(\"a\";\"a\";\"b\";\"\";1/0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT(LIST(1; 1/0; 2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT(1; \"\"; 1/0; \"x\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT(value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DAY(DATE(2024; 2; 29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 29,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 29,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MONTH(DATE(2024; 2; 29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "YEAR(DATE(2024; 2; 29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2024,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2024,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 2).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2024-02-01",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2024-02-01",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 13; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 2; 30)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 2; 29).day",
+      "outcome": {
+        "runs": [
+          {
+            "value": 29,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 29,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 2; 29).month",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 2; 29).year",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2024,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2024,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATE(2024; 2; 29).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(1; 2; 3).hour",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(1; 2; 3).minute",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(1; 2; 3).second",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(1; 2; 3).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "NOW().date.iso",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "DATEVALUE(\"2024-02-29T01:02:03Z\").iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIMEVALUE(\"2024-02-29T01:02:03Z\").iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEVALUE(\"2024-02-29 01:02Z\").iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIMEVALUE(\"2024-02-29 01:02Z\").iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:02:00",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:02:00",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEVALUE(0).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "1970-01-01",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "1970-01-01",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEVALUE(86400).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "1970-01-02",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "1970-01-02",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEVALUE(1700000000000).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2023-11-14",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2023-11-14",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEVALUE(1700000000).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2023-11-14",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2023-11-14",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEVALUE(1/0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(DATE(2024; 2; 29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(TIME(1; 2; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(NOW())",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "HOUR(TIME(1; 2; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MINUTE(TIME(1; 2; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SECOND(TIME(1; 2; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(1).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:00:00",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:00:00",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(1; 2).iso",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:02:00",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:02:00",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(24; 0; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(23; 60; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TIME(23; 0; 60)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DAYS(DATE(2024;1;2); DATE(2024;1;1))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEDIF(DATE(2024;1;1); DATE(2025;1;1); \"Y\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEDIF(DATE(2024;1;15); DATE(2024;3;14); \"M\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEDIF(DATE(2024;1;1); DATE(2024;1;31); \"D\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 30,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 30,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKDAY(DATE(2024;1;1); 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKDAY(DATE(2024;1;1); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISOWEEKNUM(DATE(2024;1;4))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKNUM(DATE(2024;1;1); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKNUM(DATE(2024;1;8); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DAY()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "MONTH()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "YEAR()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "HOUR()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "MINUTE()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "SECOND()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "ISOWEEKNUM()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "WEEKDAY()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "WEEKNUM()",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "ISDATE(DATEVALUE(\"2024-02-29\"))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISDATE(\"2024-02-30\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "6 / 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1 / 0",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["DOMAIN"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["DOMAIN"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "EACH(LIST(\"a\";\"bb\"); \"LEN\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "EACH(value; \"LEN\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [null, null, null],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "EMPTY()",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "BLANK()",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ENDS_WITH(\"abc\"; \"bc\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ENDS_WITH(\"abc\"; \"d\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1 = \"1\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"\" = 0",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER_PROPERTY(value; \"a.b\"; \"=\"; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1;2;3); \">\"; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\";\"x\"); \"STARTS_WITH\"; \"data:\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": ["data:a"],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": ["data:a"],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FLAT(LIST(LIST(1;2); LIST(3)))",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FLAT(value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 > 1",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value > 0",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 >= 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value >= 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value >= 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(TRUE; TRUE; NOT(1))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(FALSE; NOT(1); FALSE)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(TRUE; \"x\"; 0)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPES_MUST_HAVE_SAME_TYPE"]
+      }
+    },
+    {
+      "source": "IF(1; TRUE; FALSE)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH", "ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "IF(obj.n; TRUE; FALSE)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "INCLUDES(LIST(\"a\";\"b\"); \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "INCLUDES(LIST(\"a\"); \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IS_EMPTY(1/0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IS_EMPTY(\"\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IS_EMPTY(value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IS_EMPTY(0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IS_EMPTY(\"x\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "JOIN(LIST(\"a\";\"b\";\"c\"); \"-\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a-b-c",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a-b-c",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "JOIN(LIST(); \"-\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "JOIN(value; \"-\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "JOIN(LIST(\"a\"; \"b\"); value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": "aHello, world. Bye!b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEN(\"abc\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEN(LIST(1;2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LENGTH(\"abcd\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 4,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 4,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT(LIST(3; 1; 2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT(LIST(3; 1; 2); true)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 2, 1],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [3, 2, 1],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT(LIST(\"b\"; \"A\"; \"a\"))",
+      "outcome": {
+        "runs": [
+          {
+            "value": ["A", "a", "b"],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": ["A", "a", "b"],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT(LIST(\"b\"; \"B\"; \"a\"))",
+      "outcome": {
+        "runs": [
+          {
+            "value": ["a", "b", "B"],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": ["a", "b", "B"],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT(value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT(1)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 20,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 20,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 4)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 1.2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "INDEX(1; 1)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "REDUCE(0; LIST(1; 2; 3); \"+\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REDUCE(1; LIST(2; 3; 4); \"*\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 24,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 24,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REDUCE(\"\"; LIST(\"a\"; \"b\"); \"CONCAT\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REDUCE(123; LIST(); \"+\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 123,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 123,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REDUCE(0; LIST(1; 2); \"NOT_A_FUNCTION\")",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION_REFERENCE"]
+      }
+    },
+    {
+      "source": "REDUCE(0; value; \"+\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; \"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; \"a.b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; \"a\"; true)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST(1;2;3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST(1; \"2\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPES_MUST_HAVE_SAME_TYPE"]
+      }
+    },
+    {
+      "source": "LOWER(\"AbC\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1 < 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value < 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value < 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 <= 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value <= 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value <= 1",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MATCH_EXPRESSION(\"abc123\"; \"^abc\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MATCH_EXPRESSION(\"abc\"; \"(\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["REGEX"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["REGEX"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(SIN(0); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(COS(0); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(TAN(0); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(ASIN(0); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(ACOS(1); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(ATAN(0); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ASIN(2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ACOS(-2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SIN(\"x\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "CEILING(1.2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FLOOR(1.8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(1.4; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(1.5; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(-1.5; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": -2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUNDDOWN(1.29; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1.2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1.2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUNDUP(1.21; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1.3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1.3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(EXP(1); 8)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2.71828183,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2.71828183,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG(8; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG(100)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG(0.1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": -0.9999999999999998,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -0.9999999999999998,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG10(1000)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SQRT(9)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG(-1; 10)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG(-1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG(10; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LOG10(-1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SQRT(-1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "PI()",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3.141592653589793,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3.141592653589793,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MOD(10; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MOD(-10; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MOD(1; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MOD(\"x\"; 3)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "PRODUCT()",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["EMPTY"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["EMPTY"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "PRODUCT(2; 3; 4)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 24,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 24,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "PRODUCT(2; INDEX(LIST(1); 0); 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "PRODUCT(2; \"x\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "ISEVEN(2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISEVEN(3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISEVEN(-2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISEVEN(2.2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISODD(3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISODD(2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISODD(-3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISODD(INDEX(LIST(1); 0))",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MAX(LIST(3;1;2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MAX(LIST(3; 1/0; 2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MEDIAN(LIST(1;3;2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MEDIAN(LIST(1;2;3;4))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2.5,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2.5,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MEDIAN(LIST(1; 1/0; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MIN(LIST(3;1;2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MIN(LIST(3; 1/0; 2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 * 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MUL(1/0; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1 <> \"1\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"\" <> 0",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "NOT(TRUE)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "NOT(\"false\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "NOT(1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["EVAL_CRASH"]
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["EVAL_CRASH"]
+          }
+        ]
+      }
+    },
+    {
+      "source": "OR(FALSE; \"false\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "OR(TRUE; NOT(1))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "POW(2; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 8,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 8,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "POW(9; 0.5)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "POW(2; -3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0.125,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0.125,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 ^ 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": 8,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 8,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 ^ -3",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0.125,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0.125,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 ^ 3 ^ 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 512,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 512,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "(2 ^ 3) ^ 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 64,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 64,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 * 3 ^ 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 18,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 18,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 ^ 3 * 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 16,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 16,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1 + 2 ^ 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": 9,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 9,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "POW(INDEX(LIST(1); 9); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 ^ INDEX(LIST(1); 9)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "POW(\"x\"; 2)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "2 ^ \"x\"",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "RANGE_SCORE(5; 0; 3; 7; 10)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "RANGE_SCORE(-1; 0; 3; 7; 10)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "RANGE_SCORE(5; 10; 0; 7; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["RANGE"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["RANGE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "STARTS_WITH(\"abc\"; \"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "STARTS_WITH(\"abc\"; \"x\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "STARTS_WITH(\"xyz123\"; LIST(\"abc\";\"xyz\"))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "5 - 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUB(1/0; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUM(LIST(1;2;3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 6,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUM(LIST(1; 1/0; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 4,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 4,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(2; 1; \"a\"; 2; \"b\"; \"d\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(\"x\"; \"x\"; 123; \"y\"; 456; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 123,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 123,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(\"1\"; 1; \"ok\"; \"no\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ok",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ok",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(\"true\"; TRUE; \"y\"; \"n\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "y",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "y",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(LIST(1;2;3); 3; \"len\"; \"no\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "len",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "len",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(2; 1; \"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(\"z\"; \"x\"; 1; \"y\"; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(3; 1; \"a\"; 2; \"b\"; \"d\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "d",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "d",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(INDEX(LIST(1); 0); INDEX(LIST(1); 0); \"ok\"; \"no\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ok",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ok",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SWITCH(INDEX(LIST(1); 0); 1; \"a\"; \"d\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "d",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "d",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEFT(\"hello\"; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "he",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "he",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "RIGHT(\"hello\"; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "lo",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "lo",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MID(\"hello\"; 2; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "el",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "el",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEFT(\"hello\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "h",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "h",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "RIGHT(\"hello\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "o",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "o",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEFT(\"hello\"; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEFT(\"hello\"; -10)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "RIGHT(\"hello\"; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "RIGHT(\"hello\"; -10)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MID(\"hello\"; 100; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MID(\"hello\"; 1; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEFT(1; 2)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "RIGHT(1; 2)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "MID(1; 2; 3)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "REPLACE(\"hello\"; 2; 2; \"xx\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "hxxlo",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "hxxlo",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REPLACE(\"hello\"; 1; 0; \"X\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "Xhello",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "Xhello",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUBSTITUTE(\"a a a\"; \"a\"; \"b\"; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a b a",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a b a",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUBSTITUTE(\"a a a\"; \"a\"; \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "b b b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "b b b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TRIM(\"  a   b  \")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REPLACE(\"hi\"; 10; 2; \"X\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "hiX",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "hiX",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUBSTITUTE(\"abc\"; \"\"; \"X\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUBSTITUTE(\"abc\"; \"\"; \"X\"; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SUBSTITUTE(\"abc\"; \"a\"; \"b\"; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TRIM(\"\n\t  a\r\n  b\t\t  \")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"abc123\"; \"([0-9]+)\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "123",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "123",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXREPLACE(\"abc123def\"; \"[0-9]+\"; \"X\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "abcXdef",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "abcXdef",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"nope\"; \"([0-9]+)\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"abc123\"; \"[0-9]+\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "123",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "123",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXREPLACE(\"a1a2a3\"; \"a\"; \"X\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "X1X2X3",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "X1X2X3",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"aba\"; \"(a)\\1\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"ab\"; \"(?<=a)b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["REGEX"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["REGEX"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"a\"; \"/a/x\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["REGEX"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["REGEX"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXEXTRACT(\"aaaaaaaaaaaaaaaaaaaa\"; \"(a+)+$\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["REGEX_UNSAFE"]
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["REGEX_UNSAFE"]
+          }
+        ]
+      }
+    },
+    {
+      "source": "REGEXREPLACE(value; \"a\"; \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "Hello, world. Bye!",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ENCODEURL(\"a b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a%20b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a%20b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"https://example.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"http://sub.example.com:8080/path?q=1#frag\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"ftp://example.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"gopher://example.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"telnet:example.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"news:comp.lang.javascript\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"aim:goim?screenname=test\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"mailto:test@example.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"example.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"www.example.technology\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"sub.example.co.uk/path?q=1\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"example\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"localhost\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"http://localhost\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"-bad.example\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"exa_mple.com\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"example.c\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISURL(\"not a url\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(123)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "123",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "123",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(true)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "true",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "true",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(DATE(2024;2;29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "2024-02-29",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(TIME(1;2;3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "01:02:03",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(LIST(1;2;3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(INDEX(LIST(1); 0))",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "Hello, world. Bye!",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CHAR(65)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "A",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "A",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CHAR(0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CHAR(128512)",
+      "outcome": {
+        "runs": [
+          {
+            "value": "😀",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "😀",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CHAR(1114112)",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISNUMBER(1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISNUMBER(\"1\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISNUMBER(INDEX(LIST(1); 0))",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISNUMBER(true)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISTEXT(\"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISTEXT(1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISTEXT(INDEX(LIST(1); 0))",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISDATE(DATE(2024;2;29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISDATE(NOW())",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "ISDATE(\"2024-02-29\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "UPPER(\"AbC\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ABC",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ABC",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST(1;2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "Hello, world. Bye!",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MY_CALC(2)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "APPLY(\"MY_HELPER\"; 2)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "QUX(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "abcd",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "foo(1)",
+      "outcome": {
+        "parse": ["INVALID_FUNCTION_NAME", "UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "Foo",
+      "outcome": {
+        "parse": ["INVALID_VARIABLE_NAME", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "value.Bad",
+      "outcome": {
+        "parse": ["INVALID_PROPERTY_NAME", "PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "value.",
+      "outcome": {
+        "parse": ["EXPECTED_PROPERTY"]
+      }
+    },
+    {
+      "source": "(1 + 2",
+      "outcome": {
+        "parse": ["EXPECTED_RPAREN"]
+      }
+    },
+    {
+      "source": "1 2",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "1 + 2 + 3 + 4",
+      "outcome": {
+        "runs": [
+          {
+            "value": 10,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 10,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "missing",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "NOPE(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "value.*.id",
+      "outcome": {
+        "parse": ["WILDCARD_TARGET_NOT_LIST"]
+      }
+    },
+    {
+      "source": "value.id",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "value.__proto__",
+      "outcome": {
+        "parse": ["INVALID_PROPERTY_NAME", "DENYLISTED_PROPERTY"]
+      }
+    },
+    {
+      "source": "1234",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1234,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1234,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "(1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"ab\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1;2); value; 1)",
+      "outcome": {
+        "parse": ["EXPECTED_STRING_LITERAL_REFERENCE"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(\"a\";\"bb\"); \"LEN\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "EACH(LIST(\"a\"); \"LEN\"; 1)",
+      "outcome": {
+        "parse": ["NO_MATCHING_OVERLOAD"]
+      }
+    },
+    {
+      "source": "-1",
+      "outcome": {
+        "runs": [
+          {
+            "value": -1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "-1 + 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "2 + -1",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"a\" & \"b\" & \"c\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "abc",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(max_length > 0, \"this\", \"that\")",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(some_variable<>some_other_variable,\"stuff\",\"yes\")",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "Value",
+      "outcome": {
+        "parse": ["INVALID_VARIABLE_NAME", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "value.Property",
+      "outcome": {
+        "parse": ["INVALID_PROPERTY_NAME", "PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "snake_name",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "value.snake_name",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "NOT_A_BUILTIN(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "LIST(1; 2; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST(1, 2, 3)",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "1,23",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "FOO(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "FOO(\"x\")",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1;2); \"NOPE\"; 1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION_REFERENCE"]
+      }
+    },
+    {
+      "source": "LIST(1; \"a\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPES_MUST_HAVE_SAME_TYPE"]
+      }
+    },
+    {
+      "source": "ADD(\"x\"; 1)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "1 + \"x\"",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "LEN(1)",
+      "byShape": {
+        "core": {
+          "parse": ["NO_MATCHING_OVERLOAD"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["NO_MATCHING_OVERLOAD"]
+        },
+        "host-overloads": {
+          "runs": [
+            {
+              "value": 1,
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": 1,
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        },
+        "custom-higher-order": {
+          "parse": ["NO_MATCHING_OVERLOAD"]
+        },
+        "combined": {
+          "runs": [
+            {
+              "value": 1,
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": 1,
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "IF(cond; 1; 2)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(1; 1; 2)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH", "ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "COUNT(LIST(LIST(1); LIST(2); LIST(3)))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "  COUNT( LIST( LIST( 1 ) ; LIST(2) ; LIST( 3 ) ) )  ",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST(1; 999; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 999, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 999, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST(0; 1; 2; 3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [0, 1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [0, 1, 2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT(LIST(1; AVG(LIST(2;3)); 4))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT(LIST(1; AVG(LIST(200;300)); 4))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(TRUE; 1; n)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(TRUE; 1; nil)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(TRUE; nums; nums)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(TRUE; nums; txts)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(TRUE; nums; nil)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "IF(TRUE; x; 1)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\";\"x\"); \"STARTS_WITH\"; value.prefix)",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\";\"x\"); \"STARTS_WITH\"; value.suffix)",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "1 + 2 * 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": 7,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 7,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "  ( 1)  +  (2* 3 ) ",
+      "outcome": {
+        "runs": [
+          {
+            "value": 7,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 7,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "(1 + 2) * 3",
+      "outcome": {
+        "runs": [
+          {
+            "value": 9,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 9,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value.a.b",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED", "PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "list.*.name",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "WILDCARD_TARGET_NOT_LIST"]
+      }
+    },
+    {
+      "source": "IF(TRUE; 1; value.foo)",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "\"Issues to fix:\" & CHAR(10) & \"A\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "Issues to fix:\nA",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "Issues to fix:\nA",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1;2); op; 1)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "EXPECTED_STRING_LITERAL_REFERENCE"]
+      }
+    },
+    {
+      "source": "IS_EMPTY(LIST())",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LENGTH(\"abc\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEN(CONCAT(a; b))",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "CONCAT(a; b)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "LEN(x)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "FILTER(items; \"=\"; 1)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "UNIMPL(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "CRASH()",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "NONNULL(value)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "value.*.ids",
+      "outcome": {
+        "parse": ["WILDCARD_TARGET_NOT_LIST"]
+      }
+    },
+    {
+      "source": "constructor",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "BADRET()",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "value.a + 1",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "value + 1",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SLOW(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "OBJTEST(value)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "ECHO(\"abcd\")",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "ECHO(\"ab\")",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "COSTLY(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "COST(1) + COST(2)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION", "UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "SLEEP(1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "IF(false; COSTLY(1); 123)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "FILTER(value; \"PRED\")",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION_REFERENCE"]
+      }
+    },
+    {
+      "source": "MATCH_EXPRESSION(\"aaaa\"; \"(a+)+$\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["REGEX_UNSAFE"]
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["REGEX_UNSAFE"]
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"2\" > 1",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"01\" = \"1\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"\" = \"0\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"\" = \"\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"true\" = true",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"FALSE\" = false",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"yes\" = true",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value = 0",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value > \"0\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "max_length > 0",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "max_length >= 2",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "max_length < 3",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "max_length <= 2",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "max_length = 2",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "max_length <> 2",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "EACH(value; \"+\"; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [4, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MATCH_EXPRESSION(text; \"(a+)+$\")",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "MATCH_EXPRESSION(text; \"a+\")",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "value.secret",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "UPPERCASE_FIRST(name) & \"!\"",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "TAX(10)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "TAX(10; 2)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "IF(deal.amount > 100; UPPER(\"x\"); \"small\")",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "PROPERTY_NOT_ALLOWLISTED"]
+      }
+    },
+    {
+      "source": "UPPER(\"x\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "X",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "X",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SLUGIFY(\"Hello World\") & \"!\"",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "SLUGIFY(name)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "SLUGIFY(\"x\")",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "IF(deal.amount > 100, \"big\", \"small\")",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "PROPERTY_NOT_ALLOWLISTED"
+        ]
+      }
+    },
+    {
+      "source": "IF(deal.amount > 100; UPPER(deal.owner); \"unassigned\")",
+      "outcome": {
+        "parse": [
+          "UNKNOWN_VARIABLE",
+          "PROPERTY_NOT_ALLOWLISTED",
+          "UNKNOWN_VARIABLE",
+          "PROPERTY_NOT_ALLOWLISTED"
+        ]
+      }
+    },
+    {
+      "source": "UPPERCASE_FIRST(name)",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_FUNCTION"]
+      }
+    },
+    {
+      "source": "6 - 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": 4,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 4,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MAX(LIST(3; 1; 2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "MEDIAN(LIST(1; 2; 3; 4))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2.5,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2.5,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "COUNT_UNIQUE(\"a\"; \"a\"; \"b\"; \"\"; 1/0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1 <> 2",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "CONCAT(\"a\"; \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "ab",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "JOIN(LIST(\"a\"; \"b\"; \"c\"); \"-\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a-b-c",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a-b-c",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LEN(LIST(1; 2))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TO_TEXT(LIST(1; 2; 3))",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "STARTS_WITH(\"xyz123\"; LIST(\"abc\"; \"xyz\"))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FLAT(LIST(LIST(1; 2); LIST(3)))",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1; 2; 3); \">\"; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [2, 3],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [2, 3],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\"; \"x\"); \"STARTS_WITH\"; \"data:\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": ["data:a"],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": ["data:a"],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "EACH(LIST(\"a\"; \"bb\"); \"LEN\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [1, 2],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "INCLUDES(LIST(\"a\"; \"b\"); \"b\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TODAY().iso",
+      "outcome": {
+        "compiles": true
+      }
+    },
+    {
+      "source": "DAYS(DATE(2024; 1; 2); DATE(2024; 1; 1))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEDIF(DATE(2024; 1; 1); DATE(2025; 1; 1); \"Y\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "DATEDIF(DATE(2024; 1; 1); DATE(2024; 1; 31); \"D\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": 30,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 30,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKDAY(DATE(2024; 1; 1); 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKDAY(DATE(2024; 1; 1); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKNUM(DATE(2024; 1; 1); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "WEEKNUM(DATE(2024; 1; 8); 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISOWEEKNUM(DATE(2024; 1; 4))",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ISDATE(DATE(2024; 2; 29))",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(max_length > 0; \"this\"; \"that\")",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "COUNT( LIST( LIST( 1 ) ; LIST(2) ; LIST( 3 ) ) )",
+      "outcome": {
+        "runs": [
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(some_variable<>some_other_variable;\"stuff\";\"yes\")",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "formula    := expression",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "expression := postfix (binary-operator expression)*",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "postfix    := primary accessor*",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "accessor   := \".\" property | \".*.\" property",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "primary    := number | text | boolean | variable",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "| FUNCTION_NAME \"(\" [expression (\";\" expression)*] \")\"",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "| \"(\" expression \")\"",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN", "UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "UNEXPECTED_TOKEN: Use ';' to separate function arguments.",
+      "outcome": {
+        "parse": ["INVALID_VARIABLE_NAME", "UNEXPECTED_TOKEN", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "1.5",
+      "outcome": {
+        "runs": [
+          {
+            "value": 1.5,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 1.5,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": ".5",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0.5,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0.5,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "-0.5",
+      "outcome": {
+        "runs": [
+          {
+            "value": -0.5,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -0.5,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "0.125",
+      "outcome": {
+        "runs": [
+          {
+            "value": 0.125,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 0.125,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "1-2",
+      "outcome": {
+        "runs": [
+          {
+            "value": -1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "0 -1",
+      "outcome": {
+        "runs": [
+          {
+            "value": -1,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -1,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "(-3)",
+      "outcome": {
+        "runs": [
+          {
+            "value": -3,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": -3,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value * -1",
+      "outcome": {
+        "runs": [
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": ["TYPE"],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"hello\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "hello",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "hello",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"data:\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "data:",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "data:",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"a\\\"b\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a\"b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a\"b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"a\\\\b\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a\\b",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a\\b",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "\"a\\nb\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": "a\nb",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "a\nb",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "TRUE",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FALSE",
+      "outcome": {
+        "runs": [
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": false,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "LIST()",
+      "outcome": {
+        "runs": [
+          {
+            "value": [],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "value.items.*.id",
+      "outcome": {
+        "parse": ["PROPERTY_NOT_ALLOWLISTED", "WILDCARD_TARGET_NOT_LIST"]
+      }
+    },
+    {
+      "source": "\"a\" & \"b\" = \"ab\"",
+      "outcome": {
+        "runs": [
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": true,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "max_length <= 100",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "max_length <> 10",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "CONCAT(TO_TEXT(123); \"a\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": "123a",
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "123a",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "ROUND(AVG(LIST(1; 2; 3)) * 100; 0)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 200,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 200,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "Len(\"x\")",
+      "outcome": {
+        "parse": ["INVALID_FUNCTION_NAME"]
+      }
+    },
+    {
+      "source": "COUNT_UNIQUE(1; 2; 2)",
+      "outcome": {
+        "runs": [
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": 2,
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1;2); UPPER(\"gt\"); 1)",
+      "outcome": {
+        "parse": ["EXPECTED_STRING_LITERAL_REFERENCE"]
+      }
+    },
+    {
+      "source": "-- Parameter 'a' expected number? but got text",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "IF(IS_EMPTY(value); 0; value)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": "Hello, world. Bye!",
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "IF(value > 0; value; EMPTY())",
+      "outcome": {
+        "runs": [
+          {
+            "value": [3, 1, 2],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": null,
+            "warnings": [],
+            "errors": ["EVAL_CRASH"]
+          }
+        ]
+      }
+    },
+    {
+      "source": "ADD(EMPTY(); 1)",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "-- Parameter 'a' expected number? but got null",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "-- Literals",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "1   1.5   .5   -0.5",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "\"text\"  \"say \\\"hi\\\"\\n\"",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "TRUE  FALSE  true",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "-- Variables and access",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "max_length",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "-- Operators (tightest to loosest; all map to functions)",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_FUNCTION_NAME",
+          "EXPECTED_RPAREN",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "UNKNOWN_FUNCTION",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "-- Functions",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "LEN(\"abc\")  LEN(LIST(1;2))",
+      "outcome": {
+        "parse": ["UNEXPECTED_TOKEN"]
+      }
+    },
+    {
+      "source": "-- Callable references (literal strings only)",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "-- Null handling",
+      "outcome": {
+        "parse": [
+          "UNEXPECTED_TOKEN",
+          "INVALID_VARIABLE_NAME",
+          "UNEXPECTED_TOKEN",
+          "UNKNOWN_VARIABLE",
+          "ARGUMENT_TYPE_MISMATCH"
+        ]
+      }
+    },
+    {
+      "source": "max_length.__proto__",
+      "outcome": {
+        "parse": ["INVALID_PROPERTY_NAME", "DENYLISTED_PROPERTY", "UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "CONCAT(user.first_name; \" \"; user.last_name)",
+      "outcome": {
+        "parse": [
+          "UNKNOWN_VARIABLE",
+          "PROPERTY_NOT_ALLOWLISTED",
+          "UNKNOWN_VARIABLE",
+          "PROPERTY_NOT_ALLOWLISTED"
+        ]
+      }
+    },
+    {
+      "source": "IF(STARTS_WITH(api_key; \"sk-\"); \"live\"; \"test\")",
+      "outcome": {
+        "parse": ["UNKNOWN_VARIABLE"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(\"a\"; \"bb\"); \"LEN\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1; 2); \"STARTS_WITH\")",
+      "outcome": {
+        "parse": ["NO_MATCHING_OVERLOAD"]
+      }
+    },
+    {
+      "source": "REDUCE(0; LIST(1; 2); \"LEN\")",
+      "outcome": {
+        "parse": ["NO_MATCHING_OVERLOAD"]
+      }
+    },
+    {
+      "source": "FILTER_PROPERTY(value; \"a\"; \"LEN\")",
+      "outcome": {
+        "parse": ["ARGUMENT_TYPE_MISMATCH"]
+      }
+    },
+    {
+      "source": "EACH(LIST(1; 2); \"UPPER\")",
+      "outcome": {
+        "parse": ["NO_MATCHING_OVERLOAD"]
+      }
+    },
+    {
+      "source": "EACH(LIST(LIST(\"a\")); \"UPPER\")",
+      "byShape": {
+        "core": {
+          "parse": ["NO_MATCHING_OVERLOAD"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["NO_MATCHING_OVERLOAD"]
+        },
+        "host-overloads": {
+          "runs": [
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        },
+        "custom-higher-order": {
+          "parse": ["NO_MATCHING_OVERLOAD"]
+        },
+        "combined": {
+          "runs": [
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "FILTER(LIST(1; 2); value; 1)",
+      "outcome": {
+        "parse": ["EXPECTED_STRING_LITERAL_REFERENCE"]
+      }
+    },
+    {
+      "source": "FILTER(LIST(1; 2); \"NOPE\"; 1)",
+      "outcome": {
+        "parse": ["UNKNOWN_FUNCTION_REFERENCE"]
+      }
+    },
+    {
+      "source": "EACH(LIST(LIST(1)); \"FILTER\"; \"NOPE\")",
+      "outcome": {
+        "runs": [
+          {
+            "value": [null],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [null],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "EACH(LIST(LIST(1; 2)); \"FILTER\"; \">\"; 1)",
+      "outcome": {
+        "runs": [
+          {
+            "value": [[2]],
+            "warnings": [],
+            "errors": []
+          },
+          {
+            "value": [[2]],
+            "warnings": [],
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; value)",
+      "outcome": {
+        "parse": ["EXPECTED_STRING_LITERAL_REFERENCE"]
+      }
+    },
+    {
+      "source": "MAP_ALL(LIST(\"a\"; \"bb\"); \"LEN\")",
+      "byShape": {
+        "core": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "host-overloads": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "custom-higher-order": {
+          "runs": [
+            {
+              "value": [1, 2],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [1, 2],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        },
+        "combined": {
+          "runs": [
+            {
+              "value": [1, 2],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [1, 2],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "MAP_ALL(LIST(1; 2); \"NOPE\")",
+      "byShape": {
+        "core": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "host-overloads": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "custom-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION_REFERENCE"]
+        },
+        "combined": {
+          "parse": ["UNKNOWN_FUNCTION_REFERENCE"]
+        }
+      }
+    },
+    {
+      "source": "MAP_ALL(LIST(1); value)",
+      "byShape": {
+        "core": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "host-overloads": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "custom-higher-order": {
+          "parse": ["EXPECTED_STRING_LITERAL_REFERENCE"]
+        },
+        "combined": {
+          "parse": ["EXPECTED_STRING_LITERAL_REFERENCE"]
+        }
+      }
+    },
+    {
+      "source": "MAP_ALL(LIST(\"a\"); \"LEN\"; 1)",
+      "byShape": {
+        "core": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "host-overloads": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "custom-higher-order": {
+          "runs": [
+            {
+              "value": [1],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [1],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        },
+        "combined": {
+          "runs": [
+            {
+              "value": [1],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [1],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "MAP_ALL(LIST(LIST(1; 2)); \"LEN\")",
+      "byShape": {
+        "core": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "host-overloads": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "custom-higher-order": {
+          "runs": [
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        },
+        "combined": {
+          "runs": [
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [null],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "MAP_ALL(LIST(1; 2); \">\")",
+      "byShape": {
+        "core": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "reversioned-higher-order": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "host-overloads": {
+          "parse": ["UNKNOWN_FUNCTION"]
+        },
+        "custom-higher-order": {
+          "runs": [
+            {
+              "value": [null, null],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [null, null],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        },
+        "combined": {
+          "runs": [
+            {
+              "value": [null, null],
+              "warnings": [],
+              "errors": []
+            },
+            {
+              "value": [null, null],
+              "warnings": [],
+              "errors": []
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

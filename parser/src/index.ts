@@ -24,7 +24,7 @@ import {
   resolveFormulaLimits,
   stripNullability,
 } from '@formulang/definitions';
-import { CALLABLE_INVOCATIONS } from './callable-invocations';
+import { invocationOf } from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
 import { assignStableNodeIds } from './node-id';
 import { TokenStream } from './pratt';
@@ -1022,7 +1022,7 @@ function bindTypesAndRequirements(
           // function's literal-only rules for every argument the invocation passes it.
           const outerBindings = inferGenericBindingsForCall(def, argTypes);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
-          const invocation = CALLABLE_INVOCATIONS.get(def.signatureId);
+          const invocation = invocationOf(def);
           const invoked = invocation === undefined ? null : invocation(argTypes);
 
           if (invoked) {
@@ -1486,7 +1486,7 @@ function checkPassedArguments(
     const chosenTarget = paramAt(at.callable.params, position);
     if (chosenTarget === undefined) return;
     const targetBase = stripNullability(chosenTarget.type);
-    const invocation = CALLABLE_INVOCATIONS.get(at.callable.signatureId);
+    const invocation = invocationOf(at.callable);
     if (targetBase.kind !== 'callable' || invocation === undefined) return;
     if (passed.source === undefined || at.depth >= at.call.args.length) return;
     if (arg === undefined || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {

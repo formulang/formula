@@ -1,5 +1,5 @@
 import type { FormulaType } from '@formulang/definitions';
-import { BuiltinSignatureIds, FormulaTypes, stripNullability } from '@formulang/definitions';
+import { FormulaTypes, stripNullability } from '@formulang/definitions';
 
 /**
  * One argument a higher-order function passes to the callable it names: its type, and the index
@@ -28,39 +28,34 @@ function forwardedFrom(argTypes: readonly FormulaType[], index: number): Invoked
 }
 
 /**
- * How each core higher-order function invokes its callable, by signature id. The parser derives a
+ * How each core higher-order function invokes its callable, keyed by function name in upper case,
+ * as 1.0.0 keyed this validation: a definition re-registered under another signature id with the
+ * same name — the documented way to change a function's behaviour — keeps it. The parser derives a
  * callable's invoked arguments from this table alone and applies the referenced function's
- * parameter rules to every one of them; a spec reconciles the table with every core definition
- * that has a callable parameter, both ways.
+ * parameter rules to every one of them; a spec reconciles the table with the names of every core
+ * definition that has a callable parameter, both ways.
  */
 export const CALLABLE_INVOCATIONS: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
   CallableInvocation
 >([
   // EACH(target; operator; args...) calls operator(item; args...).
-  [
-    BuiltinSignatureIds.EACH,
-    (argTypes) => [{ type: itemOf(argTypes[0]) }, ...forwardedFrom(argTypes, 2)],
-  ],
+  ['EACH', (argTypes) => [{ type: itemOf(argTypes[0]) }, ...forwardedFrom(argTypes, 2)]],
   // FILTER(target; operator; operatorValue?) calls operator(item[; operatorValue]).
-  [
-    BuiltinSignatureIds.FILTER,
-    (argTypes) => [{ type: itemOf(argTypes[0]) }, ...forwarded(argTypes, 2)],
-  ],
+  ['FILTER', (argTypes) => [{ type: itemOf(argTypes[0]) }, ...forwarded(argTypes, 2)]],
   // FILTER_PROPERTY(target; property; operator; operatorValue?) calls
   // operator(item.property[; operatorValue]).
-  [
-    BuiltinSignatureIds.FILTER_PROPERTY,
-    (argTypes) => [{ type: FormulaTypes.any(true) }, ...forwarded(argTypes, 3)],
-  ],
+  ['FILTER_PROPERTY', (argTypes) => [{ type: FormulaTypes.any(true) }, ...forwarded(argTypes, 3)]],
   // FILTER_BY(target; keys; operator; operatorValue?) calls operator(key[; operatorValue]).
-  [
-    BuiltinSignatureIds.FILTER_BY,
-    (argTypes) => [{ type: itemOf(argTypes[1]) }, ...forwarded(argTypes, 3)],
-  ],
+  ['FILTER_BY', (argTypes) => [{ type: itemOf(argTypes[1]) }, ...forwarded(argTypes, 3)]],
   // REDUCE(initial; target; operator) calls operator(accumulator; item).
   [
-    BuiltinSignatureIds.REDUCE,
+    'REDUCE',
     (argTypes) => [{ type: argTypes[0] ?? FormulaTypes.any(true) }, { type: itemOf(argTypes[1]) }],
   ],
 ]);
+
+/** How the higher-order function `def` names invokes its callable; undefined for any other. */
+export function invocationOf(def: { name: string }): CallableInvocation | undefined {
+  return CALLABLE_INVOCATIONS.get(def.name.toUpperCase());
+}
