@@ -177,14 +177,17 @@ describe('compatibility with 1.0.0', () => {
     // the function, or fails on the function's own checks. It compiled on 1.0.0, a nested
     // higher-order call resolving the name when it runs and yielding null there, and now calls the
     // function. Or it compiled on 1.0.0, whether the nested call ran or not, and now fails to
-    // compile, a literal it passes the function not being one the function lists. With the new
-    // definitions retired it gives the 1.0.0 outcome again (the test above), so the new function
-    // is the whole change.
+    // compile on what a mode of the function receives, in one of two kinds: a string literal the
+    // mode does not list (LITERAL_VALUE_NOT_ALLOWED), or a value that is no string literal
+    // (EXPECTED_STRING_LITERAL_REFERENCE). With the new definitions retired it gives the 1.0.0
+    // outcome again (the test above), so the new function is the whole change.
     const unknownName = ['UNKNOWN_FUNCTION', 'UNKNOWN_FUNCTION_REFERENCE'];
-    const literalRule = ['LITERAL_VALUE_NOT_ALLOWED', 'EXPECTED_STRING_LITERAL_REFERENCE'];
+    const nowFailsToCompile: Record<string, number> = {
+      LITERAL_VALUE_NOT_ALLOWED: 0,
+      EXPECTED_STRING_LITERAL_REFERENCE: 0,
+    };
     let failedToCompile = 0;
     let yieldedNull = 0;
-    let nowFailsToCompile = 0;
     let fromData = 0;
     let changed = 0;
     let named = 0;
@@ -206,11 +209,12 @@ describe('compatibility with 1.0.0', () => {
         ).toBe(false);
         failedToCompile++;
       } else if (now?.parse !== undefined) {
-        expect(
-          now.parse.every((code) => literalRule.includes(code)),
-          formula.source,
-        ).toBe(true);
-        nowFailsToCompile++;
+        // One kind per formula.
+        const kinds = [...new Set(now.parse)];
+        expect(kinds.length, formula.source).toBe(1);
+        const kind = kinds[0] ?? '';
+        expect(Object.keys(nowFailsToCompile), formula.source).toContain(kind);
+        nowFailsToCompile[kind] = (nowFailsToCompile[kind] ?? 0) + 1;
       } else {
         const values = before.run ? [before.run.value] : (before.runs ?? []).map((r) => r.value);
         expect(values.length, formula.source).toBeGreaterThan(0);
@@ -222,7 +226,11 @@ describe('compatibility with 1.0.0', () => {
       if (behaviour(now) !== behaviour(before)) changed++;
     });
     // What the PR states, for this corpus and these probes.
-    expect([failedToCompile, yieldedNull, nowFailsToCompile]).toStrictEqual([144, 48, 20]);
+    expect([failedToCompile, yieldedNull, nowFailsToCompile]).toStrictEqual([
+      144,
+      48,
+      { LITERAL_VALUE_NOT_ALLOWED: 9, EXPECTED_STRING_LITERAL_REFERENCE: 11 },
+    ]);
     // Not vacuous: names written in lower case, and names a value or an expression produces.
     const lowerCase = formulas.filter(
       (f, index) =>
@@ -232,7 +240,11 @@ describe('compatibility with 1.0.0', () => {
     expect(lowerCase.length).toBe(added.length);
     expect(fromData).toBeGreaterThanOrEqual(harness.RUN_TIME_NAMES.length);
     expect(changed).toBe(named);
-    expect(named).toBe(failedToCompile + yieldedNull + nowFailsToCompile);
+    expect(named).toBe(
+      failedToCompile +
+        yieldedNull +
+        Object.values(nowFailsToCompile).reduce((sum, count) => sum + count, 0),
+    );
   });
 
   it('freezes the clock the functions read, not the one the runner measures its limits by', async () => {
