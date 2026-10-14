@@ -64,18 +64,94 @@ export function invokedArguments(
 }
 
 /**
+ * Where each argument a callable receives comes from, along a chain of higher-order calls that
+ * starts at a call written in the formula: an argument of that call (its index) or a value a
+ * higher-order function supplies when it runs (`undefined`). `head` holds the first ones; the
+ * written call's arguments from `from` up to `end` follow them. An `arguments` entry passes a
+ * chain's tail on as that range instead of copying it, so the description of what a callable
+ * receives stays as short as the table's entries, however many arguments the call holds.
+ */
+export type PassedSources = {
+  readonly head: readonly (number | undefined)[];
+  readonly from: number;
+  readonly end: number;
+};
+
+/** What a call written in the formula with `count` arguments receives: each of them, in order. */
+export function writtenArguments(count: number): PassedSources {
+  return { head: [], from: 0, end: count };
+}
+
+/** How many arguments `sources` describes. */
+export function sourceCount(sources: PassedSources): number {
+  return sources.head.length + sources.end - sources.from;
+}
+
+/** Where argument `position` of `sources` comes from; `position` is below `sourceCount`. */
+export function sourceAt(sources: PassedSources, position: number): number | undefined {
+  return position < sources.head.length
+    ? sources.head[position]
+    : sources.from + position - sources.head.length;
+}
+
+/**
+ * Where each argument `invocation` passes its callable comes from, for a higher-order function
+ * that receives `sources`: what `invokedArguments` forwards, followed through `sources` (a spec
+ * reconciles the two). An `arguments` entry is the last of its invocation, which a spec checks for
+ * every entry, so the arguments it passes on stay one range.
+ */
+export function passedSources(
+  invocation: CallableInvocation,
+  sources: PassedSources,
+): PassedSources {
+  const count = sourceCount(sources);
+  const head: (number | undefined)[] = [];
+  for (const source of invocation) {
+    switch (source.kind) {
+      case 'item':
+      case 'value':
+        head.push(undefined);
+        break;
+      case 'argument':
+        if (source.at < count) head.push(sourceAt(sources, source.at));
+        break;
+      case 'arguments': {
+        const skipped = Math.max(0, source.from - sources.head.length);
+        head.push(...sources.head.slice(source.from));
+        return canonical(head, sources.from + skipped, sources.end);
+      }
+    }
+  }
+  return canonical(head, sources.end, sources.end);
+}
+
+/**
+ * `head` and the written arguments from `from` up to `end`, described one way only: a written
+ * argument at the end of `head` that the range would continue joins the range. Two descriptions of
+ * the same arguments are then equal, and so are their walk states.
+ */
+function canonical(head: (number | undefined)[], from: number, end: number): PassedSources {
+  let start = Math.min(from, end);
+  while (head.length > 0 && head[head.length - 1] === start - 1) {
+    head.pop();
+    start--;
+  }
+  return { head, from: start, end };
+}
+
+/**
  * How the core higher-order functions invoke their callables, keyed by function name in upper
  * case, as 1.0.0 keyed this validation for EACH, FILTER, FILTER_PROPERTY and REDUCE. Every
- * definition under one of these names gets the entry: the core one, the core one re-registered
+ * definition whose name is one of these gets the entry: the core one, the core one re-registered
  * under another signature id (the documented way to change a function's behaviour), and a host's;
  * a definition under any other name invokes nothing the parser knows, so a copy of one of these
- * functions under a new name is a plain function. The table is closed: a definition cannot add to
- * it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
+ * functions under a new name is a plain function, and so is a definition that answers to one of
+ * these names only through its `aliases`, as on 1.0.0. The table is closed: a definition cannot add
+ * to it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
  * with the implementations of those functions (what each passes its callable when it runs), with
  * every module of the parser (no other names a higher-order function), with the enumerated-literal
  * matrix and with the compatibility harness, and check that every entry passes the callable fewer
- * arguments than its call holds whenever it passes one on, which ends the parser's walk through
- * nested callables.
+ * arguments than its call holds whenever it passes one on.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
@@ -145,19 +221,22 @@ export function invocationOf(def: { name: string }): CallableInvocation | undefi
 /**
  * The key of one state of the parser's walk through nested callables: the formula argument that
  * names the callable, the name of the function that invokes it, the definitions the name can
- * reference, and the formula argument each position receives (`undefined` for a value the
- * function supplies). Distinct states have distinct keys, the number of positions included.
+ * reference, and where each argument it receives comes from. Distinct states have distinct keys,
+ * and a key is as long as the table's entries and the definitions make it: it grows with neither
+ * the call written in the formula nor the chain of callables.
  */
 export function walkStateKey(state: {
   named: number;
   host: string;
   candidates: readonly string[];
-  sources: readonly (number | undefined)[];
+  sources: PassedSources;
 }): string {
   return JSON.stringify([
     state.named,
     state.host,
     state.candidates,
-    state.sources.map((source) => source ?? null),
+    state.sources.head.map((source) => source ?? null),
+    state.sources.from,
+    state.sources.end,
   ]);
 }

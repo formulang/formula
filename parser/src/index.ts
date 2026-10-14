@@ -25,10 +25,12 @@ import { isDenylistedPropertyName } from './denylist';
 import {
   admittedValues,
   callableCandidates,
-  checkPassedArguments,
+  callWalk,
   paramAt,
   readLiteralArgument,
   referenceExists,
+  walkCallable,
+  type CallWalk,
 } from './enumerated-literals';
 import { assignStableNodeIds } from './node-id';
 import { TokenStream } from './pratt';
@@ -988,7 +990,9 @@ function bindTypesAndRequirements(
       // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)) at each parameter's own
       // position. The extra arguments a variadic literal-only parameter takes are validated only
       // when it lists its admitted values; without that list it keeps 1.0.0 behaviour, where only
-      // the first argument it takes was checked.
+      // the first argument it takes was checked. One walk through the callables the call names
+      // serves every callable parameter of the call.
+      let walk: CallWalk | undefined;
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
         const p = paramAt(def.params, i);
         if (!p || p.literalOnly !== true) continue;
@@ -1080,15 +1084,16 @@ function bindTypesAndRequirements(
                 }),
               );
             } else {
-              checkPassedArguments(registry, errors, new Set(), {
-                call: { signatureId: def.signatureId, args: node.args },
+              walk ??= callWalk(registry, errors, {
+                signatureId: def.signatureId,
+                args: node.args,
+              });
+              walkCallable(walk, {
                 host: def,
-                candidates,
-                passed: invoked.map((invokedArg) => ({
-                  type: invokedArg.type,
-                  source: invokedArg.forwards,
-                })),
-                named: { index: i, span: literal.span },
+                reference: paramBase.reference,
+                name: ref,
+                index: i,
+                span: literal.span,
               });
 
               if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {

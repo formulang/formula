@@ -8,7 +8,6 @@ import type {
   CallableReferenceKind,
   FormulaError,
   FormulaRegistry,
-  FormulaType,
   FunctionDefinition,
   FunctionParamDefinition,
   RuleNode,
@@ -17,9 +16,13 @@ import type {
 import { FormulaErrorCodes, makeFormulaError, stripNullability } from '@formulang/definitions';
 import {
   invocationOf,
-  invokedArguments,
+  passedSources,
+  sourceAt,
+  sourceCount,
   walkStateKey,
+  writtenArguments,
   type CallableInvocation,
+  type PassedSources,
 } from './callable-invocations';
 
 /**
@@ -199,135 +202,216 @@ function enumeratedTarget(
   return { param: { ...first.param, literalValues: admitted }, owner: first.owner, listings };
 }
 
+/** Argument positions the walk may visit per argument of the call written in the formula. */
+export const WALK_STEPS_PER_ARGUMENT = 16;
+
 /**
- * Reports `error` unless the same diagnostic (code, message and span) is already reported: the
- * walk can reach one argument along several definitions of the same name.
+ * The walk through the callables that one call written in the formula names, by string literals,
+ * to higher-order functions whose invocation the parser knows: the states it has checked, the
+ * diagnostics it has reported, and the steps it has taken, one per argument position it visits, of
+ * the `limit` it may take, `WALK_STEPS_PER_ARGUMENT` per argument of the call. Its work is linear in
+ * the size of the formula however the registry's definitions nest. At the limit the walk stops
+ * following: it never throws and never refuses a formula for its cost, and every argument it has
+ * not checked is checked by the function that receives it, when the call runs.
  */
-function reportOnce(errors: FormulaError[], error: FormulaError): void {
-  const reported = errors.some(
-    (other) =>
-      other.code === error.code &&
-      other.message === error.message &&
-      other.span?.start === error.span?.start &&
-      other.span?.end === error.span?.end,
-  );
-  if (!reported) errors.push(error);
+export type CallWalk = {
+  readonly registry: FormulaRegistry;
+  readonly errors: FormulaError[];
+  /** The call written in the formula: every source indexes its arguments. */
+  readonly call: { signatureId: string; args: readonly RuleNode[] };
+  readonly walked: Set<string>;
+  readonly reported: Set<string>;
+  steps: number;
+  readonly limit: number;
+};
+
+/** A walk for `call`, a call written in the formula, that reports into `errors`. */
+export function callWalk(
+  registry: FormulaRegistry,
+  errors: FormulaError[],
+  call: { signatureId: string; args: readonly RuleNode[] },
+): CallWalk {
+  return {
+    registry,
+    errors,
+    call,
+    walked: new Set(),
+    reported: new Set(),
+    steps: 0,
+    limit: WALK_STEPS_PER_ARGUMENT * (call.args.length + 1),
+  };
+}
+
+/** A callable named by a string literal, as a higher-order function invokes it. */
+type WalkState = {
+  /** The higher-order function that invokes the callable. */
+  host: FunctionDefinition;
+  /**
+   * Every definition the callable's name can reference; the higher-order function may invoke any
+   * of them when the call runs: the core higher-order functions take the function behind an
+   * operator token, otherwise the first definition that has an implementation.
+   */
+  candidates: readonly FunctionDefinition[];
+  /** Where each argument the callable receives comes from. */
+  sources: PassedSources;
+  /** The formula argument that names the callable. */
+  named: { index: number; span: SourceSpan | undefined };
+};
+
+/**
+ * Holds what the higher-order function `host` passes the callable that argument `index` of the call
+ * written in the formula names (`name`, a reference of kind `reference`) to the callable's
+ * enumerated-literal rule (`enumeratedTarget`): an argument reaching a parameter that lists
+ * admitted `literalValues` must be a string literal naming a value every definition of the name
+ * lists there. A literal that names a callable in turn, at a callable parameter of a definition's
+ * own list, is followed into the invocation that callable makes, for every definition of the name,
+ * so the rule holds at any depth of higher-order calls whose callables are written as string
+ * literals, as far as the walk's limit reaches. A name passed on is resolved when the call runs, so
+ * one the registry does not know is no error here. Each exit below states why it lets no literal
+ * reach a parameter that lists admitted values unchecked, or what checks it instead.
+ *
+ * The walk is iterative and breadth first: every state of one level of callables before any of the
+ * next, so where the limit stops it, every level above has been checked. Each state is visited
+ * once, so overloads that follow the same callable along several reference kinds check it once.
+ */
+export function walkCallable(
+  walk: CallWalk,
+  at: {
+    host: FunctionDefinition;
+    reference: CallableReferenceKind;
+    name: string;
+    index: number;
+    span: SourceSpan | undefined;
+  },
+): void {
+  const invocation = invocationOf(at.host);
+  if (invocation === undefined) return;
+  const queue: WalkState[] = [];
+  enqueue(walk, queue, {
+    host: at.host,
+    candidates: callableCandidates(walk.registry, at.reference, at.name),
+    sources: passedSources(invocation, writtenArguments(walk.call.args.length)),
+    named: { index: at.index, span: at.span },
+  });
+  for (let next = 0; next < queue.length; next++) {
+    const state = queue[next] as WalkState;
+    const end = positionsToVisit(state);
+    for (let position = 0; position < end; position++) {
+      // Exit: the limit is reached, so the walk stops following. Every argument it has not
+      // checked reaches a function when the call runs, and the function refuses a mode it does not
+      // list.
+      if (walk.steps >= walk.limit) return;
+      walk.steps++;
+      for (const follow of visit(walk, state, position)) enqueue(walk, queue, follow);
+    }
+  }
 }
 
 /**
- * An argument a higher-order function passes to its callable: its type, and the index of the
- * formula argument it passes on unchanged. `source` is undefined for a value the higher-order
- * function supplies at run time: a list item, a key, a property value, an accumulator.
+ * Queues `state` unless the walk has queued it before: the same candidates, named by the same
+ * formula argument and invoked by a function of the same name (which the refusals name), with the
+ * same formula argument or a supplied value at each position, so every check it would make is
+ * made.
  */
-type PassedArgument = { type: FormulaType; source: number | undefined };
+function enqueue(walk: CallWalk, queue: WalkState[], state: WalkState): void {
+  const key = walkStateKey({
+    named: state.named.index,
+    host: state.host.name,
+    candidates: state.candidates.map((def) => def.signatureId),
+    sources: state.sources,
+  });
+  if (walk.walked.has(key)) return;
+  walk.walked.add(key);
+  queue.push(state);
+}
 
 /**
- * Holds the arguments a higher-order function whose invocation the parser knows passes to the
- * callable it names to the callable's enumerated-literal rule (`enumeratedTarget`): an argument
- * reaching a parameter that lists admitted `literalValues` must be a string literal naming a value
- * every definition of the name lists there. A literal that names a callable in turn is followed
- * into the invocation that callable makes, for every definition of the name, so the rule holds at
- * any depth of higher-order calls whose callables are written as string literals. A name passed on
- * is resolved when the call runs, so one the registry does not know is no error here. Each exit
- * below states why it lets no literal reach a parameter that lists admitted values unchecked.
- *
- * The walk ends: an invocation of the closed table passes the callable fewer arguments than its
- * call holds whenever it passes one on (a spec checks every entry), so the arguments a followed
- * callable receives shrink at every level. `walked` holds the states this walk has checked, for
- * the call written in the formula, so that overloads following the same callable along several
- * reference kinds check each state once.
+ * How many of a state's positions the walk visits: every one up to the longest parameter list
+ * among the candidates. Past it every candidate takes its variadic last parameter or nothing, the
+ * same at every position, and no definition invokes a callable there (`visit`), so those positions
+ * are visited only where that parameter lists admitted values.
  */
-export function checkPassedArguments(
-  registry: FormulaRegistry,
-  errors: FormulaError[],
-  walked: Set<string>,
-  at: {
-    /** The call written in the formula: every `source` indexes its arguments. */
-    call: { signatureId: string; args: readonly RuleNode[] };
-    /** The higher-order function that invokes the callable. */
-    host: FunctionDefinition;
-    /**
-     * Every definition the callable's name can reference; the higher-order function may invoke any
-     * of them when the call runs: the core higher-order functions take the function behind an
-     * operator token, otherwise the first definition that has an implementation.
-     */
-    candidates: readonly FunctionDefinition[];
-    passed: readonly PassedArgument[];
-    /** The formula argument that names the callable. */
-    named: { index: number; span: SourceSpan | undefined };
-  },
-): void {
-  // Exit: the walk has been here: the same candidates, named by the same formula argument and
-  // invoked by a function of the same name (which the refusals name), with the same formula
-  // argument or a supplied value at each position. The types the arguments carry decide no check
-  // and no follow, so every check from here is made.
-  const state = walkStateKey({
-    named: at.named.index,
-    host: at.host.name,
-    candidates: at.candidates.map((def) => def.signatureId),
-    sources: at.passed.map((passed) => passed.source),
-  });
-  if (walked.has(state)) return;
-  walked.add(state);
-  at.passed.forEach((passed, position) => {
-    const arg = passed.source === undefined ? undefined : at.call.args[passed.source];
-    const enumerated = enumeratedTarget(at.candidates, position);
-    if (enumerated !== undefined) {
-      const literal = readLiteralArgument(enumerated.param, arg, {
-        subject: `Parameter '${enumerated.param.name}' of ${enumerated.owner}`,
-        span: arg?.span ?? at.named.span,
-        path: ['call', at.call.signatureId, 'arg', String(passed.source ?? at.named.index)],
-        suppliedBy: passed.source === undefined ? at.host.name : undefined,
-        owner: enumerated.owner,
-        listings: enumerated.listings,
-      });
-      if (!literal.ok) {
-        reportOnce(errors, literal.error);
-        // Exit: the argument is refused, so the formula does not compile and nothing it would
-        // pass on is ever invoked.
-        return;
-      }
+function positionsToVisit(state: WalkState): number {
+  const count = sourceCount(state.sources);
+  const widest = state.candidates.reduce((most, def) => Math.max(most, def.params.length), 0);
+  if (count <= widest) return count;
+  return enumeratedTarget(state.candidates, widest) === undefined ? widest : count;
+}
+
+/**
+ * Checks the argument at `position` of a state against the candidates' enumerated-literal rule,
+ * and answers the states it leads to: the callables a string literal there names to a definition
+ * that invokes it.
+ */
+function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] {
+  const source = sourceAt(state.sources, position);
+  const arg = source === undefined ? undefined : walk.call.args[source];
+  const enumerated = enumeratedTarget(state.candidates, position);
+  if (enumerated !== undefined) {
+    const literal = readLiteralArgument(enumerated.param, arg, {
+      subject: `Parameter '${enumerated.param.name}' of ${enumerated.owner}`,
+      span: arg?.span ?? state.named.span,
+      path: ['call', walk.call.signatureId, 'arg', String(source ?? state.named.index)],
+      suppliedBy: source === undefined ? state.host.name : undefined,
+      owner: enumerated.owner,
+      listings: enumerated.listings,
+    });
+    if (!literal.ok) {
+      report(walk, literal.error);
+      // Exit: the argument is refused, so the formula does not compile and nothing it would pass
+      // on is ever invoked.
+      return [];
     }
-    // Exit: a value the higher-order function supplies when the call runs (an item, a key, a
-    // property value, an accumulator) names no callable written in the formula, and one reaching
-    // a parameter that lists admitted values was refused above.
-    if (passed.source === undefined) return;
-    // Exit: the rule follows a callable where a string literal names it; every function still
-    // refuses, when it runs, a mode it does not list.
-    if (arg === undefined || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
-      return;
-    }
-    const followed = new Map<CallableInvocation, Set<string>>();
-    for (const def of at.candidates) {
-      const target = paramAt(def.params, position);
-      const targetBase = target === undefined ? undefined : stripNullability(target.type);
-      const invocation = invocationOf(def);
-      // Skipped: this definition does not invoke the literal as a callable in a way the parser
-      // knows. It takes no argument at this position, takes a plain value there, or has a name
-      // the table does not hold; the function it calls refuses, when it runs, a mode it does not
-      // list.
-      if (targetBase?.kind !== 'callable' || invocation === undefined) continue;
-      // Skipped: an invocation already followed with this reference kind reaches the same
-      // callables.
-      const kinds = followed.get(invocation) ?? new Set<string>();
-      if (kinds.has(targetBase.reference)) continue;
-      followed.set(invocation, kinds.add(targetBase.reference));
-      const invoked = invokedArguments(
-        invocation,
-        at.passed.map((p) => p.type),
-      );
-      const candidates = callableCandidates(registry, targetBase.reference, arg.predictableValue);
-      checkPassedArguments(registry, errors, walked, {
-        call: at.call,
-        host: def,
-        candidates,
-        passed: invoked.map((invokedArg) => ({
-          type: invokedArg.type,
-          source:
-            invokedArg.forwards === undefined ? undefined : at.passed[invokedArg.forwards]?.source,
-        })),
-        named: { index: passed.source, span: arg.span },
-      });
-    }
-  });
+  }
+  // Exit: a value the higher-order function supplies when the call runs (an item, a key, a
+  // property value, an accumulator) names no callable written in the formula, and one reaching a
+  // parameter that lists admitted values was refused above.
+  if (source === undefined) return [];
+  // Exit: the rule follows a callable where a string literal names it. One named by a value or an
+  // expression is resolved when the call runs, and the function it calls refuses, when it runs, a
+  // mode it does not list.
+  if (arg === undefined || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
+    return [];
+  }
+  const follows: WalkState[] = [];
+  const followed = new Map<CallableInvocation, Set<string>>();
+  for (const def of state.candidates) {
+    // Skipped: this definition does not invoke the literal as a callable in a way the parser
+    // knows: its name is not in the table, it takes a plain value at this position, or the
+    // position is past its own parameter list. Of the arguments a variadic callable parameter
+    // takes, only the first is followed, as only the first is checked where the call is written
+    // (as in 1.0.0). The function a skipped callable calls refuses, when it runs, a mode it does
+    // not list.
+    const param = position < def.params.length ? def.params[position] : undefined;
+    const target = param === undefined ? undefined : stripNullability(param.type);
+    const invocation = invocationOf(def);
+    if (target?.kind !== 'callable' || invocation === undefined) continue;
+    // Skipped: an invocation already followed with this reference kind reaches the same callables.
+    const kinds = followed.get(invocation) ?? new Set<string>();
+    if (kinds.has(target.reference)) continue;
+    followed.set(invocation, kinds.add(target.reference));
+    follows.push({
+      host: def,
+      candidates: callableCandidates(walk.registry, target.reference, arg.predictableValue),
+      sources: passedSources(invocation, state.sources),
+      named: { index: source, span: arg.span },
+    });
+  }
+  return follows;
+}
+
+/**
+ * Reports `error` unless the walk has reported the same diagnostic (code, message and span): it
+ * can reach one argument along several definitions of the same name.
+ */
+function report(walk: CallWalk, error: FormulaError): void {
+  const key = JSON.stringify([
+    error.code,
+    error.message,
+    error.span?.start ?? null,
+    error.span?.end ?? null,
+  ]);
+  if (walk.reported.has(key)) return;
+  walk.reported.add(key);
+  walk.errors.push(error);
 }

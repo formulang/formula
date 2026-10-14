@@ -27,10 +27,11 @@ arguments with `,` instead.
   `normalise`, `format` or `kind`) takes a string literal naming one of them; a
   misspelt one is a compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when
   higher-order calls pass it on through callables named by string literals
-  (see [Enumerated literals](language.md#enumerated-literals)). A mode can
-  still reach a function when the call runs, passed to a callable that a
+  (see [When a mode is refused](language.md#when-a-mode-is-refused)). A mode
+  can still reach a function when the call runs, passed to a callable that a
   higher-order call names by a variable or an expression
-  (`EACH(lists; "EACH"; name; mode)`), so each function also checks the mode
+  (`EACH(lists; "EACH"; name; mode)`) or along a path the parser does not
+  follow, so each function also checks the mode
   it receives, wherever it comes from: a value it does not list, the empty
   text included, returns `null` with a `TYPE` warning, and `null` selects the
   default of an optional mode. Through
@@ -577,8 +578,8 @@ non-empty, non-text value, and plain `null` when the input is empty.
 **Text segmentation.** `WORDS`, `WORD_COUNT` and `LEADING_WORDS` share one
 tokeniser, chosen by an optional `mode` literal (a misspelt mode is a
 compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when higher-order calls
-pass the mode on, at any depth of callables named by string literals; see
-**Modes** under [Conventions](#conventions)):
+pass the mode on through callables named by string literals, as far as the
+parser follows them; see **Modes** under [Conventions](#conventions)):
 
 - `"whitespace"` (default) — the text is trimmed and split at every run of
   whitespace. Whitespace is JavaScript's `\s`: tabs, line breaks and the

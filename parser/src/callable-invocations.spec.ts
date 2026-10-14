@@ -15,7 +15,12 @@ import {
   RESULTS_BY_NAME,
   invocationOf,
   invokedArguments,
+  passedSources,
+  sourceAt,
+  sourceCount,
   walkStateKey,
+  writtenArguments,
+  type PassedSources,
 } from './callable-invocations';
 import { parseFormula } from './index';
 
@@ -165,8 +170,8 @@ describe('callable invocations', () => {
   });
 
   it('passes the callable fewer arguments than its call holds whenever it passes one on', () => {
-    // What ends the walk through nested callables: along a chain of callables named by string
-    // literals, every level passes on fewer arguments than the level before it.
+    // Along a chain of callables named by string literals, every level passes on fewer arguments
+    // than the level before it, so no chain is longer than the call written in the formula.
     const furthest = Math.max(
       ...[...INVOCATIONS_BY_NAME.values()].flat().map((source) => {
         const { of, at, from, typeOf } = source as Record<string, number | undefined>;
@@ -228,18 +233,27 @@ describe('callable invocations', () => {
     expect(performance.now() - started).toBeLessThan(2000);
   });
 
-  it('keys each state of the walk apart from every other', () => {
-    // No positions and one supplied value, a supplied value and a formula argument, the order of
-    // the definitions, and parts that would read alike when joined: all distinct states.
-    const base = { named: 1, host: 'EACH', candidates: ['PICK/v1'], sources: [] };
+  it('keys each state of the walk apart from every other, whatever the size of the call', () => {
+    // No positions and one supplied value, a supplied value and a formula argument, a head and a
+    // range, the order of the definitions, and parts that would read alike when joined: all
+    // distinct states.
+    const sources = (head: (number | undefined)[], from = 9, end = 9): PassedSources => ({
+      head,
+      from,
+      end,
+    });
+    const base = { named: 1, host: 'EACH', candidates: ['PICK/v1'], sources: sources([]) };
     const states = [
       base,
-      { ...base, sources: [undefined] },
-      { ...base, sources: [undefined, undefined] },
-      { ...base, sources: [0] },
-      { ...base, sources: [1, 0] },
-      { ...base, sources: [10] },
-      { ...base, sources: [1, undefined] },
+      { ...base, sources: sources([undefined]) },
+      { ...base, sources: sources([undefined, undefined]) },
+      { ...base, sources: sources([0]) },
+      { ...base, sources: sources([1, 0]) },
+      { ...base, sources: sources([10]) },
+      { ...base, sources: sources([1, undefined]) },
+      { ...base, sources: sources([undefined], 3) },
+      { ...base, sources: sources([undefined], 4) },
+      { ...base, sources: sources([undefined], 3, 12) },
       { ...base, named: 11 },
       { ...base, host: 'FILTER' },
       { ...base, candidates: [] },
@@ -251,6 +265,58 @@ describe('callable invocations', () => {
     const keys = states.map((state) => walkStateKey(state));
     expect(new Set(keys).size).toBe(states.length);
     // The same state, the same key.
-    expect(walkStateKey({ ...base, sources: [1, 0] })).toBe(keys[4]);
+    expect(walkStateKey({ ...base, sources: sources([1, 0]) })).toBe(keys[4]);
+    // A key does not grow with the call: the same state in a call of 12 and of 12,000 arguments
+    // differs by the digits of its end alone.
+    const short = walkStateKey({ ...base, sources: sources([undefined], 3, 12) });
+    const long = walkStateKey({ ...base, sources: sources([undefined], 3, 12_000) });
+    expect(long.length - short.length).toBe('12000'.length - '12'.length);
+  });
+
+  it('describes what an invocation passes as invokedArguments does, through every level', () => {
+    // passedSources (what the walk reads, without copying a call's arguments) against
+    // invokedArguments (what the parser types), for every entry and chain of up to three entries,
+    // applied to calls of up to twelve arguments, both read as where each argument comes from.
+    const entries = [...INVOCATIONS_BY_NAME.entries()];
+    for (const [name, invocation] of entries) {
+      // An `arguments` source is its entry's last, so what it passes on stays one range.
+      const at = invocation.findIndex((source) => source.kind === 'arguments');
+      expect(at === -1 || at === invocation.length - 1, name).toBe(true);
+    }
+    const chains = [
+      ...entries.map((first) => [first]),
+      ...entries.flatMap((first) => entries.map((second) => [first, second])),
+      ...entries.flatMap((first) =>
+        entries.flatMap((second) => entries.map((third) => [first, second, third])),
+      ),
+    ];
+    const read = (sources: PassedSources) =>
+      Array.from({ length: sourceCount(sources) }, (_, position) => {
+        return sourceAt(sources, position) ?? null;
+      });
+    let compared = 0;
+    for (let count = 0; count <= 12; count++) {
+      for (const chain of chains) {
+        let typed: (number | null)[] = Array.from({ length: count }, (_, index) => index);
+        let lazy = writtenArguments(count);
+        for (const [, invocation] of chain) {
+          const invoked = invokedArguments(
+            invocation,
+            typed.map(() => FormulaTypes.any(true)),
+          );
+          typed = invoked.map((arg) =>
+            arg.forwards === undefined ? null : (typed[arg.forwards] ?? null),
+          );
+          lazy = passedSources(invocation, lazy);
+          const label = `${chain.map(([name]) => name).join(' > ')} on ${count} arguments`;
+          expect(read(lazy), label).toStrictEqual(typed);
+          // One description per list of sources: a written argument at the end of the head that
+          // the range would continue is part of the range.
+          expect(lazy.head[lazy.head.length - 1] === lazy.from - 1, label).toBe(false);
+          compared++;
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(2000);
   });
 });

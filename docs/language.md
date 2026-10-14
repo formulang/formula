@@ -548,7 +548,8 @@ parsing:
   values (see [Enumerated literals](#enumerated-literals)) must be one of them,
   also when the referenced function is itself a higher-order function that
   passes it on in turn, at any depth, as long as each callable is named by a
-  string literal:
+  string literal (within the bound of
+  [When a mode is refused](#when-a-mode-is-refused)):
 
   ```
   EACH(LIST("a b"); "WORD_COUNT"; "whitespce")               -- LITERAL_VALUE_NOT_ALLOWED
@@ -602,7 +603,8 @@ WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whit
 ```
 
 The rule holds when built-in higher-order functions pass the literal on, at
-any depth, as long as each callable is named by a string literal:
+any depth, as long as each callable is named by a string literal (within the
+bound below):
 `EACH(value; "WORD_COUNT"; "whitespce")` and
 `EACH(value; "EACH"; "WORD_COUNT"; "whitespce")` fail the same way, naming
 `WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
@@ -611,12 +613,39 @@ lists values at that position, and the message names the overloads that do
 not list it; a call written directly is checked against the overload its
 types select.
 
-Each function also checks the mode it receives when it runs, wherever the
-mode comes from: a callable that a higher-order call passes on can be named
-by a variable or an expression, whose name the parser cannot know, and a
-higher-order function an embedder registers without declaring its invocation
-is checked at parse time only for the name of its callable (see
-[extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)).
+### When a mode is refused
+
+When the formula compiles, the parser refuses a mode that is not a string
+literal naming an admitted value wherever it sees the argument reach the
+parameter:
+
+- written in the call itself;
+- passed on by a higher-order function the parser knows by name — `EACH`,
+  `FILTER`, `FILTER_PROPERTY`, `REDUCE` or `FILTER_BY` — to the function a
+  string literal names as its callable, and on through every further such
+  function a string literal names, level by level.
+
+The parser follows those levels breadth first and visits at most 16 argument
+positions per argument of the call written in the formula. A level visits no
+more positions than the widest definition of the function it names has
+parameters, five for the built-in functions, so with the built-in definitions
+the walk never reaches that bound; a host's overload with a long parameter
+list under one of those names can, and past the bound the parser stops
+following without an error.
+
+When the call runs, every function checks the mode it receives, wherever it
+comes from, so a mode the parser does not see reach the function is refused
+then:
+
+- one passed on to a callable named by a variable or an expression, which is
+  resolved when the call runs (`EACH(lists; "EACH"; name; "whitespce")`);
+- one passed on by a higher-order function an embedder registers under a name
+  of its own, whose callable the parser checks only by name (see
+  [extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters));
+- one a host function passes to a callable it takes after the first argument
+  of a variadic callable parameter;
+- one past the bound above.
+
 A built-in function answers a mode it does not list with `null` and a `TYPE`
 warning; through a higher-order call that item is `null`, as for any callee
 that fails, because the higher-order functions keep a callee's value, not its
@@ -790,6 +819,11 @@ when a formula is generated or pathological.
 Evaluation is additionally bounded by step, cost, and wall-time budgets
 (`EVAL_LIMIT_EXCEEDED`, `COST_LIMIT_EXCEEDED`, `WALL_TIME_LIMIT_EXCEEDED`);
 a formula that stays within the sizes above will not normally meet them.
+
+The parser's check of modes passed on through callables visits at most 16
+argument positions per argument of each call and then stops following, with
+no error: it is no limit a formula can exceed, and a mode it leaves is
+refused when the call runs (see [When a mode is refused](#when-a-mode-is-refused)).
 
 ## Cheat sheet
 

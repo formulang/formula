@@ -144,6 +144,62 @@ describe('a mode received when the call runs', () => {
     ).toStrictEqual({ value: [[null]], warnings: [] });
   });
 
+  it('refuses, when the call runs, a mode past where the parser stops following', async () => {
+    // A host's EACH overload with forty parameters makes the parser visit forty positions at every
+    // level of a chain of EACH, so its walk reaches its limit (linear in the call) long before the
+    // end of a chain of forty levels. The formula compiles, and WORD_COUNT refuses the misspelt
+    // mode at the end of the chain when the call runs. With the core definitions alone the same
+    // formula does not compile: the walk reaches the mode.
+    const levels = 40;
+    const list = `${'LIST('.repeat(levels + 1)}"a b"${')'.repeat(levels + 1)}`;
+    const source = (mode: string) =>
+      `EACH(${list}; ${'"EACH"; '.repeat(levels)}"WORD_COUNT"; "${mode}")`;
+    const limits = { maxParenDepth: 2 * levels };
+    const nested = (value: unknown): unknown => {
+      let out = value;
+      for (let level = 0; level <= levels; level++) out = [out];
+      return out;
+    };
+    const wide = () => {
+      const built = runtime();
+      const [each] = built.registry.listFunctionsByName('EACH');
+      if (each === undefined) throw new Error('no EACH');
+      built.registry.registerFunction({
+        ...each,
+        signatureId: 'WIDE_EACH/v1',
+        params: [
+          { name: 'target', type: FormulaTypes.list(FormulaTypes.number(true)) },
+          ...each.params.slice(1, 2),
+          ...Array.from({ length: 38 }, (_, index) => ({
+            name: `option${index}`,
+            type: FormulaTypes.text(true),
+            optional: true,
+          })),
+        ],
+      });
+      return built;
+    };
+    const outcome = async (built: ReturnType<typeof runtime>, mode: string) => {
+      const parsed = parseFormula(source(mode), { registry: built.registry, limits });
+      if (parsed.errors.length > 0) return { parse: parsed.errors.map((error) => error.code) };
+      const out = await evaluateRuleOutputAsync(
+        optimizeRule(parsed, { registry: built.registry }),
+        {
+          registry: built.registry,
+          resolver: built.implementations,
+          variables: {},
+        },
+      );
+      return { value: out.output.value ?? null, errors: out.errors.map((error) => error.code) };
+    };
+    expect(await outcome(runtime(), 'whitespce')).toStrictEqual({
+      parse: ['LITERAL_VALUE_NOT_ALLOWED'],
+    });
+    expect(await outcome(wide(), 'whitespce')).toStrictEqual({ value: nested(null), errors: [] });
+    // Not vacuous: an admitted mode answers through the same chain.
+    expect(await outcome(wide(), 'letters')).toStrictEqual({ value: nested(2), errors: [] });
+  });
+
   it('answers null for a nested call that omits a required mode', async () => {
     const required = enumerated.filter(({ optional }) => !optional);
     // Not vacuous: PLAIN_TEXT and MARKDOWN_BLOCKS require theirs.
