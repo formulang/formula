@@ -507,6 +507,29 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
             untyped,
           ).toStrictEqual(['EXPECTED_STRING_LITERAL_REFERENCE']);
           outcomes.refused.push(label);
+          // A string literal at each mode instead: the built-in binds when it lists the literal,
+          // and the call fails to compile when it does not.
+          const withMode = (literal: (param: definitions.FunctionParamDefinition) => string) =>
+            `${name}(${params
+              .map((param, index) => {
+                const own = def.params[index];
+                if (own?.literalOnly === true && own.literalValues !== undefined) {
+                  return literal(own);
+                }
+                return definitions.stripNullability(param.type).kind === 'callable'
+                  ? '"AND"'
+                  : 'value';
+              })
+              .join('; ')})`;
+          const listed = withMode((own) => JSON.stringify(own.literalValues?.[0]));
+          const listedParsed = parser.parseFormula(listed, { registry });
+          expect(listedParsed.errors, listed).toStrictEqual([]);
+          expect(listedParsed.root.signatureId, listed).toBe(def.signatureId);
+          const unlisted = withMode(() => '"zzz"');
+          expect(
+            parser.parseFormula(unlisted, { registry }).errors.map((error) => error.code),
+            unlisted,
+          ).toStrictEqual(['LITERAL_VALUE_NOT_ALLOWED']);
         } else {
           expect(rebound.errors, untyped).toStrictEqual([]);
           expect(rebound.root.signatureId, untyped).toBe(def.signatureId);
