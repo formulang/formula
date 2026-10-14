@@ -109,10 +109,10 @@ describe('Text segmentation', () => {
         value: null,
         codes: ['TYPE'],
       });
-      // An empty tag is an empty input.
+      // An empty tag is no language tag.
       expect(await warningCodes('WORDS("abc"; "locale"; "")')).toStrictEqual({
         value: null,
-        codes: [],
+        codes: ['TYPE'],
       });
     });
 
@@ -166,8 +166,30 @@ describe('Text segmentation', () => {
         value: null,
         codes: ['TYPE'],
       });
-      // An empty option is no option.
-      expect(await evalOk('WORD_COUNT("a b"; "whitespace"; "")')).toBe(2);
+    });
+
+    it('answers null with TYPE for an empty option in every mode', async () => {
+      // The empty text is an option: refused outside locale and pattern, an empty tag or pattern
+      // inside them.
+      for (const mode of WORD_SPLIT_MODES) {
+        for (const source of [
+          `WORDS("a b"; "${mode}"; "")`,
+          `WORD_COUNT("a b"; "${mode}"; "")`,
+          `LEADING_WORDS("a b"; 1; "${mode}"; "")`,
+          `WORD_COUNT("a b"; "${mode}"; value)`,
+        ]) {
+          expect(await warningCodes(source, { value: '' }), source).toStrictEqual({
+            value: null,
+            codes: ['TYPE'],
+          });
+        }
+        expect(() => splitWords('a b', mode, ''), mode).toThrow(TypeError);
+      }
+      // A null option is no option, as an omitted one is.
+      expect(await evalOk('WORD_COUNT("a b"; "whitespace"; value)', { value: null })).toBe(2);
+      expect(
+        await warningCodes('WORD_COUNT("a b"; "locale"; value)', { value: null }),
+      ).toStrictEqual({ value: null, codes: ['TYPE'] });
     });
 
     it('refuses a misspelt or non-literal mode passed on by a higher-order call', async () => {

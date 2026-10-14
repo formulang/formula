@@ -128,7 +128,9 @@ function regexRefusal(fn: string, failure: RegexCompileFailure | undefined): Ref
 /**
  * The words of `text` under `mode`. `option` is the language tag (`locale`) or the token pattern
  * (`pattern`), `null` when absent. A mode/option combination that cannot be honoured comes back
- * as a refusal; a pattern beyond the safe-regex limits throws a security error.
+ * as a refusal: any option, the empty text included, outside `locale` and `pattern`, and an
+ * absent or empty tag or pattern inside them. A pattern beyond the safe-regex limits throws a
+ * security error.
  */
 function scanWords(
   fn: string,
@@ -152,7 +154,7 @@ function scanWords(
         words: nonEmptyMatches(text, mode === 'whitespace' ? NON_WHITESPACE_RUN : LETTER_WORD),
       };
     case 'locale': {
-      if (option === null) {
+      if (option === null || option.length === 0) {
         return {
           refusal: { code: 'TYPE', message: `${fn} needs a BCP 47 language tag in locale mode` },
         };
@@ -169,7 +171,7 @@ function scanWords(
       return { words: wordLikeSegments(segmenter, text) };
     }
     case 'pattern': {
-      if (option === null) {
+      if (option === null || option.length === 0) {
         return { refusal: { code: 'TYPE', message: `${fn} needs a pattern in pattern mode` } };
       }
       const { re, failure } = compileSafeRegex({
@@ -268,7 +270,8 @@ function splitLines(text: string, mode: LineSplitMode): string[] {
  * is not bounded by `maxWildcardOutputLength`.
  *
  * @throws TypeError when the arguments do not fit the mode: an option outside the `locale` and
- *   `pattern` modes, a missing or unsupported language tag, a missing or refused pattern.
+ *   `pattern` modes (the empty text included), a missing, empty or unsupported language tag, a
+ *   missing, empty or refused pattern.
  * @throws FormulaRuntimeError (`REGEX_UNSAFE`, `REGEX_INPUT_TOO_LONG`) for a pattern or text
  *   beyond the safe-regex limits.
  */
@@ -284,13 +287,7 @@ export function splitWords(
   if (option !== undefined && typeof option !== 'string') {
     throw new TypeError('splitWords option must be text');
   }
-  const scan = scanWords(
-    'splitWords',
-    text,
-    mode,
-    option === undefined || option.length === 0 ? null : option,
-    DEFAULT_FORMULA_LIMITS,
-  );
+  const scan = scanWords('splitWords', text, mode, option ?? null, DEFAULT_FORMULA_LIMITS);
   if ('refusal' in scan) throw new TypeError(scan.refusal.message);
   return Array.from(scan.words);
 }
@@ -329,11 +326,9 @@ function readWordCall(
   if (typeof text !== 'string') return { output: text };
   const mode = readOptionalMode(fn, 'mode', rawMode, WORD_SPLIT_MODES);
   if (typeof mode !== 'string') return { output: mode };
-  if (!hasOption || isEmptyValue(rawOption)) {
-    // An empty language tag or pattern is an empty input: null in, null out.
-    if (hasOption && (mode === 'locale' || mode === 'pattern')) return { output: makeOkNull(fn) };
-    return { call: { text, mode, option: null } };
-  }
+  // An omitted or null option is no option. Any other value is one, the empty text included:
+  // refused outside the locale and pattern modes, an empty tag or pattern inside them.
+  if (!hasOption || rawOption == null) return { call: { text, mode, option: null } };
   if (typeof rawOption !== 'string')
     return { output: typeWarning(fn, `${fn} option must be text`) };
   return { call: { text, mode, option: rawOption } };

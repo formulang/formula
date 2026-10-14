@@ -39,6 +39,35 @@ describe('FILTER_BY', () => {
     ).toStrictEqual([callouts[1]]);
   });
 
+  it('calls the overload of the operator that the parser checked', async () => {
+    // STARTS_WITH has a text and a list overload; the list one is checked here and must run.
+    expect(
+      await evalOk(
+        'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; LIST("a"; "c"))',
+      ),
+    ).toStrictEqual(['x', 'z']);
+    expect(
+      await evalOk(
+        'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; "b")',
+      ),
+    ).toStrictEqual(['y']);
+    // Each key answers as the direct call with the same literal arguments does.
+    const literal = (value: string | string[]) =>
+      Array.isArray(value)
+        ? `LIST(${value.map((item) => JSON.stringify(item)).join('; ')})`
+        : JSON.stringify(value);
+    const keys = ['apple', 'banana', 'cherry', 'x'];
+    for (const needles of [['a', 'c'], ['b'], ['x', 'ch'], [''], 'b', '']) {
+      const kept: string[] = [];
+      for (const key of keys) {
+        const direct = `STARTS_WITH(${literal(key)}; ${literal(needles)})`;
+        if ((await evalOk(direct)) === true) kept.push(key);
+      }
+      const source = `FILTER_BY(${literal(keys)}; ${literal(keys)}; "STARTS_WITH"; ${literal(needles)})`;
+      expect(await evalOk(source), source).toStrictEqual(kept);
+    }
+  });
+
   it('types the result as the list it filters', async () => {
     expect(await evalOk('JOIN(FILTER_BY(LIST("a"; "b"); LIST(1; 2); ">"; 1); "-")')).toBe('b');
   });

@@ -587,9 +587,10 @@ pass the mode on, at any depth):
   limit.
 
 `option` is accepted only in the `"locale"` and `"pattern"` modes; elsewhere
-it returns `null` with a `TYPE` warning, and an omitted tag or pattern in those
-modes does the same. An empty `option` there is an empty input and returns
-`null`.
+any option, the empty text `""` included, returns `null` with a `TYPE`
+warning. In those two modes an omitted, `null` or empty tag or pattern returns
+`null` with a `TYPE` warning too. A `null` option is no option, so outside
+those modes it is ignored.
 
 `SENTENCES` takes a `mode` too: `"punctuation"` (default) ends a sentence at a
 whitespace run directly after `.`, `!` or `?`; `"terminators"` ends one at
@@ -1261,10 +1262,14 @@ Keeps the items of `list` whose key — the item at the same position in
 `keys` — satisfies the named `operator`, called as `(key)` or, when
 `operatorValue` is given, `(key, operatorValue)`. `list` and `keys` must have
 the same length; otherwise the result is `null` with a `TYPE` warning. The
-operator is validated at parse time as for `FILTER`.
+operator is validated at parse time as for `FILTER`. When it names an
+overloaded function, `FILTER_BY` calls the overload whose parameters take the
+types of the keys and of `operatorValue` — the overload the parser checks for
+arguments of those types, such as `STARTS_WITH`'s list form below.
 
 ```ts
 await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
+await evalOk('FILTER_BY(LIST("x"; "y"); LIST("apple"; "kiwi"); "STARTS_WITH"; LIST("a"; "k"))'); // ["x", "y"]
 // value = a list of callouts: keep those longer than eight words
 await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
 ```
