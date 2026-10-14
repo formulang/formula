@@ -1,6 +1,6 @@
 {
   "name": "@formulang/parser",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Parser for the Formulang formula language — compiles formula source into a typed, validated AST.",
   "keywords": [
     "formula",
