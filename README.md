@@ -19,7 +19,7 @@ Thirteen capabilities every embedder gets out of the box, and thirteen more for 
 
 ### Core capabilities
 
-- **Spreadsheet-style formula language.** 108 built-in functions covering math, aggregation, logic and comparison, text (including word, sentence and line segmentation, phrase matching, and the text of HTML and markdown), lists, date and time, control flow, and type and empty ([function reference](docs/functions.md)).
+- **Spreadsheet-style formula language.** 113 built-in functions covering math, aggregation, logic and comparison, text (including word, sentence and line segmentation, phrase matching, and the text of HTML and markdown), lists (including slicing, keyed filtering and grouping), date and time, control flow, and type and empty ([function reference](docs/functions.md)).
 - **Strong static typing.** Every literal, variable, property, and call is bound to a type at compile time; argument type mismatches, unresolvable overloads, and nullability violations are compile errors (`ARGUMENT_TYPE_MISMATCH`, `NO_MATCHING_OVERLOAD`, `NULL_NOT_ALLOWED`), reported as structured diagnostics with exact source spans — before anything executes ([architecture §2.4](docs/architecture.md#24-type-binding-and-overload-resolution)).
 - **Return-type analysis.** Every compiled formula reports its result type, and every AST node its bound type, nullability included — `1 + 2 * 3` compiles to `number?`, `EACH(LIST("a";"bb"); "LEN")` to `List<number?>?` — so editors can show result types before execution and hosts can require, say, a number-returning formula by checking `isAssignable` against `rule.returnType` ([parser README](parser/README.md#the-typedrule-result)).
 - **Rich data-type vocabulary.** `FormulaType` is a JSON-serializable union of ten kinds — `any`, `null`, `boolean`, `number`, `text`, `template` (per-function generics), `callable` (typed function and operator references), `list`, `object` (a clarifier tag plus a per-property type allowlist), and `union` — with explicit nullability on every type, declared as plain data ([definitions README](definitions/README.md#types-formulatype-and-formulatypes)).
@@ -162,7 +162,7 @@ The language convention is "empty in, empty out": built-ins return `null` instea
 
 ### Where is the full list of built-in functions?
 
-[docs/functions.md](docs/functions.md) documents all 108 functions registered by `createCoreFormulaRuntime()`, grouped by category as in [Core capabilities](#core-capabilities), with signatures and examples for each.
+[docs/functions.md](docs/functions.md) documents all 113 functions registered by `createCoreFormulaRuntime()`, grouped by category as in [Core capabilities](#core-capabilities), with signatures and examples for each.
 
 ## Development
 

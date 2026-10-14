@@ -1022,6 +1022,125 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
     controlFlow: true,
   });
 
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.TAKE,
+    name: 'TAKE',
+    category: 'core',
+    description: 'A run of consecutive items from a list.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+      { name: 'count', description: 'How many items to take.', type: FormulaTypes.number(true) },
+      {
+        name: 'start',
+        description: 'The 1-based position of the first item taken (default 1).',
+        type: FormulaTypes.number(true),
+        optional: true,
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.INDEX_OF,
+    name: 'INDEX_OF',
+    category: 'core',
+    description: 'The 1-based position of the first item equal to the value.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+      { name: 'value', type: FormulaTypes.template('T', { nullable: true }) },
+    ],
+    returnType: FormulaTypes.number(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.FILTER_BY,
+    name: 'FILTER_BY',
+    category: 'core',
+    description: 'Filter a list by checking the key at the same position in a second list.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+      {
+        name: 'keys',
+        description: 'One key per list item, checked in its place.',
+        type: FormulaTypes.list(FormulaTypes.any(true), true),
+      },
+      {
+        name: 'operator',
+        type: FormulaTypes.callable('function_or_operator', {
+          // FILTER_BY calls the operator with (key[, operatorValue]).
+          paramTypes: [FormulaTypes.any(true), FormulaTypes.any(true)],
+          returnType: FormulaTypes.boolean(true),
+          minArity: 1,
+          maxArity: 2,
+        }),
+        literalOnly: true,
+      },
+      { name: 'operatorValue', type: FormulaTypes.any(true), optional: true },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.DISTINCT,
+    name: 'DISTINCT',
+    category: 'core',
+    description: 'The first occurrence of each distinct non-empty item, in order.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.GROUP_COUNTS,
+    name: 'GROUP_COUNTS',
+    category: 'core',
+    description: 'For each distinct non-empty item, in order, how many items equal it.',
+    params: [{ name: 'list', type: FormulaTypes.list(FormulaTypes.any(true), true) }],
+    returnType: FormulaTypes.list(FormulaTypes.number(false), true),
+    purity: 'pure',
+  });
+
   // Type predicates
   registry.registerFunction({
     signatureId: BuiltinSignatureIds.ISNUMBER,

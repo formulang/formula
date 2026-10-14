@@ -494,10 +494,10 @@ OR(TRUE; NOT(1))          -- true: second argument skipped
 
 ## Callable references
 
-Higher-order functions — `FILTER`, `FILTER_PROPERTY`, `EACH`, `REDUCE` —
-take another function or operator as an argument. You pass it **by name, as
-a string literal**: either the function's `UPPER_SNAKE_CASE` name or an
-operator token.
+Higher-order functions — `FILTER`, `FILTER_PROPERTY`, `FILTER_BY`, `EACH`,
+`REDUCE` — take another function or operator as an argument. You pass it
+**by name, as a string literal**: either the function's `UPPER_SNAKE_CASE`
+name or an operator token.
 
 ```
 FILTER(LIST(1;2;3); ">"; 1)                          -- [2, 3]
@@ -530,12 +530,13 @@ parsing:
 
 How each host function invokes the reference:
 
-| Call                                      | Reference invoked as                                |
-| ----------------------------------------- | --------------------------------------------------- |
-| `FILTER(list; "OP"; x?)`                  | `OP(item)` or `OP(item; x)` — keep items where true |
-| `FILTER_PROPERTY(list; "path"; "OP"; x?)` | `OP(item.path)` or `OP(item.path; x)`               |
-| `EACH(list; "OP"; extra...)`              | `OP(item; extra...)` — collect results              |
-| `REDUCE(init; list; "OP")`                | `OP(accumulator; item)`                             |
+| Call                                      | Reference invoked as                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------- |
+| `FILTER(list; "OP"; x?)`                  | `OP(item)` or `OP(item; x)` — keep items where true                                   |
+| `FILTER_PROPERTY(list; "path"; "OP"; x?)` | `OP(item.path)` or `OP(item.path; x)`                                                 |
+| `FILTER_BY(list; keys; "OP"; x?)`         | `OP(key)` or `OP(key; x)` with the key at the item's position — keep items where true |
+| `EACH(list; "OP"; extra...)`              | `OP(item; extra...)` — collect results                                                |
+| `REDUCE(init; list; "OP")`                | `OP(accumulator; item)`                                                               |
 
 A related literal-only rule applies to property-path parameters of
 `FILTER_PROPERTY` and `SORT_BY_PROPERTY`: the path is a string literal and

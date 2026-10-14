@@ -1055,6 +1055,12 @@ function bindTypesAndRequirements(
           } else if (defName === 'FILTER_PROPERTY') {
             invokedArgTypes = [FormulaTypes.any(true)];
             if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
+          } else if (defName === 'FILTER_BY') {
+            // FILTER_BY calls the operator with (key[, operatorValue]) for each key of `keys`.
+            const keysType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
+            const keyType = keysType.kind === 'list' ? keysType.of : FormulaTypes.any(true);
+            invokedArgTypes = [keyType];
+            if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
           } else if (defName === 'REDUCE') {
             const accType = argTypes[0] ?? FormulaTypes.any(true);
             const listType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
@@ -1235,7 +1241,8 @@ function bindTypesAndRequirements(
         }
       } else if (
         def.name.toUpperCase() === 'FILTER' ||
-        def.name.toUpperCase() === 'FILTER_PROPERTY'
+        def.name.toUpperCase() === 'FILTER_PROPERTY' ||
+        def.name.toUpperCase() === 'FILTER_BY'
       ) {
         const targetType = argTypes[0];
         const stripped = stripNullability(targetType);

@@ -54,7 +54,7 @@ arguments with `,` instead.
 - **Aggregation:** [AVG](#avg) · [MIN](#min) · [MAX](#max) · [MEDIAN](#median) · [COUNT](#count) · [COUNT_UNIQUE](#count_unique)
 - **Logic & comparison:** [EQ](#eq) · [NEQ](#neq) · [GT](#gt) · [GTE](#gte) · [LT](#lt) · [LTE](#lte) · [AND](#and) · [OR](#or) · [NOT](#not)
 - **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl) · [WORDS](#words) · [WORD_COUNT](#word_count) · [LEADING_WORDS](#leading_words) · [SENTENCES](#sentences) · [LINES](#lines) · [LINE_COUNT](#line_count) · [FIRST_CONTAINED](#first_contained) · [CONTAINS_ANY](#contains_any) · [MISSING_FROM](#missing_from) · [PLAIN_TEXT](#plain_text) · [MARKDOWN_BLOCKS](#markdown_blocks)
-- **Lists:** [LIST](#list) · [INDEX](#index) · [FLAT](#flat) · [SORT](#sort) · [SORT_BY_PROPERTY](#sort_by_property) · [FILTER](#filter) · [FILTER_PROPERTY](#filter_property) · [EACH](#each) · [REDUCE](#reduce) · [INCLUDES](#includes)
+- **Lists:** [LIST](#list) · [INDEX](#index) · [FLAT](#flat) · [SORT](#sort) · [SORT_BY_PROPERTY](#sort_by_property) · [FILTER](#filter) · [FILTER_PROPERTY](#filter_property) · [EACH](#each) · [REDUCE](#reduce) · [INCLUDES](#includes) · [TAKE](#take) · [INDEX_OF](#index_of) · [FILTER_BY](#filter_by) · [DISTINCT](#distinct) · [GROUP_COUNTS](#group_counts)
 - **Date & time:** [DATE](#date) · [DATEVALUE](#datevalue) · [TIME](#time) · [TIMEVALUE](#timevalue) · [NOW](#now) · [TODAY](#today) · [DAY](#day) · [MONTH](#month) · [YEAR](#year) · [HOUR](#hour) · [MINUTE](#minute) · [SECOND](#second) · [DAYS](#days) · [DATEDIF](#datedif) · [WEEKDAY](#weekday) · [WEEKNUM](#weeknum) · [ISOWEEKNUM](#isoweeknum)
 - **Control flow:** [IF](#if) · [SWITCH](#switch)
 - **Type predicates & empty:** [IS_EMPTY](#is_empty) · [EMPTY](#empty) · [ISNUMBER](#isnumber) · [ISTEXT](#istext) · [ISDATE](#isdate)
@@ -1065,11 +1065,11 @@ await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value }); // ["A B", "1 2"
 
 ## Lists
 
-Higher-order list functions (`FILTER`, `FILTER_PROPERTY`, `EACH`, `REDUCE`) take
-the callable as a **text literal** naming a function or operator (for example
-`">"`, `"STARTS_WITH"`). The named callable is validated against the registry at
-parse time — an unknown name is an `UNKNOWN_FUNCTION_REFERENCE` error — and
-resolved again at evaluation time. Lists longer than the configured
+Higher-order list functions (`FILTER`, `FILTER_PROPERTY`, `FILTER_BY`, `EACH`,
+`REDUCE`) take the callable as a **text literal** naming a function or operator
+(for example `">"`, `"STARTS_WITH"`). The named callable is validated against
+the registry at parse time — an unknown name is an `UNKNOWN_FUNCTION_REFERENCE`
+error — and resolved again at evaluation time. Lists longer than the configured
 `maxListLength` raise a `LIST_TOO_LARGE` security error.
 
 ### LIST
@@ -1197,6 +1197,78 @@ some comparison was indeterminate (`null`), the result is `null`.
 ```ts
 await evalOk('INCLUDES(LIST("a"; "b"); "b")'); // true
 await evalOk('INCLUDES(LIST("a"); "b")'); // false
+```
+
+### TAKE
+
+`TAKE(list: list<T>, count: number, start?: number) -> list<T>`
+
+`count` consecutive items, starting at the 1-based position `start` (default
+`1`). A `count` of `0` yields `[]`; a run past the end yields the items that
+exist. A negative or fractional `count` or `start`, or a `start` below `1`,
+returns `null` with a `TYPE` warning.
+
+```ts
+await evalOk('TAKE(LIST(1; 2; 3); 2)'); // [1, 2]
+await evalOk('TAKE(LIST(1; 2; 3); 2; 3)'); // [3]
+await evalOk('TAKE(LIST(1; 2; 3); 0)'); // []
+```
+
+### INDEX_OF
+
+`INDEX_OF(list: list<T>, value: T) -> number`
+
+The 1-based position of the first item equal to `value` under the coerced
+equality of `INCLUDES`, or `null` when no item is equal or `value` is empty.
+`INDEX(list; INDEX_OF(...))` reads the item back.
+
+```ts
+await evalOk('INDEX_OF(LIST("a"; "b"); "b")'); // 2
+await evalOk('INDEX_OF(LIST("a"; "b"; "a"); "a")'); // 1
+await evalOk('INDEX_OF(LIST("a"; "b"); "c")'); // null
+```
+
+### FILTER_BY
+
+`FILTER_BY(list: list<T>, keys: list<any>, operator: callable, operatorValue?: any) -> list<T>`
+
+Keeps the items of `list` whose key — the item at the same position in
+`keys` — satisfies the named `operator`, called as `(key)` or, when
+`operatorValue` is given, `(key, operatorValue)`. `list` and `keys` must have
+the same length; otherwise the result is `null` with a `TYPE` warning. The
+operator is validated at parse time as for `FILTER`.
+
+```ts
+await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
+// value = a list of callouts: keep those longer than eight words
+await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
+```
+
+### DISTINCT
+
+`DISTINCT(list: list<T>) -> list<T>`
+
+The first occurrence of each distinct item, in order, with empty items
+dropped. Text, numbers and booleans are equal by value and type (`1` and `"1"`
+stay apart, text is compared case-sensitively); lists and objects are equal
+when their structure is.
+
+```ts
+await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
+await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))'); // 2
+```
+
+### GROUP_COUNTS
+
+`GROUP_COUNTS(list: list<any>) -> list<number>`
+
+For each item of `DISTINCT(list)`, in the same order, how many items of `list`
+equal it — so the two lists line up position by position.
+
+```ts
+await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))'); // [2, 1]
+// groups balanced within one: MAX(GROUP_COUNTS(value)) - MIN(GROUP_COUNTS(value)) <= 1
+// the largest group: INDEX(DISTINCT(value); INDEX_OF(GROUP_COUNTS(value); MAX(GROUP_COUNTS(value))))
 ```
 
 ---

@@ -1,5 +1,22 @@
 import { FormulaErrorCodes } from '@formulang/definitions';
-import { collectAllErrors, evalFormula, evalOk } from '../test-helpers/eval-formula';
+import {
+  collectAllErrors,
+  evalFormula,
+  evalOk,
+  evalOkWithOutput,
+} from '../test-helpers/eval-formula';
+
+async function warningCodes(source: string, vars: Record<string, unknown> = {}) {
+  const { output, value } = await evalOkWithOutput(source, vars);
+  return { value, codes: (output.warnings ?? []).map((w) => w.code) };
+}
+
+async function runtimeErrorCodes(source: string, vars: Record<string, unknown> = {}) {
+  const { res } = await evalFormula(source, vars);
+  return res.errors.map((e) => e.code);
+}
+
+const tooLong = Array.from({ length: 1_001 }, (_, i) => i);
 
 describe('List ops', () => {
   it('sorts lists', async () => {
@@ -97,5 +114,132 @@ describe('List ops', () => {
       {},
       {},
     ]);
+  });
+
+  describe('TAKE', () => {
+    it('takes count items from a 1-based start', async () => {
+      expect(await evalOk('TAKE(LIST(1; 2; 3); 2)')).toStrictEqual([1, 2]);
+      expect(await evalOk('TAKE(LIST(1; 2; 3); 2; 3)')).toStrictEqual([3]);
+      expect(await evalOk('TAKE(LIST(1; 2; 3); 0)')).toStrictEqual([]);
+      expect(await evalOk('TAKE(LIST(1; 2; 3); 5; 2)')).toStrictEqual([2, 3]);
+      expect(await evalOk('TAKE(LIST(1; 2; 3); 1; 9)')).toStrictEqual([]);
+      expect(await evalOk('TAKE(LIST("a"; "b"); 1; INDEX(LIST(1); 0))')).toStrictEqual(['a']);
+    });
+
+    it('refuses a negative or fractional count or start, and a start below 1', async () => {
+      for (const source of [
+        'TAKE(LIST(1; 2); -1)',
+        'TAKE(LIST(1; 2); 1.5)',
+        'TAKE(LIST(1; 2); 1; 0)',
+        'TAKE(LIST(1; 2); 1; 1.5)',
+        'TAKE(LIST(1; 2); 1; -2)',
+      ]) {
+        expect(await warningCodes(source)).toStrictEqual({ value: null, codes: ['TYPE'] });
+      }
+    });
+
+    it('follows the null convention and bounds the input', async () => {
+      expect(await evalOk('TAKE(value; 1)', { value: null })).toBe(null);
+      expect(await evalOk('TAKE(LIST(1); INDEX(LIST(1); 0))')).toBe(null);
+      expect(await warningCodes('TAKE(value; 1)', { value: 'abc' })).toStrictEqual({
+        value: null,
+        codes: ['TYPE'],
+      });
+      expect(await runtimeErrorCodes('TAKE(value; 1)', { value: tooLong })).toContain(
+        FormulaErrorCodes.LIST_TOO_LARGE,
+      );
+    });
+  });
+
+  describe('INDEX_OF', () => {
+    it('answers the 1-based position of the first equal item', async () => {
+      expect(await evalOk('INDEX_OF(LIST("a"; "b"); "b")')).toBe(2);
+      expect(await evalOk('INDEX_OF(LIST("a"; "b"; "a"); "a")')).toBe(1);
+      expect(await evalOk('INDEX_OF(LIST("a"; "b"); "c")')).toBe(null);
+      // The coerced equality INCLUDES uses: a number-like text equals the number.
+      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] })).toBe(2);
+    });
+
+    it('answers null for an empty value and follows the null convention', async () => {
+      expect(await evalOk('INDEX_OF(LIST("a"; ""); "")')).toBe(null);
+      expect(await evalOk('INDEX_OF(value; "a")', { value: null })).toBe(null);
+      expect(await warningCodes('INDEX_OF(value; "a")', { value: 'abc' })).toStrictEqual({
+        value: null,
+        codes: ['TYPE'],
+      });
+      expect(await runtimeErrorCodes('INDEX_OF(value; 1)', { value: tooLong })).toContain(
+        FormulaErrorCodes.LIST_TOO_LARGE,
+      );
+    });
+  });
+
+  describe('DISTINCT and GROUP_COUNTS', () => {
+    it('keeps first occurrences in order and counts each group', async () => {
+      expect(await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))')).toStrictEqual(['x', 'y']);
+      expect(await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))')).toStrictEqual([2, 1]);
+      expect(await evalOk('DISTINCT(LIST())')).toStrictEqual([]);
+      expect(await evalOk('GROUP_COUNTS(LIST())')).toStrictEqual([]);
+    });
+
+    it('compares text, numbers and booleans by value and lists and objects by structure', async () => {
+      const value = [
+        1,
+        '1',
+        true,
+        1,
+        'true',
+        { a: 1, b: [2] },
+        { b: [2], a: 1 },
+        [1, 2],
+        [1, 2],
+        [2, 1],
+      ];
+      expect(await evalOk('DISTINCT(value)', { value })).toStrictEqual([
+        1,
+        '1',
+        true,
+        'true',
+        { a: 1, b: [2] },
+        [1, 2],
+        [2, 1],
+      ]);
+      expect(await evalOk('GROUP_COUNTS(value)', { value })).toStrictEqual([2, 1, 1, 1, 2, 2, 1]);
+      // Text is compared exactly, case included.
+      expect(await evalOk('DISTINCT(LIST("a"; "A"; "a"))')).toStrictEqual(['a', 'A']);
+      expect(await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))')).toBe(2);
+    });
+
+    it('answers group balance questions', async () => {
+      const segments = ['craft', 'retail', 'craft', 'health', 'retail', 'craft'];
+      expect(
+        await evalOk('MAX(GROUP_COUNTS(value)) - MIN(GROUP_COUNTS(value)) <= 1', {
+          value: segments,
+        }),
+      ).toBe(false);
+      expect(await evalOk('COUNT(DISTINCT(value))', { value: segments })).toBe(3);
+      expect(
+        await evalOk(
+          'INDEX(DISTINCT(value); INDEX_OF(GROUP_COUNTS(value); MAX(GROUP_COUNTS(value))))',
+          {
+            value: segments,
+          },
+        ),
+      ).toBe('craft');
+    });
+
+    it('follows the null convention and bounds the input', async () => {
+      expect(await evalOk('DISTINCT(value)', { value: null })).toBe(null);
+      expect(await evalOk('GROUP_COUNTS(value)', { value: null })).toBe(null);
+      expect(await warningCodes('GROUP_COUNTS(value)', { value: 'abc' })).toStrictEqual({
+        value: null,
+        codes: ['TYPE'],
+      });
+      expect(await runtimeErrorCodes('DISTINCT(value)', { value: tooLong })).toContain(
+        FormulaErrorCodes.LIST_TOO_LARGE,
+      );
+      expect(await runtimeErrorCodes('GROUP_COUNTS(value)', { value: tooLong })).toContain(
+        FormulaErrorCodes.LIST_TOO_LARGE,
+      );
+    });
   });
 });

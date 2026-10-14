@@ -2,6 +2,7 @@ import type {
   BaseFunctionConfig,
   BatchEvaluationCall,
   FormulaExecutionContext,
+  FormulaNodeOutput,
   FormulaValueProvider,
   FunctionImplementation,
 } from '@formulang/definitions';
@@ -10,11 +11,20 @@ import {
   FormulaRuntimeError,
   makeOkList,
   makeOkNull,
+  makeOkNumber,
   makeOkUnknown,
   withWarnings,
 } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
-import { asNumber, asText, isEmptyValue, readNestedProperty } from './helpers';
+import { listTooLarge, typeWarning } from './argument-readers';
+import {
+  asNumber,
+  asText,
+  assumedListLength,
+  equalsUnknownType,
+  isEmptyValue,
+  readNestedProperty,
+} from './helpers';
 
 function constProvider(value: unknown): FormulaValueProvider {
   const out = makeOkUnknown('const', value);
@@ -237,5 +247,144 @@ export class IndexImplementation extends AbstractEagerBatchImplementation {
     if (idx <= 0) return makeOkNull('INDEX');
     const v = list[idx - 1];
     return makeOkUnknown('INDEX', v ?? null);
+  }
+}
+
+/**
+ * The list argument of `TAKE`, `INDEX_OF`, `DISTINCT` and `GROUP_COUNTS`, refused over
+ * `maxListLength`; `null` when the argument is not a list (see `notAList`).
+ */
+function readList(raw: unknown, ctx: FormulaExecutionContext): unknown[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.length > ctx.limits.maxListLength) throw listTooLarge();
+  return raw;
+}
+
+/** An empty value answers null; any other non-list value null with `TYPE`. */
+function notAList(fn: string, raw: unknown): FormulaNodeOutput {
+  return isEmptyValue(raw) ? makeOkNull(fn) : typeWarning(fn, `${fn} expects a list`);
+}
+
+function listCost(list: unknown): number {
+  return 0.00002 + 0.00002 * assumedListLength(list);
+}
+
+/**
+ * A key that is equal exactly for equal values: by value for text, numbers and booleans (with no
+ * conversion between them), by structure for lists and objects.
+ */
+function valueKey(value: unknown, ancestors: readonly unknown[] = []): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return `t${JSON.stringify(value)}`;
+  if (typeof value === 'number') return `n${value}`;
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value !== 'object') return `${typeof value}:${String(value)}`;
+  // A value that contains itself has no finite structure; its repetition gets one marker.
+  if (ancestors.includes(value)) return 'cycle';
+  const path = [...ancestors, value];
+  if (Array.isArray(value)) return `[${value.map((item) => valueKey(item, path)).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  const fields = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${valueKey(record[key], path)}`);
+  return `{${fields.join(',')}}`;
+}
+
+/** The distinct non-empty members of a list, in first-occurrence order, and how often each occurs. */
+function groupMembers(list: readonly unknown[]): { members: unknown[]; counts: number[] } {
+  const positions = new Map<string, number>();
+  const members: unknown[] = [];
+  const counts: number[] = [];
+  for (const item of list) {
+    if (isEmptyValue(item)) continue;
+    const key = valueKey(item);
+    const position = positions.get(key);
+    if (position === undefined) {
+      positions.set(key, members.length);
+      members.push(item);
+      counts.push(1);
+    } else {
+      counts[position] += 1;
+    }
+  }
+  return { members, counts };
+}
+
+export class TakeImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('TAKE', args[0]);
+    const rawCount = args[1];
+    if (isEmptyValue(rawCount)) return makeOkNull('TAKE');
+    const count = asNumber(rawCount);
+    if (count === null || !Number.isInteger(count) || count < 0) {
+      return typeWarning('TAKE', 'TAKE count must be a whole number of 0 or more');
+    }
+    const rawStart = args.length >= 3 ? args[2] : null;
+    const start = isEmptyValue(rawStart) ? 1 : asNumber(rawStart);
+    if (start === null || !Number.isInteger(start) || start < 1) {
+      return typeWarning('TAKE', 'TAKE start must be a whole number of 1 or more');
+    }
+    return makeOkList('TAKE', list.slice(start - 1, start - 1 + count));
+  }
+}
+
+export class IndexOfImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('INDEX_OF', args[0]);
+    const value = args[1];
+    if (isEmptyValue(value)) return makeOkNull('INDEX_OF');
+    // The coerced equality INCLUDES uses.
+    const index = list.findIndex((item) => equalsUnknownType(item, value) === true);
+    return index < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', index + 1);
+  }
+}
+
+export class DistinctImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('DISTINCT', args[0]);
+    return makeOkList('DISTINCT', groupMembers(list).members);
+  }
+}
+
+export class GroupCountsImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('GROUP_COUNTS', args[0]);
+    return makeOkList('GROUP_COUNTS', groupMembers(list).counts);
   }
 }

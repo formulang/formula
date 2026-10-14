@@ -236,6 +236,26 @@ describe('builtins', () => {
     expect(phrase.res.value).toBe('kennst du das?');
   });
 
+  it('slices, filters and groups a list variable', async () => {
+    const segments = ['craft', 'retail', 'craft'];
+    const listOfText = FormulaTypes.list(FormulaTypes.text(true), true);
+    const grouped = await evalFormula(
+      'LIST(MAX(GROUP_COUNTS(value)) - MIN(GROUP_COUNTS(value)); COUNT(DISTINCT(value)); INDEX_OF(value; "retail"))',
+      { value: segments },
+      listOfText,
+    );
+    expect(grouped.res.errors).toStrictEqual([]);
+    expect(grouped.res.value).toStrictEqual([1, 2, 2]);
+
+    const kept = await evalFormula(
+      'TAKE(FILTER_BY(value; LIST(3; 1; 5); ">"; 2); 1)',
+      { value: segments },
+      listOfText,
+    );
+    expect(kept.res.errors).toStrictEqual([]);
+    expect(kept.res.value).toStrictEqual(['craft']);
+  });
+
   it('estimated cost counts nested calls exactly once', () => {
     const { registry } = createTestRuntime();
     registry.registerVariable({

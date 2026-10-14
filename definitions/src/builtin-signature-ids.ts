@@ -77,6 +77,11 @@ export const BuiltinSignatureIds = {
   SORT_BY_PROPERTY: 'SORT_BY_PROPERTY/v1',
   REDUCE: 'REDUCE/v1',
   INDEX: 'INDEX/v1',
+  TAKE: 'TAKE/v1',
+  INDEX_OF: 'INDEX_OF/v1',
+  FILTER_BY: 'FILTER_BY/v1',
+  DISTINCT: 'DISTINCT/v1',
+  GROUP_COUNTS: 'GROUP_COUNTS/v1',
 
   // Type predicates
   ISDATE: 'ISDATE/v1',

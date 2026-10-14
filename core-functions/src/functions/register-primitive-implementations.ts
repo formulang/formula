@@ -42,6 +42,7 @@ import { EmptyImplementation } from './empty';
 import { EndsWithImplementation } from './ends-with';
 import { EqImplementation } from './eq';
 import { FilterImplementation } from './filter';
+import { FilterByImplementation } from './filter-by';
 import { FilterPropertyImplementation } from './filter-property';
 import { FlatImplementation } from './flat';
 import { GtImplementation } from './gt';
@@ -53,10 +54,14 @@ import { JoinImplementation } from './join';
 import { LenListImplementation, LenTextImplementation } from './len';
 import { ListImplementation } from './list';
 import {
+  DistinctImplementation,
+  GroupCountsImplementation,
   IndexImplementation,
+  IndexOfImplementation,
   ReduceImplementation,
   SortByPropertyImplementation,
   SortImplementation,
+  TakeImplementation,
 } from './list-ops';
 import { LowerImplementation } from './lower';
 import { LtImplementation } from './lt';
@@ -304,6 +309,26 @@ export function registerPrimitiveFormulaImplementations(
   );
   implementations.register('REDUCE/v1', new ReduceImplementation({ signatureId: 'REDUCE/v1' }));
   implementations.register('INDEX/v1', new IndexImplementation({ signatureId: 'INDEX/v1' }));
+  implementations.register(
+    BuiltinSignatureIds.TAKE,
+    new TakeImplementation({ signatureId: BuiltinSignatureIds.TAKE }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.INDEX_OF,
+    new IndexOfImplementation({ signatureId: BuiltinSignatureIds.INDEX_OF }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.FILTER_BY,
+    new FilterByImplementation({ signatureId: BuiltinSignatureIds.FILTER_BY }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.DISTINCT,
+    new DistinctImplementation({ signatureId: BuiltinSignatureIds.DISTINCT }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.GROUP_COUNTS,
+    new GroupCountsImplementation({ signatureId: BuiltinSignatureIds.GROUP_COUNTS }),
+  );
 
   // Type predicates
   implementations.register('ISDATE/v1', new IsDateImplementation({ signatureId: 'ISDATE/v1' }));
