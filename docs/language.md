@@ -538,11 +538,10 @@ parsing:
   EACH(LIST("a b"); "WORD_COUNT"; value)                     -- EXPECTED_STRING_LITERAL_REFERENCE
   ```
 
-  A function name, operator token or property path passed on this way is not
-  constrained while parsing — only a string literal written directly as a
-  reference argument is. A name passed on is looked up when the call runs
-  (`"NOPE"` in `EACH(value; "FILTER"; "NOPE")` makes that call yield `null`),
-  and a property path passed on is read when the call runs.
+  A function name or operator token passed on this way is looked up when the
+  call runs: `"NOPE"` in `EACH(value; "FILTER"; "NOPE")` makes that call
+  yield `null`. Only the name written as the higher-order function's own
+  argument is checked against the registry while parsing.
 
 How each host function invokes the reference:
 

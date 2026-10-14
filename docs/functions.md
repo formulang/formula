@@ -1284,9 +1284,7 @@ The first occurrence of each distinct item, in order, with empty items
 dropped. Text, numbers and booleans are equal by value and type (`1` and `"1"`
 stay apart, text is compared case-sensitively); dates, times and datetimes are
 equal when their kind and `iso` text are. A list that holds a list or any
-other object returns `null` with a `TYPE` warning: an object's properties may
-include ones its type does not allowlist, which a formula must not be able to
-compare, so no answer is built from them.
+other object returns `null` with a `TYPE` warning.
 
 ```ts
 await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
