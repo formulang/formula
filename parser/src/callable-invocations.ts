@@ -148,10 +148,12 @@ function canonical(head: (number | undefined)[], from: number, end: number): Pas
  * functions under a new name is a plain function, and so is a definition that answers to one of
  * these names only through its `aliases`, as on 1.0.0. The table is closed: a definition cannot add
  * to it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
- * with the implementations of those functions (what each passes its callable when it runs), with
- * every module of the parser (no other names a higher-order function), with the enumerated-literal
- * matrix and with the compatibility harness, and check that every entry passes the callable fewer
- * arguments than its call holds whenever it passes one on.
+ * with the implementations of those functions (what each passes its callable when it runs, at every
+ * count of arguments), with what the parser does (each function registered again under another
+ * signature id parses alike, and a call's type follows its result rule or, without one, the type a
+ * plain copy gets), with the enumerated-literal matrix and with the compatibility harness, and check
+ * that every entry passes the callable fewer arguments than its call holds whenever it passes one
+ * on.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,

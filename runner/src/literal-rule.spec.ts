@@ -644,51 +644,62 @@ describe('the enumerated-literal rule, generated', () => {
       },
     });
     const checked = new Map<string, number>();
+    const counted = new Map<string, number>();
     for (const vehicle of VEHICLES) {
       const def = coreHigherOrder.find((candidate) => candidate.name.toUpperCase() === vehicle);
       const entry = def && invocationOf(def);
       if (def === undefined || entry === undefined) throw new Error(`no invocation: ${vehicle}`);
       const callableAt = def.params.findIndex((p) => stripNullability(p.type).kind === 'callable');
-      const count = def.params.length + (def.params[def.params.length - 1]?.variadic ? 2 : 0);
       const listed = entry.flatMap((source) => (source.kind === 'item' ? [source.of] : []));
-      // The callable, one item in each list the entry names, the vehicle's other arguments as the
-      // matrix writes them, and a marker for every argument it may forward.
-      const args = Array.from({ length: count }, (_, index) => {
-        if (index === callableAt) return '"REC"';
-        if (listed.includes(index)) return `LIST("item${index}")`;
-        return UNDESCRIBED[vehicle]?.[index] ?? `"arg${index}"`;
-      });
-      const source = `${vehicle}(${args.join('; ')})`;
-      const parsed = parseFormula(source, { registry });
-      expect(parsed.errors, source).toStrictEqual([]);
-      received = [];
-      await evaluateRuleOutputAsync(optimizeRule(parsed, { registry }), {
-        registry,
-        resolver: implementations,
-        variables: { rows: [{ p: 'property' }] },
-      });
-      const types = args.map(() => anything);
-      const invoked = invokedArguments(entry, types);
-      // The entry's source behind each position it passes.
-      const behind = entry.flatMap((each) => invokedArguments([each], types).map(() => each));
-      expect(received.length, source).toBe(1);
-      for (const values of received) {
-        expect(values.length, source).toBe(invoked.length);
-        invoked.forEach((passed, position) => {
-          const from = behind[position];
-          if (passed.forwards !== undefined) {
-            expect(values[position], `${source} ${position}`).toBe(`arg${passed.forwards}`);
-          } else if (from?.kind === 'item') {
-            expect(values[position], `${source} ${position}`).toBe(`item${from.of}`);
-          } else {
-            return;
-          }
-          checked.set(vehicle, (checked.get(vehicle) ?? 0) + 1);
+      // Every count of arguments a call can have: from the required ones to every parameter, and
+      // two more where the last is variadic.
+      const required = def.params.filter((param) => param.optional !== true).length;
+      const most = def.params.length + (def.params[def.params.length - 1]?.variadic ? 2 : 0);
+      for (let count = required; count <= most; count++) {
+        // The callable, one item in each list the entry names, the vehicle's other arguments as
+        // the matrix writes them, and a marker for every argument it may forward.
+        const args = Array.from({ length: count }, (_, index) => {
+          if (index === callableAt) return '"REC"';
+          if (listed.includes(index)) return `LIST("item${index}")`;
+          return UNDESCRIBED[vehicle]?.[index] ?? `"arg${index}"`;
         });
+        const source = `${vehicle}(${args.join('; ')})`;
+        const parsed = parseFormula(source, { registry });
+        expect(parsed.errors, source).toStrictEqual([]);
+        received = [];
+        await evaluateRuleOutputAsync(optimizeRule(parsed, { registry }), {
+          registry,
+          resolver: implementations,
+          variables: { rows: [{ p: 'property' }] },
+        });
+        const types = args.map(() => anything);
+        const invoked = invokedArguments(entry, types);
+        // The entry's source behind each position it passes.
+        const behind = entry.flatMap((each) => invokedArguments([each], types).map(() => each));
+        expect(received.length, source).toBe(1);
+        for (const values of received) {
+          expect(values.length, source).toBe(invoked.length);
+          invoked.forEach((passed, position) => {
+            const from = behind[position];
+            if (passed.forwards !== undefined) {
+              expect(values[position], `${source} ${position}`).toBe(`arg${passed.forwards}`);
+            } else if (from?.kind === 'item') {
+              expect(values[position], `${source} ${position}`).toBe(`item${from.of}`);
+            } else {
+              return;
+            }
+            checked.set(vehicle, (checked.get(vehicle) ?? 0) + 1);
+          });
+        }
+        counted.set(vehicle, (counted.get(vehicle) ?? 0) + 1);
       }
     }
-    // Not vacuous: an argument or an item of every function, checked where it arrives.
+    // Not vacuous: an argument or an item of every function, checked where it arrives, and every
+    // function but REDUCE, whose three parameters are all required, at more than one count.
     expect([...checked.keys()].sort()).toStrictEqual([...VEHICLES]);
+    expect(VEHICLES.filter((vehicle) => (counted.get(vehicle) ?? 0) > 1).sort()).toStrictEqual(
+      VEHICLES.filter((vehicle) => vehicle !== 'REDUCE').sort(),
+    );
   });
 
   it('keeps FILTER_BY’s checks when it is registered again under another signature id', () => {

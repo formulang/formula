@@ -3,11 +3,10 @@ import {
   FormulaErrorCodes,
   FormulaTypes,
   createRegistry,
+  formatType,
   registerCoreFormulaDefinitions,
   stripNullability,
 } from '@formulang/definitions';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import baseline from '../../scripts/compat/baseline-1.0.0.json';
 import {
@@ -77,24 +76,153 @@ describe('callable invocations', () => {
     expect(names.filter((name) => !NAMES_IN_1_0_0.includes(name)).length).toBeGreaterThan(0);
   });
 
-  it('names a higher-order function in the parser only in its table module', () => {
-    // Every reader of an invocation reads the table: no other module of the parser names a core
-    // higher-order function, so no name-keyed rule decides an invocation on its own, and every
-    // name-keyed result rule of the table module names an entry.
-    const names = [...new Set(coreHigherOrderFunctions().map((def) => def.name.toUpperCase()))];
-    const modules = readdirSync(__dirname).filter(
-      (file) => file.endsWith('.ts') && !file.endsWith('.spec.ts'),
-    );
-    expect(modules).toContain('index.ts');
-    for (const module of modules) {
-      if (module === 'callable-invocations.ts') continue;
-      const text = readFileSync(join(__dirname, module), 'utf8');
-      const named = names.filter((name) => new RegExp(`['"\`]${name}['"\`]`).test(text));
-      expect(named, module).toStrictEqual([]);
+  it('decides every invocation and result type by the name, whatever the signature id', () => {
+    // Each function of the table, retired and registered again under another signature id with the
+    // same name, must parse every probe below as the core definition does: its validation of the
+    // callable, the walk through it, and its result type. A rule that keys on a signature id, a
+    // definition object or anything but the name changes an outcome here, wherever the rule lives.
+    const probes: Record<string, string[]> = {
+      EACH: [
+        'EACH(LIST("a"; "bb"); "LEN")',
+        'EACH(LIST(1); "PICK"; "a")',
+        'UPPER(INDEX(EACH(LIST("a"); "LEN"); 1))',
+        'EACH(LIST(1); "PICK"; "zzz")',
+        'EACH(LIST("a"); "LEN"; 1)',
+        'EACH(LIST(LIST(1)); "EACH"; "PICK"; "zzz")',
+      ],
+      FILTER: [
+        'FILTER(LIST(1; 2); ">"; 1)',
+        'FILTER(LIST(1); "PICK"; "b")',
+        'UPPER(INDEX(FILTER(LIST(1; 2); ">"; 1); 1))',
+        'FILTER(LIST(1); "PICK"; "zzz")',
+        'FILTER(LIST("a"; "bb"); "LEN")',
+        'EACH(LIST(LIST(1)); "FILTER"; "PICK"; "zzz")',
+      ],
+      FILTER_PROPERTY: [
+        'FILTER_PROPERTY(rows; "p"; "="; 1)',
+        'FILTER_PROPERTY(LIST(1; 2); "p"; ">"; 1)',
+        'UPPER(INDEX(FILTER_PROPERTY(LIST(1; 2); "p"; ">"; 1); 1))',
+        'FILTER_PROPERTY(rows; "p"; "PICK"; "zzz")',
+        'EACH(LIST(rows); "FILTER_PROPERTY"; "p"; "PICK"; "zzz")',
+      ],
+      REDUCE: [
+        'REDUCE(0; LIST(1; 2); "+")',
+        'REDUCE(""; LIST("a"); "PICK")',
+        'REDUCE(0; LIST(1); "LEN")',
+        'EACH(LIST(0); "REDUCE"; LIST(1); "PICK")',
+      ],
+      FILTER_BY: [
+        'FILTER_BY(LIST(1; 2); LIST("a"; "b"); "STARTS_WITH"; "a")',
+        'FILTER_BY(LIST(1); LIST("k"); "PICK"; "a")',
+        'UPPER(INDEX(FILTER_BY(LIST(1; 2); LIST("a"; "b"); "STARTS_WITH"; "a"); 1))',
+        'FILTER_BY(LIST(1); LIST("k"); "PICK"; "zzz")',
+        'EACH(LIST(LIST(1)); "FILTER_BY"; LIST("k"); "PICK"; "zzz")',
+      ],
+    };
+    // Both ways: probes for every function of the table, and a function of the table for each.
+    expect(Object.keys(probes).sort()).toStrictEqual([...INVOCATIONS_BY_NAME.keys()].sort());
+    const registry = (reversioned?: string) => {
+      const built = registryWithPick();
+      built.registerVariable({
+        name: 'rows',
+        description: 'Rows of `p`.',
+        type: FormulaTypes.any(true),
+      });
+      if (reversioned !== undefined) {
+        const def = only(built, reversioned);
+        built.retireFunction(def.signatureId);
+        built.registerFunction({ ...def, signatureId: `${reversioned}/v9` });
+      }
+      return built;
+    };
+    const outcome = (built: ReturnType<typeof registry>, source: string) => {
+      const rule = parseFormula(source, { registry: built });
+      return {
+        type: formatType(rule.returnType),
+        errors: rule.errors.map((e) => [e.code, e.message, e.span?.start, e.span?.end]),
+      };
+    };
+    const core = registry();
+    const codes = new Set<string>();
+    let compiled = 0;
+    for (const [name, sources] of Object.entries(probes)) {
+      const reversioned = registry(name);
+      expect(reversioned.getFunction(`${name}/v9`)).toBeDefined();
+      for (const source of sources) {
+        const want = outcome(core, source);
+        expect(outcome(reversioned, source), `${source} under ${name}/v9`).toStrictEqual(want);
+        if (want.errors.length === 0) compiled++;
+        for (const [code] of want.errors) codes.add(String(code));
+      }
     }
+    // Not vacuous: result types, the callable's validation and the walk are all exercised.
+    expect(compiled).toBeGreaterThanOrEqual(8);
+    expect([...codes].sort()).toStrictEqual(
+      [
+        FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+        FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+      ].sort(),
+    );
+    // Every result rule names a function of the table.
     const resultRules = [...RESULTS_BY_NAME.keys()];
     expect(resultRules.filter((name) => !INVOCATIONS_BY_NAME.has(name))).toStrictEqual([]);
     expect(resultRules.length).toBeGreaterThan(0);
+  });
+
+  it('types a call of the table by its result rule, and as a plain copy where it has none', () => {
+    // For every function of the table: with a rule, the call's type is the one the rule describes,
+    // computed here from the types of the call's own arguments; without one, it is the type a copy
+    // of the definition under a name of its own gets, a plain function, as for any definition.
+    const calls: Record<string, { args: string[]; callable?: string }> = {
+      EACH: { args: ['LIST("a"; "bb")', '"LEN"'], callable: 'LEN' },
+      FILTER: { args: ['LIST(1; 2)', '">"', '1'] },
+      FILTER_PROPERTY: { args: ['LIST(1; 2)', '"p"', '">"', '1'] },
+      REDUCE: { args: ['0', 'LIST(1; 2)', '"+"'] },
+      FILTER_BY: { args: ['LIST(1; 2)', 'LIST("a"; "b")', '"STARTS_WITH"', '"a"'] },
+    };
+    expect(Object.keys(calls).sort()).toStrictEqual([...INVOCATIONS_BY_NAME.keys()].sort());
+    const registry = registryWithPick();
+    for (const name of Object.keys(calls)) {
+      registry.registerFunction({
+        ...only(registry, name),
+        name: `${name}_COPY`,
+        signatureId: `${name}_COPY/v1`,
+      });
+    }
+    const typeOf = (source: string) => {
+      const rule = parseFormula(source, { registry });
+      expect(rule.errors, source).toStrictEqual([]);
+      return rule.returnType;
+    };
+    const ruled = new Set<string>();
+    for (const [name, { args, callable }] of Object.entries(calls)) {
+      const def = only(registry, name);
+      const got = formatType(typeOf(`${name}(${args.join('; ')})`));
+      const rule = RESULTS_BY_NAME.get(name);
+      const nullable = def.returnType.nullable === true;
+      if (rule === 'items') {
+        const target = stripNullability(typeOf(args[0] as string));
+        if (target.kind !== 'list') throw new Error(`${name}: the target is no list`);
+        expect(got, name).toBe(formatType(FormulaTypes.list(target.of, nullable)));
+        ruled.add(name);
+      } else if (rule === 'results') {
+        const returns = only(registry, callable as string).returnType;
+        expect(got, name).toBe(formatType(FormulaTypes.list(returns, nullable)));
+        ruled.add(name);
+      } else {
+        expect(got, name).toBe(formatType(typeOf(`${name}_COPY(${args.join('; ')})`)));
+      }
+    }
+    // Both ways: every result rule was read, and the plain copies differ where a rule applies.
+    expect([...ruled].sort()).toStrictEqual([...RESULTS_BY_NAME.keys()].sort());
+    for (const name of ruled) {
+      const { args } = calls[name] as { args: string[] };
+      expect(formatType(typeOf(`${name}_COPY(${args.join('; ')})`)), name).not.toBe(
+        formatType(typeOf(`${name}(${args.join('; ')})`)),
+      );
+    }
   });
 
   it('gives the entry to every definition of the name, and to none under another name', () => {
