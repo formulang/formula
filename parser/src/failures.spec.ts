@@ -237,6 +237,56 @@ describe('parseFormula failures', () => {
         FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
       ]);
     });
+
+    it('reads a null list as none, at a direct call and through EACH alike', () => {
+      // A definition as a format that writes absent fields as `null` gives it: registration drops
+      // the `null`, and a registry that hands it to the parser as written gets the answers the
+      // same definition without the field gets.
+      const mode = (literalValues?: null) => ({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'A literal-only mode without admitted values.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          literalValues === null
+            ? {
+                name: 'mode',
+                type: FormulaTypes.text(false),
+                literalOnly: true,
+                literalValues: literalValues as unknown as string[],
+              }
+            : { name: 'mode', type: FormulaTypes.text(false), literalOnly: true },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure' as const,
+      });
+      const registryFor = (def: ReturnType<typeof mode>, asWritten: boolean) => {
+        const registry = makeRegistry();
+        registry.registerFunction(def);
+        if (!asWritten) return registry;
+        const handing = Object.create(registry) as typeof registry;
+        handing.getFunction = (id) => (id === def.signatureId ? def : registry.getFunction(id));
+        handing.listFunctionsByName = (name) =>
+          name.toUpperCase() === 'MODE' ? [def] : registry.listFunctionsByName(name);
+        return handing;
+      };
+      const sources = [
+        'MODE("a"; "x")',
+        'MODE("a"; value)',
+        'EACH(LIST("a"); "MODE"; "x")',
+        'EACH(LIST("a"); "MODE"; value)',
+        'EACH(LIST(LIST("a")); "EACH"; "MODE"; "x")',
+      ];
+      const codes = (registry: ReturnType<typeof makeRegistry>) =>
+        sources.map((source) => parseFormula(source, { registry }).errors.map((e) => e.code));
+      const absent = codes(registryFor(mode(), false));
+      expect(codes(registryFor(mode(null), false))).toStrictEqual(absent);
+      expect(codes(registryFor(mode(null), true))).toStrictEqual(absent);
+      // Not vacuous: the direct value is refused, as for any literal-only parameter.
+      expect(absent[1]).toStrictEqual([FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE]);
+      expect(absent.filter((errors) => errors.length === 0).length).toBe(4);
+    });
   });
 
   describe('literal-only arguments: variadic parameters and higher-order calls', () => {

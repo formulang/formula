@@ -994,7 +994,7 @@ function bindTypesAndRequirements(
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
         const p = paramAt(def.params, i);
         if (!p || p.literalOnly !== true) continue;
-        if (i >= def.params.length && p.literalValues === undefined) continue;
+        if (i >= def.params.length && admittedValues(p) === undefined) continue;
         const arg = node.args[i];
         // Optional literal-only parameters may be omitted.
         if (!arg && p.optional === true) continue;
@@ -1321,6 +1321,14 @@ function bindTypesAndRequirements(
   }
 }
 
+/**
+ * The values a literal-only parameter admits; undefined where it lists none, `null` included (a
+ * registry that is not an `InMemoryFormulaRegistry` may hand the parser `null` as written).
+ */
+function admittedValues(param: FunctionParamDefinition): readonly string[] | undefined {
+  return param.literalValues ?? undefined;
+}
+
 /** The parameter that takes argument `index`; a variadic last parameter takes every extra one. */
 function paramAt(
   params: readonly FunctionParamDefinition[],
@@ -1398,20 +1406,15 @@ function readLiteralArgument(
   }
   const value = arg.predictableValue;
   // Enumerated literals: the parameter names the only values it admits.
-  if (param.literalValues !== undefined && !param.literalValues.includes(value)) {
-    const listings = at.listings ?? [{ signatureId: '', values: param.literalValues }];
+  const admitted = admittedValues(param);
+  if (admitted !== undefined && !admitted.includes(value)) {
+    const listings = at.listings ?? [{ signatureId: '', values: admitted }];
     return {
       ok: false,
       error: makeFormulaError({
         kind: 'type',
         code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-        message: notAdmittedMessage(
-          at.subject,
-          at.owner ?? '',
-          param.literalValues,
-          value,
-          listings,
-        ),
+        message: notAdmittedMessage(at.subject, at.owner ?? '', admitted, value, listings),
         span: arg.span,
         path: at.path,
       }),
@@ -1475,12 +1478,13 @@ function enumeratedTarget(
   const listings: Listing[] = [];
   for (const candidate of candidates) {
     const param = paramAt(candidate.params, position);
-    if (param?.literalValues === undefined) continue;
+    const values = param === undefined ? undefined : admittedValues(param);
+    if (param === undefined || values === undefined) continue;
     first ??= { param, owner: candidate.name };
-    listings.push({ signatureId: candidate.signatureId, values: param.literalValues });
+    listings.push({ signatureId: candidate.signatureId, values });
   }
   if (first === undefined) return undefined;
-  const admitted = first.param.literalValues?.filter((value) =>
+  const admitted = admittedValues(first.param)?.filter((value) =>
     listings.every((listing) => listing.values.includes(value)),
   );
   return { param: { ...first.param, literalValues: admitted }, owner: first.owner, listings };

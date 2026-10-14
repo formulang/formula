@@ -205,4 +205,39 @@ describe('InMemoryFormulaRegistry', () => {
       }),
     ).toThrow(/empty literalValues list/);
   });
+
+  it('reads a null admitted-value list as none, and stores the definition without it', () => {
+    const registry = createRegistry();
+    const params = [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'mode',
+        type: FormulaTypes.text(false),
+        literalOnly: true,
+        literalValues: null as unknown as string[],
+      },
+      // `literalOnly` given as `null` too: neither applies.
+      {
+        name: 'option',
+        type: FormulaTypes.text(true),
+        literalOnly: null as unknown as boolean,
+        literalValues: null as unknown as string[],
+      },
+    ];
+    registry.registerFunction({
+      signatureId: 'MODE/v1',
+      name: 'MODE',
+      category: 'core',
+      description: 'Null admitted-value lists, as a JSON transport writes absent fields.',
+      params,
+      returnType: FormulaTypes.text(false),
+      purity: 'pure',
+    });
+    const stored = registry.getFunction('MODE/v1');
+    expect(
+      stored?.params.map((param) => Object.keys(param).includes('literalValues')),
+    ).toStrictEqual([false, false, false]);
+    // The caller's definition is left as given.
+    expect(params[1]?.literalValues).toBeNull();
+  });
 });

@@ -1,5 +1,6 @@
 import type {
   FunctionDefinition,
+  FunctionParamDefinition,
   MutableFormulaRegistry,
   OperatorDefinition,
   VariableDefinition,
@@ -23,7 +24,8 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     { signatureId: string; from: FormulaType; to: FormulaType }
   >();
 
-  registerFunction(def: FunctionDefinition): void {
+  registerFunction(given: FunctionDefinition): void {
+    const def = withoutNullLiteralValues(given);
     // Basic versioning rule: signature ids must be stable and versioned.
     // Convention: NAME/vN (e.g. FILTER/v1). This keeps requirements + caching stable across future changes.
     if (!/^[A-Z0-9_]+\/v\d+$/.test(def.signatureId)) {
@@ -135,8 +137,9 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     // Idempotent: retiring an already-legacy definition is a no-op.
     if (def.legacy === true) return;
 
-    // Definitions are stored by caller reference, so replace the stored entry with a
-    // legacy-marked copy instead of mutating an object the caller may share/reuse.
+    // Definitions are stored by caller reference (a copy only where a `null` admitted-value list was
+    // dropped), so replace the stored entry with a legacy-marked copy instead of mutating an object
+    // the caller may share/reuse.
     this.functionsBySignatureId.set(signatureId, { ...def, legacy: true });
 
     const nameKeys = [...new Set([def.name, ...(def.aliases ?? [])].map((n) => n.toUpperCase()))];
@@ -194,6 +197,25 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
   listVariables(): VariableDefinition[] {
     return [...this.variablesByName.values()];
   }
+}
+
+/**
+ * `def` as the registry stores it: a parameter's `literalValues` given as `null` is absent, as
+ * `null` is on the other optional fields, so a definition from a format that writes absent fields
+ * as `null` registers as written and no reader sees a `null` list.
+ */
+function withoutNullLiteralValues(def: FunctionDefinition): FunctionDefinition {
+  const unlisted = (param: FunctionParamDefinition) => (param.literalValues as unknown) === null;
+  if (!def.params.some(unlisted)) return def;
+  return {
+    ...def,
+    params: def.params.map((param) => {
+      if (!unlisted(param)) return param;
+      const stored = { ...param };
+      delete stored.literalValues;
+      return stored;
+    }),
+  };
 }
 
 function typeKey(t: FormulaType): string {

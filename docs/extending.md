@@ -50,14 +50,14 @@ Registration is strict and fails fast, at startup rather than mid-evaluation: in
 
 Each `FunctionParamDefinition` supports:
 
-| Field           | Effect                                                                                                                                                                 |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`          | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null. |
-| `optional`      | May be omitted at the call site.                                                                                                                                       |
-| `variadic`      | The last parameter may repeat (`AND(values...)`).                                                                                                                      |
-| `literalOnly`   | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                      |
-| `literalValues` | With `literalOnly`: the only literals the parameter admits. Any other literal is a parse-time `LITERAL_VALUE_NOT_ALLOWED` error whose message names the list.          |
-| `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                   |
+| Field           | Effect                                                                                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`          | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null.                   |
+| `optional`      | May be omitted at the call site.                                                                                                                                                         |
+| `variadic`      | The last parameter may repeat (`AND(values...)`).                                                                                                                                        |
+| `literalOnly`   | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                                        |
+| `literalValues` | With `literalOnly`: the only literals the parameter admits. Any other literal is a parse-time `LITERAL_VALUE_NOT_ALLOWED` error whose message names the list. `null` stands for no list. |
+| `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                                     |
 
 A mode switch is the typical use of `literalValues`: the parser refuses a misspelt mode at compile time — also when core higher-order functions pass the mode on, at any depth of callables named by string literals, as in `EACH(list; "SHOUT"; "uper")` or `EACH(lists; "EACH"; "SHOUT"; "uper")` — and editors read the list from the definition to offer completions. An implementation still validates the value it receives, because it can receive values the parser does not see: through a callable that a nested higher-order call names by a variable or an expression, which is resolved when the call runs (`EACH(lists; "EACH"; name; mode)`), or from a custom higher-order function under a name of its own (§2.2). The built-in functions answer a mode they do not list with `null` and a `TYPE` warning (through a core higher-order call that item is `null`: the core higher-order functions keep a callee's value, not its warnings); give a custom implementation the same check:
 
