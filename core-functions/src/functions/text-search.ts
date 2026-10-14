@@ -1,5 +1,4 @@
-/** The work of a search in characters compared, so a spec can bound it by the input length. */
-export type SearchWork = { steps: number };
+import type { WorkCount } from './work-count';
 
 /**
  * Calls `found` with the start of each occurrence of `needle` in `text`, left to right and
@@ -9,13 +8,14 @@ export type SearchWork = { steps: number };
  * Knuth-Morris-Pratt matching compares each character of `text` and of `needle` a bounded number
  * of times (at most `2 * (text.length + needle.length)` steps), whatever they hold. Restarting
  * `indexOf` after each occurrence instead re-reads up to `needle.length` characters per
- * occurrence, which is quadratic on a periodic text such as a long run of one letter.
+ * occurrence, which is quadratic on a periodic text such as a long run of one letter. `work`
+ * counts the characters compared.
  */
 export function someOccurrence(
   text: string,
   needle: string,
   found: (start: number) => boolean,
-  work: SearchWork = { steps: 0 },
+  work: WorkCount,
 ): boolean {
   const length = needle.length;
   if (length === 0 || length > text.length) return false;

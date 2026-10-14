@@ -2,11 +2,18 @@ import { BuiltinSignatureIds, FormulaErrorCodes } from '@formulang/definitions';
 import {
   collectAllErrors,
   createTestRuntime,
+  evalCountingWork,
   evalFormula,
   evalOk,
+  evalTimed,
 } from '../test-helpers/eval-formula';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
-import { MARKDOWN_BLOCK_KINDS, MARKUP_FORMATS, scanHtml, scanMarkdown } from './markup-text';
+import {
+  MARKDOWN_BLOCK_KINDS,
+  MarkdownBlocksImplementation,
+  MARKUP_FORMATS,
+  PlainTextImplementation,
+} from './markup-text';
 
 async function errorCodes(source: string, vars: Record<string, unknown> = {}) {
   const { parsed, compiled, res } = await evalFormula(source, vars);
@@ -263,8 +270,9 @@ describe('Markup text', () => {
   describe('scan work', () => {
     // A scan that reaches the end of its input visits every character at least once; a linear
     // scan visits each at most STEPS_PER_CHARACTER times, plus a fixed allowance. Each input
-    // below is measured at two sizes; a scan that re-reads its input per tag, per delimiter run
-    // or per backtick run exceeds the bound by orders of magnitude at either size.
+    // below is measured at two sizes, through PLAIN_TEXT and MARKDOWN_BLOCKS as an embedder calls
+    // them; a scan that re-reads its input per tag, per delimiter run or per backtick run exceeds
+    // the bound by orders of magnitude at either size.
     const STEPS_PER_CHARACTER = 16;
     const FIXED_STEPS = 1_000;
 
@@ -389,31 +397,87 @@ describe('Markup text', () => {
       },
     };
 
-    const expectLinearWork = (
-      scan: (input: string) => { text: string; steps: number },
+    /** The public function a scan is measured through. */
+    type PublicPath = {
+      formula: string;
+      signatureId: string;
+      implementation: typeof PlainTextImplementation | typeof MarkdownBlocksImplementation;
+    };
+    const plainHtml: PublicPath = {
+      formula: 'PLAIN_TEXT(value; "html")',
+      signatureId: BuiltinSignatureIds.PLAIN_TEXT,
+      implementation: PlainTextImplementation,
+    };
+    const plainMarkdown: PublicPath = {
+      formula: 'PLAIN_TEXT(value; "markdown")',
+      signatureId: BuiltinSignatureIds.PLAIN_TEXT,
+      implementation: PlainTextImplementation,
+    };
+    const markdownBlocks: PublicPath = {
+      formula: 'MARKDOWN_BLOCKS(value; "paragraph")',
+      signatureId: BuiltinSignatureIds.MARKDOWN_BLOCKS,
+      implementation: MarkdownBlocksImplementation,
+    };
+
+    /** Bounds the work of `path` on `input` at both sizes; checks the text where it is known. */
+    const expectLinearWork = async (
+      path: PublicPath,
       input: AdversarialInput,
+      checkText: boolean,
     ) => {
       for (const size of input.sizes) {
-        const source = input.build(size);
-        const { text, steps } = scan(source);
-        expect(steps).toBeGreaterThanOrEqual(source.length);
-        expect(steps).toBeLessThanOrEqual(STEPS_PER_CHARACTER * source.length + FIXED_STEPS);
-        expect(text).toBe(input.text(size));
+        const value = input.build(size);
+        const counted = await evalCountingWork(
+          path.formula,
+          path.signatureId,
+          path.implementation,
+          {
+            value,
+          },
+        );
+        expect(counted.steps).toBeGreaterThanOrEqual(value.length);
+        expect(counted.steps).toBeLessThanOrEqual(STEPS_PER_CHARACTER * value.length + FIXED_STEPS);
+        if (checkText) expect(counted.value).toBe(input.text(size));
       }
     };
 
-    it.each(Object.entries(htmlInputs))('reads HTML with %s in linear work', (_name, input) => {
-      expectLinearWork(scanHtml, input);
-    });
-
-    it.each(Object.entries(markdownInputs))(
-      'reads markdown with %s in linear work',
-      (_name, input) => {
-        expectLinearWork(scanMarkdown, input);
+    it.each(Object.entries(htmlInputs))(
+      'reads HTML with %s in linear work',
+      async (_name, input) => {
+        await expectLinearWork(plainHtml, input, true);
       },
     );
 
-    it('matches the markdown line patterns in linear time', () => {
+    it.each(Object.entries(markdownInputs))(
+      'reads markdown with %s in linear work',
+      async (_name, input) => {
+        await expectLinearWork(plainMarkdown, input, true);
+        await expectLinearWork(markdownBlocks, input, false);
+      },
+    );
+
+    it('reads markup in linear time through PLAIN_TEXT and MARKDOWN_BLOCKS', async () => {
+      // The time also covers work the step count cannot see. On each input the code these scans
+      // replaced takes seconds: it re-read the rest of the markup per tag that never closed, per
+      // emphasis closer without an opener of its kind, or per backtick run length. The scans take
+      // milliseconds.
+      const quoted = '<a ">"'.repeat(10_000);
+      const emphasis = '_a '.repeat(80_000) + 'a* '.repeat(80_000);
+      const backticks = backtickRuns(rising(2_000));
+      const cases: Array<[PublicPath, string]> = [
+        [plainHtml, quoted],
+        [plainMarkdown, emphasis],
+        [markdownBlocks, emphasis],
+        [plainMarkdown, backticks],
+        [markdownBlocks, backticks],
+      ];
+      for (const [path, value] of cases) {
+        const { milliseconds } = await evalTimed(path.formula, { value });
+        expect(milliseconds, `${path.formula} on ${value.length} characters`).toBeLessThan(1_000);
+      }
+    }, 120_000);
+
+    it('matches the markdown line patterns in linear time', async () => {
       // The step count does not see inside a regular expression: these lines made the line
       // patterns backtrack quadratically (seconds at this size); a linear match takes
       // milliseconds.
@@ -425,9 +489,11 @@ describe('Markup text', () => {
         [`${'`'.repeat(60_000)}\u2028`, ''],
       ];
       for (const [line, text] of lines) {
-        const started = performance.now();
-        expect(scanMarkdown(line).text).toBe(text);
-        expect(performance.now() - started).toBeLessThan(1_000);
+        const plain = await evalTimed(plainMarkdown.formula, { value: line });
+        expect(plain.value).toBe(text);
+        expect(plain.milliseconds).toBeLessThan(1_000);
+        const selected = await evalTimed(markdownBlocks.formula, { value: line });
+        expect(selected.milliseconds).toBeLessThan(1_000);
       }
     }, 60_000);
   });

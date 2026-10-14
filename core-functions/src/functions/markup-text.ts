@@ -1,13 +1,10 @@
-import type {
-  BaseFunctionConfig,
-  FormulaExecutionContext,
-  FormulaNodeOutput,
-} from '@formulang/definitions';
+import type { FormulaExecutionContext, FormulaNodeOutput } from '@formulang/definitions';
 import { makeOkList, makeOkText } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { boundedListResult, readRequiredMode, readText, textCost } from './argument-readers';
 import { characterAt, characterBefore } from './helpers';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
+import { workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** The markup `PLAIN_TEXT` reads. */
 export type MarkupFormat = 'html' | 'markdown';
@@ -48,7 +45,7 @@ export const MARKDOWN_BLOCK_KINDS: readonly MarkdownBlockKind[] = [
  * The work of one scan in characters visited. Every loop and search of the scanners below adds
  * the characters it visits, so a spec can bound a scan's work by the length of its input.
  */
-type ScanWork = { steps: number };
+type ScanWork = WorkCount;
 
 const WHITESPACE_RUN = /\s+/gu;
 
@@ -895,20 +892,6 @@ function markdownToPlainText(source: string, work: ScanWork): string {
   );
 }
 
-/** `PLAIN_TEXT`'s reading of HTML, with the characters its scan visited. */
-export function scanHtml(markup: string): { text: string; steps: number } {
-  const work: ScanWork = { steps: 0 };
-  const text = htmlToPlainText(markup, work);
-  return { text, steps: work.steps };
-}
-
-/** `PLAIN_TEXT`'s reading of markdown, with the characters its scan visited. */
-export function scanMarkdown(source: string): { text: string; steps: number } {
-  const work: ScanWork = { steps: 0 };
-  const text = markdownToPlainText(source, work);
-  return { text, steps: work.steps };
-}
-
 const HEADING_KIND_LEVELS: ReadonlyMap<MarkdownBlockKind, number> = new Map([
   ['heading-1', 1],
   ['heading-2', 2],
@@ -927,8 +910,8 @@ function selectBlocks(blocks: readonly MarkdownBlock[], kind: MarkdownBlockKind)
     .map((block) => block.text);
 }
 
-export class PlainTextImplementation extends AbstractEagerBatchImplementation {
-  constructor(config: BaseFunctionConfig) {
+export class PlainTextImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
+  constructor(config: WorkCountingConfig) {
     super(config);
   }
 
@@ -941,13 +924,15 @@ export class PlainTextImplementation extends AbstractEagerBatchImplementation {
     if (typeof markup !== 'string') return markup;
     const format = readRequiredMode('PLAIN_TEXT', 'format', args[1], MARKUP_FORMATS);
     if (typeof format !== 'string') return format;
-    const text = format === 'html' ? scanHtml(markup).text : scanMarkdown(markup).text;
+    const work = workOf(this.config);
+    const text =
+      format === 'html' ? htmlToPlainText(markup, work) : markdownToPlainText(markup, work);
     return makeOkText('PLAIN_TEXT', text);
   }
 }
 
-export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementation {
-  constructor(config: BaseFunctionConfig) {
+export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
+  constructor(config: WorkCountingConfig) {
     super(config);
   }
 
@@ -960,7 +945,7 @@ export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementati
     if (typeof text !== 'string') return text;
     const kind = readRequiredMode('MARKDOWN_BLOCKS', 'kind', args[1], MARKDOWN_BLOCK_KINDS);
     if (typeof kind !== 'string') return kind;
-    const blocks = selectBlocks(parseMarkdownBlocks(text, { steps: 0 }), kind);
+    const blocks = selectBlocks(parseMarkdownBlocks(text, workOf(this.config)), kind);
     return makeOkList('MARKDOWN_BLOCKS', boundedListResult(blocks, ctx.limits));
   }
 }

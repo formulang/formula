@@ -1,4 +1,5 @@
-import { someOccurrence, type SearchWork } from './text-search';
+import { someOccurrence } from './text-search';
+import type { WorkCount } from './work-count';
 
 /** Every start of `needle` in `text`, as restarting `indexOf` after each occurrence finds them. */
 function indexOfOccurrences(text: string, needle: string): number[] {
@@ -8,7 +9,7 @@ function indexOfOccurrences(text: string, needle: string): number[] {
   return starts;
 }
 
-function occurrences(text: string, needle: string, work?: SearchWork): number[] {
+function occurrences(text: string, needle: string, work: WorkCount = { steps: 0 }): number[] {
   const starts: number[] = [];
   someOccurrence(
     text,
@@ -53,13 +54,18 @@ describe('someOccurrence', () => {
 
   it('stops at the first occurrence found accepts', () => {
     const seen: number[] = [];
-    const found = someOccurrence('a-a-a', 'a', (at) => {
-      seen.push(at);
-      return at === 2;
-    });
+    const found = someOccurrence(
+      'a-a-a',
+      'a',
+      (at) => {
+        seen.push(at);
+        return at === 2;
+      },
+      { steps: 0 },
+    );
     expect(found).toBe(true);
     expect(seen).toStrictEqual([0, 2]);
-    expect(someOccurrence('a-a-a', 'a', () => false)).toBe(false);
+    expect(someOccurrence('a-a-a', 'a', () => false, { steps: 0 })).toBe(false);
   });
 
   it('compares each character a bounded number of times, however periodic the input', () => {
@@ -74,7 +80,7 @@ describe('someOccurrence', () => {
     for (const [name, build] of inputs) {
       for (const n of [20_000, 80_000]) {
         const [text, needle, count] = build(n);
-        const work: SearchWork = { steps: 0 };
+        const work: WorkCount = { steps: 0 };
         const starts = occurrences(text, needle, work);
         expect(work.steps, `${name} n=${n}`).toBeGreaterThanOrEqual(text.length);
         expect(work.steps, `${name} n=${n}`).toBeLessThanOrEqual(2 * (text.length + needle.length));

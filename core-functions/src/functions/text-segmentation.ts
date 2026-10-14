@@ -25,7 +25,8 @@ import {
 } from './argument-readers';
 import { asNumber, isEmptyValue, isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { compileSafeRegex, type RegexCompileFailure } from './regex';
-import { someOccurrence, type SearchWork } from './text-search';
+import { someOccurrence } from './text-search';
+import { workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** How `WORDS`, `WORD_COUNT` and `LEADING_WORDS` find the words of a text. */
 export type WordSplitMode = 'whitespace' | 'letters' | 'locale' | 'pattern';
@@ -195,10 +196,10 @@ function scanWords(
  * (`...`) always does. `null` when no token occurs. Each token is found in time linear in the
  * lengths of the text and the token (`work` counts the characters compared).
  */
-export function protectedPositions(
+function protectedPositions(
   text: string,
   keep: readonly string[],
-  work: SearchWork = { steps: 0 },
+  work: WorkCount,
 ): Uint8Array | null {
   // depth[p + 1] - depth[p]: how many protected ranges open (+) or close (-) at position p.
   const ranges: { depth: Int32Array | null } = { depth: null };
@@ -229,8 +230,14 @@ export function protectedPositions(
   return marks;
 }
 
-function sentencePieces(text: string, mode: SentenceSplitMode, keep: readonly string[]): string[] {
-  const protectedAt = keep.length > 0 ? protectedPositions(text, keep) : null;
+/** The sentences of `text`; `work` counts the characters the `keep` search compares. */
+function sentencePieces(
+  text: string,
+  mode: SentenceSplitMode,
+  keep: readonly string[],
+  work: WorkCount,
+): string[] {
+  const protectedAt = keep.length > 0 ? protectedPositions(text, keep, work) : null;
   const pieces: string[] = [];
   let start = 0;
   if (mode === 'punctuation') {
@@ -311,7 +318,7 @@ export function splitSentences(
   if (!Array.isArray(keep) || keep.some((token) => typeof token !== 'string')) {
     throw new TypeError('splitSentences keep must list text tokens');
   }
-  return sentencePieces(text, mode, keep);
+  return sentencePieces(text, mode, keep, { steps: 0 });
 }
 
 /** Reads `(text, mode?, option?)` of a word function; an output when the call answers null. */
@@ -415,8 +422,8 @@ export class LeadingWordsImplementation extends AbstractEagerBatchImplementation
   }
 }
 
-export class SentencesImplementation extends AbstractEagerBatchImplementation {
-  constructor(config: BaseFunctionConfig) {
+export class SentencesImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
+  constructor(config: WorkCountingConfig) {
     super(config);
   }
 
@@ -433,7 +440,8 @@ export class SentencesImplementation extends AbstractEagerBatchImplementation {
       ? []
       : readTextList('SENTENCES', 'keep', args[2], ctx.limits);
     if (!Array.isArray(keep)) return keep;
-    return makeOkList('SENTENCES', boundedListResult(sentencePieces(text, mode, keep), ctx.limits));
+    const pieces = sentencePieces(text, mode, keep, workOf(this.config));
+    return makeOkList('SENTENCES', boundedListResult(pieces, ctx.limits));
   }
 }
 

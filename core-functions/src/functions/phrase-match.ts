@@ -13,7 +13,8 @@ import {
   typeWarning,
 } from './argument-readers';
 import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
-import { someOccurrence, type SearchWork } from './text-search';
+import { someOccurrence } from './text-search';
+import { workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** How `FIRST_CONTAINED` and `CONTAINS_ANY` match a phrase. */
 export type PhraseMatchMode = 'substring' | 'word';
@@ -67,11 +68,7 @@ function normalise(value: string, mode: PhraseNormalisation): string {
  * Whether `phrase` occurs in `text` with no letter, mark or number directly on either side, in
  * time linear in their lengths (`work` counts the characters compared).
  */
-export function containsAsWord(
-  text: string,
-  phrase: string,
-  work: SearchWork = { steps: 0 },
-): boolean {
+function containsAsWord(text: string, phrase: string, work: WorkCount): boolean {
   return someOccurrence(
     text,
     phrase,
@@ -80,17 +77,22 @@ export function containsAsWord(
   );
 }
 
-/** The first phrase, in list order, that the text contains; `null` when none does. */
+/**
+ * The first phrase, in list order, that the text contains; `null` when none does. `work` counts
+ * the characters the `"word"` search compares.
+ */
 function firstContained(
   text: string,
   phrases: readonly string[],
   match: PhraseMatchMode,
   ignoreCase: boolean,
+  work: WorkCount,
 ): string | null {
   const haystack = ignoreCase ? text.toLowerCase() : text;
   for (const phrase of phrases) {
     const needle = ignoreCase ? phrase.toLowerCase() : phrase;
-    const found = match === 'word' ? containsAsWord(haystack, needle) : haystack.includes(needle);
+    const found =
+      match === 'word' ? containsAsWord(haystack, needle, work) : haystack.includes(needle);
     if (found) return phrase;
   }
   return null;
@@ -123,8 +125,8 @@ function readPhraseCall(
   return { call: { text, phrases, match, ignoreCase: rawIgnoreCase === true } };
 }
 
-export class FirstContainedImplementation extends AbstractEagerBatchImplementation {
-  constructor(config: BaseFunctionConfig) {
+export class FirstContainedImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
+  constructor(config: WorkCountingConfig) {
     super(config);
   }
 
@@ -136,13 +138,13 @@ export class FirstContainedImplementation extends AbstractEagerBatchImplementati
     const read = readPhraseCall('FIRST_CONTAINED', args, ctx);
     if ('output' in read) return read.output;
     const { text, phrases, match, ignoreCase } = read.call;
-    const phrase = firstContained(text, phrases, match, ignoreCase);
+    const phrase = firstContained(text, phrases, match, ignoreCase, workOf(this.config));
     return phrase === null ? makeOkNull('FIRST_CONTAINED') : makeOkText('FIRST_CONTAINED', phrase);
   }
 }
 
-export class ContainsAnyImplementation extends AbstractEagerBatchImplementation {
-  constructor(config: BaseFunctionConfig) {
+export class ContainsAnyImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
+  constructor(config: WorkCountingConfig) {
     super(config);
   }
 
@@ -154,7 +156,8 @@ export class ContainsAnyImplementation extends AbstractEagerBatchImplementation 
     const read = readPhraseCall('CONTAINS_ANY', args, ctx);
     if ('output' in read) return read.output;
     const { text, phrases, match, ignoreCase } = read.call;
-    return makeOkBoolean('CONTAINS_ANY', firstContained(text, phrases, match, ignoreCase) !== null);
+    const phrase = firstContained(text, phrases, match, ignoreCase, workOf(this.config));
+    return makeOkBoolean('CONTAINS_ANY', phrase !== null);
   }
 }
 
