@@ -1255,14 +1255,21 @@ await evalOk('TAKE(LIST(1; 2; 3); 0)'); // []
 
 `INDEX_OF(list: list<T>, value: T) -> number`
 
-The 1-based position of the first item equal to `value` under the coerced
-equality of `INCLUDES`, or `null` when no item is equal or `value` is empty.
-`INDEX(list; INDEX_OF(...))` reads the item back.
+The 1-based position of the first item equal to `value`, or `null` when no item
+is equal or `value` is empty. `INDEX(list; INDEX_OF(...))` reads the item back.
+Items compare as in `DISTINCT`, so a member `DISTINCT` keeps is found again:
+text, numbers and booleans by value and type, with no conversion (`"2"` is not
+`2`), and dates, times and datetimes by kind and `iso` text. That is not the
+equality of `INCLUDES` and `=`, which convert between text and numbers and
+treat two date values held as separate objects (as input data holds them) as
+different. A list that holds a list or any other object, or such a `value`,
+returns `null` with a `TYPE` warning.
 
 ```ts
 await evalOk('INDEX_OF(LIST("a"; "b"); "b")'); // 2
 await evalOk('INDEX_OF(LIST("a"; "b"; "a"); "a")'); // 1
 await evalOk('INDEX_OF(LIST("a"; "b"); "c")'); // null
+await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] }); // null
 ```
 
 ### FILTER_BY
@@ -1297,8 +1304,12 @@ await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
 The first occurrence of each distinct item, in order, with empty items
 dropped. Text, numbers and booleans are equal by value and type (`1` and `"1"`
 stay apart, text is compared case-sensitively); dates, times and datetimes are
-equal when their kind and `iso` text are. A list that holds a list or any
-other object returns `null` with a `TYPE` warning.
+equal when their kind and `iso` text are. `GROUP_COUNTS` and `INDEX_OF` use the
+same equality; `=` and `INCLUDES` do not, as they convert between text and
+numbers and treat two date values held as separate objects (as input data
+holds them) as different, and `COUNT_UNIQUE` counts two such dates as two
+values. A list that holds a list or any other object returns `null` with a
+`TYPE` warning.
 
 ```ts
 await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
@@ -1312,8 +1323,11 @@ await evalOk('COUNT(DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2))))'); // 1
 
 For each item of `DISTINCT(list)`, in the same order, how many items of `list`
 equal it — so the two lists line up position by position. Items compare as in
-`DISTINCT`, and a list that holds a list or any other object returns `null`
-with a `TYPE` warning.
+`DISTINCT`: by value and type with no conversion, dates and times by kind and
+`iso` text. `=`, `INCLUDES` and `COUNT_UNIQUE` differ: they convert between
+text and numbers (`=`, `INCLUDES`) and take two date values held as separate
+objects for two values. A list that holds a list or any other object returns
+`null` with a `TYPE` warning.
 
 ```ts
 await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))'); // [2, 1]

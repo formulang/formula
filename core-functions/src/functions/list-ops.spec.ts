@@ -160,8 +160,55 @@ describe('List ops', () => {
       expect(await evalOk('INDEX_OF(LIST("a"; "b"); "b")')).toBe(2);
       expect(await evalOk('INDEX_OF(LIST("a"; "b"; "a"); "a")')).toBe(1);
       expect(await evalOk('INDEX_OF(LIST("a"; "b"); "c")')).toBe(null);
-      // The coerced equality INCLUDES uses: a number-like text equals the number.
-      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] })).toBe(2);
+      expect(await evalOk('INDEX_OF(LIST("a"; "A"); "A")')).toBe(2);
+    });
+
+    it('compares as DISTINCT does: by value, with no conversion, dates by kind and ISO text', async () => {
+      expect(await evalOk('INDEX_OF(value; 2)', { value: [1, 2, 3] })).toBe(2);
+      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] })).toBe(null);
+      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, '2'] })).toBe(3);
+      expect(await evalOk('INDEX_OF(value; TRUE)', { value: ['true', true] })).toBe(2);
+      expect(
+        await evalOk('INDEX_OF(LIST(DATE(2024; 1; 3); DATE(2024; 1; 2)); DATE(2024; 1; 2))'),
+      ).toBe(2);
+      // Two date values with the same day, held as separate objects, as input data is.
+      const day = () => ({
+        __formula_object_kind: 'date',
+        iso: '2024-01-02',
+        year: 2024,
+        month: 1,
+        day: 2,
+      });
+      const setup = (registry: MutableFormulaRegistry) =>
+        registry.registerVariable({
+          name: 'other',
+          description: 'A second test input value.',
+          type: FormulaTypes.any(true),
+        });
+      const dates = { value: day(), other: day() };
+      expect(await evalOk('INDEX_OF(LIST(value); other)', dates, { setup })).toBe(1);
+      // The member DISTINCT keeps is found again.
+      expect(await evalOk('INDEX_OF(DISTINCT(LIST(value; other)); other)', dates, { setup })).toBe(
+        1,
+      );
+      // =, INCLUDES and COUNT_UNIQUE keep their 1.0.0 answers: such dates are two values.
+      expect(await evalOk('value = other', dates, { setup })).toBe(false);
+      expect(await evalOk('INCLUDES(LIST(value); other)', dates, { setup })).toBe(false);
+      expect(await evalOk('COUNT_UNIQUE(value; other)', dates, { setup })).toBe(2);
+      expect(await evalOk('INCLUDES(value; "2")', { value: [1, 2] })).toBe(true);
+    });
+
+    it('answers null with TYPE for a list holding a list or an object, or such a value', async () => {
+      for (const [source, value] of [
+        ['INDEX_OF(value; "a")', ['a', { a: 1 }]],
+        ['INDEX_OF(value; "a")', [['a'], 'a']],
+        ['INDEX_OF(LIST(value); value)', { a: 1 }],
+      ] as const) {
+        expect(await warningCodes(source, { value }), source).toStrictEqual({
+          value: null,
+          codes: ['TYPE'],
+        });
+      }
     });
 
     it('answers null for an empty value and follows the null convention', async () => {
@@ -217,7 +264,7 @@ describe('List ops', () => {
         day: 2,
         ...extra,
       });
-      // A property outside the date type does not split a group; the ISO text alone is no date.
+      // The kind and the ISO text make the key, and the ISO text alone is no date.
       expect(
         await evalOk('GROUP_COUNTS(value)', {
           value: [day({ note: 'a' }), day({ note: 'b' }), '2024-01-02'],
@@ -245,44 +292,27 @@ describe('List ops', () => {
       expect(await evalOk('GROUP_COUNTS(value)', { value: ['a', [], 'a'] })).toStrictEqual([2]);
     });
 
-    it('answers alike for objects that differ only in properties the type does not allowlist', async () => {
-      // `staff.*.salary` is refused at parse time, so no answer may depend on salaries.
+    it('answers null with TYPE for a list of typed objects', async () => {
       const setup = (registry: MutableFormulaRegistry) =>
         registry.registerVariable({
-          name: 'staff',
-          description: 'People whose type allowlists only the name.',
+          name: 'people',
+          description: 'A list of people.',
           type: FormulaTypes.list(
             FormulaTypes.object('person', { name: FormulaTypes.text(true) }),
             true,
           ),
         });
-      const differing = [
-        { name: 'Ann', salary: 90000 },
-        { name: 'Ann', salary: 50000 },
-      ];
-      const equal = [
-        { name: 'Ann', salary: 90000 },
-        { name: 'Ann', salary: 90000 },
-      ];
-      const { parsed } = await evalFormula('staff.*.salary', { staff: differing }, { setup });
-      expect(parsed.errors.map((e) => e.code)).toContain(
-        FormulaErrorCodes.PROPERTY_NOT_ALLOWLISTED,
-      );
-      for (const source of ['GROUP_COUNTS(staff)', 'COUNT(DISTINCT(staff))', 'DISTINCT(staff)']) {
-        const answers = [];
-        for (const staff of [differing, equal]) {
-          const { output } = await evalOkWithOutput(source, { staff }, { setup });
-          answers.push({ value: output.value, codes: (output.warnings ?? []).map((w) => w.code) });
-        }
-        expect(answers[0], source).toStrictEqual(answers[1]);
+      const people = [{ name: 'Ann' }, { name: 'Ann' }];
+      for (const source of ['GROUP_COUNTS(people)', 'DISTINCT(people)']) {
+        const { output } = await evalOkWithOutput(source, { people }, { setup });
+        expect(output.value, source).toBe(null);
+        expect(
+          (output.warnings ?? []).map((w) => w.code),
+          source,
+        ).toStrictEqual(['TYPE']);
       }
-      const { output } = await evalOkWithOutput(
-        'GROUP_COUNTS(staff)',
-        { staff: differing },
-        { setup },
-      );
-      expect(output.value).toBe(null);
-      expect((output.warnings ?? []).map((w) => w.code)).toStrictEqual(['TYPE']);
+      // Their names are text, which the functions compare.
+      expect(await evalOk('GROUP_COUNTS(people.*.name)', { people }, { setup })).toStrictEqual([2]);
     });
 
     it('answers shared and self-containing values at once, without walking them', async () => {

@@ -17,14 +17,7 @@ import {
 } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { listTooLarge, typeWarning } from './argument-readers';
-import {
-  asNumber,
-  asText,
-  assumedListLength,
-  equalsUnknownType,
-  isEmptyValue,
-  readNestedProperty,
-} from './helpers';
+import { asNumber, asText, assumedListLength, isEmptyValue, readNestedProperty } from './helpers';
 
 function constProvider(value: unknown): FormulaValueProvider {
   const out = makeOkUnknown('const', value);
@@ -281,10 +274,10 @@ function listCost(list: unknown): number {
 const TEMPORAL_KINDS: ReadonlySet<unknown> = new Set(['date', 'time', 'datetime']);
 
 /**
- * The key of a text, number or boolean, equal exactly for equal values (no conversion between
- * them), and of a date, time or datetime value, equal when its kind and `iso` text are; `null` for
- * anything else. A list or another object gets no key: one built from its contents would read
- * properties the formula may not read, because an object type allowlists only some.
+ * The equality of `DISTINCT`, `GROUP_COUNTS` and `INDEX_OF`: the key of a text, number or boolean,
+ * equal exactly for equal values (no conversion between them), and of a date, time or datetime
+ * value, equal when its kind and `iso` text are; `null` for a list or another object, which these
+ * functions do not compare.
  */
 function scalarKey(value: unknown): string | null {
   if (typeof value === 'string') return `text:${JSON.stringify(value)}`;
@@ -366,9 +359,17 @@ export class IndexOfImplementation extends AbstractEagerBatchImplementation {
     if (list === null) return notAList('INDEX_OF', args[0]);
     const value = args[1];
     if (isEmptyValue(value)) return makeOkNull('INDEX_OF');
-    // The coerced equality INCLUDES uses.
-    const index = list.findIndex((item) => equalsUnknownType(item, value) === true);
-    return index < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', index + 1);
+    // The equality of DISTINCT and GROUP_COUNTS, so a member DISTINCT keeps is found again.
+    const wanted = scalarKey(value);
+    if (wanted === null) return notScalars('INDEX_OF');
+    let found = -1;
+    for (let index = 0; index < list.length; index += 1) {
+      if (isEmptyValue(list[index])) continue;
+      const key = scalarKey(list[index]);
+      if (key === null) return notScalars('INDEX_OF');
+      if (found < 0 && key === wanted) found = index;
+    }
+    return found < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', found + 1);
   }
 }
 

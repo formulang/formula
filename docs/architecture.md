@@ -489,7 +489,7 @@ Formulang assumes formula source is untrusted and variable data is sensitive. Th
 
 - Denylist and allowlist checks are repeated per node in `evalNodeOutputAsync`. The denylist re-check is name-based and holds even against a tampered AST; the allowlist re-check validates against the type metadata the AST itself carries, so it catches stale or hand-edited property nodes but not an artifact whose type metadata was tampered with as well — store compiled rules where formula authors cannot write ([best-practices.md §1.5](best-practices.md#15-treat-stored-compiled-rules-as-trusted-artifacts)).
 - Property reads use `Object.prototype.hasOwnProperty` (`readOwnProperty`), never the prototype chain.
-- `DISTINCT` and `GROUP_COUNTS` compare only text, numbers, booleans, and date/time values (by kind and `iso`). A list or another object answers `null` with a `TYPE` warning.
+- `DISTINCT`, `GROUP_COUNTS` and `INDEX_OF` compare only text, numbers, booleans, and date/time values (by kind and `iso`). A list or another object answers `null` with a `TYPE` warning.
 - Resource limits: step budget, run and per-call wall time, cost units, list/wildcard caps (section 3.6).
 - Regex built-ins reject unsafe patterns before compiling: length caps, no backreferences, no lookbehind, and a heuristic ReDoS check (`isProbablySafeRegex` rejects nested/alternating quantified groups like `(a+)+`) — `REGEX_UNSAFE`.
 - Input variables are frozen (`deepFreezeLimited`) at the start of a run; implementations receive values, not host object graphs to mutate.
