@@ -30,8 +30,10 @@ function modeRefusal(fn: string, param: string, modes: readonly string[]): Formu
 }
 
 /**
- * Reads an optional mode literal: absent or empty selects the first (default) mode. The parser
- * already refuses other literals; this guards calls it cannot see, such as `EACH` arguments.
+ * Reads an optional mode: absent or `null` selects the first (default) mode, and any other value
+ * must be one of `modes`, the empty text included, or the call answers `null` with a `TYPE`
+ * warning. The parser refuses such a literal already; this refuses the values it cannot see, such
+ * as the arguments a callable named at run time receives.
  */
 export function readOptionalMode<M extends string>(
   fn: string,
@@ -39,11 +41,11 @@ export function readOptionalMode<M extends string>(
   raw: unknown,
   modes: readonly M[],
 ): M | FormulaNodeOutput {
-  if (isEmptyValue(raw)) return modes[0];
+  if (raw === undefined || raw === null) return modes[0];
   return isOneOf(modes, raw) ? raw : modeRefusal(fn, param, modes);
 }
 
-/** Reads a required mode literal. */
+/** Reads a required mode: one of `modes`, or the call answers `null` with a `TYPE` warning. */
 export function readRequiredMode<M extends string>(
   fn: string,
   param: string,

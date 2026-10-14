@@ -23,6 +23,15 @@ arguments with `,` instead.
   `null` and attach a non-fatal warning to the node output (visible via
   `output.warnings`), rather than throwing. `AND`/`OR`/`NOT`/`IF` are the
   exception: a non-boolean-like runtime value is a runtime error.
+- **Modes.** A parameter that lists the values it admits (a `mode`, `match`,
+  `normalise`, `format` or `kind`) takes a string literal naming one of them; a
+  misspelt one is a compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when
+  higher-order calls pass it on through callables named by string literals. A
+  mode can still reach a function when the call runs, passed to a callable
+  named by a variable or an expression (`EACH(lists; "EACH"; name; mode)`).
+  The function checks it then: a value it does not list, the empty text
+  included, returns `null` with a `TYPE` warning, and `null` selects the
+  default of an optional mode.
 - **Operators.** Where an operator backs a function, the operator and the named
   call compile to the same signature. `1 + 2` and `ADD(1; 2)` are identical.
 - **Examples.** The `evalOk(source, variables?)` calls in the examples are the
@@ -562,7 +571,9 @@ non-empty, non-text value, and plain `null` when the input is empty.
 **Text segmentation.** `WORDS`, `WORD_COUNT` and `LEADING_WORDS` share one
 tokeniser, chosen by an optional `mode` literal (a misspelt mode is a
 compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when higher-order calls
-pass the mode on, at any depth):
+pass the mode on, at any depth of callables named by string literals; for a
+mode received when the call runs, see **Modes** under
+[Conventions](#conventions)):
 
 - `"whitespace"` (default) — the text is trimmed and split at every run of
   whitespace. Whitespace is JavaScript's `\s`: tabs, line breaks and the

@@ -60,4 +60,28 @@ describe('callable invocations', () => {
     expect(invoke('FILTER_BY', [texts, texts, text, number])).toStrictEqual([null, 3]);
     expect(invoke('REDUCE', [number, texts, text])).toStrictEqual([null, null]);
   });
+
+  it('passes on only arguments after the callable, in order', () => {
+    // What bounds the nested follow: each nested callable is named by a later formula argument.
+    let checked = 0;
+    for (const def of coreHigherOrderFunctions()) {
+      const callableAt = def.params.findIndex(
+        (param) => stripNullability(param.type).kind === 'callable',
+      );
+      for (let count = def.params.length - 1; count <= def.params.length + 3; count++) {
+        const argTypes = Array.from({ length: count }, () => FormulaTypes.any(true));
+        const forwards = (invocationOf(def)?.(argTypes) ?? [])
+          .map((arg) => arg.forwards)
+          .filter((index): index is number => index !== undefined);
+        let previous = callableAt;
+        for (const index of forwards) {
+          expect(index, `${def.signatureId} with ${count} arguments`).toBeGreaterThan(previous);
+          expect(index, `${def.signatureId} with ${count} arguments`).toBeLessThan(count);
+          previous = index;
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
 });

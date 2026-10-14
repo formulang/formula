@@ -530,12 +530,23 @@ parsing:
 - An argument the host function passes to a parameter that lists its admitted
   values (see [Enumerated literals](#enumerated-literals)) must be one of them,
   also when the referenced function is itself a higher-order function that
-  passes it on in turn. So a mode never becomes a value chosen at run time:
+  passes it on in turn, at any depth, as long as each callable is named by a
+  string literal:
 
   ```
   EACH(LIST("a b"); "WORD_COUNT"; "whitespce")               -- LITERAL_VALUE_NOT_ALLOWED
   EACH(LIST(LIST("a b")); "EACH"; "WORD_COUNT"; "whitespce") -- LITERAL_VALUE_NOT_ALLOWED
   EACH(LIST("a b"); "WORD_COUNT"; value)                     -- EXPECTED_STRING_LITERAL_REFERENCE
+  ```
+
+  A callable that a higher-order function passes on can also be named by a
+  variable or an expression. It is resolved when the call runs, so the
+  arguments it receives are not checked while parsing: the function checks
+  its mode when it runs, and a built-in function answers a mode it does not
+  list with `null` and a `TYPE` warning.
+
+  ```
+  EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")        -- compiles; with value = "WORD_COUNT": [[null]]
   ```
 
   A function name or operator token passed on this way is looked up when the
@@ -578,12 +589,17 @@ WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whit
 ```
 
 The rule holds when built-in higher-order functions pass the literal on, at
-any depth: `EACH(value; "WORD_COUNT"; "whitespce")` and
+any depth, as long as each callable is named by a string literal:
+`EACH(value; "WORD_COUNT"; "whitespce")` and
 `EACH(value; "EACH"; "WORD_COUNT"; "whitespce")` fail the same way, naming
 `WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
-A higher-order function an embedder registers is checked at parse time only
-for the name of its callable; what it passes the callable is checked by the
-callable when it runs ([extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)).
+A callable named by a variable or an expression is resolved when the call
+runs, and a higher-order function an embedder registers is checked at parse
+time only for the name of its callable; in both cases what reaches the
+callable is checked by the callable when it runs
+([extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)),
+and a built-in function answers a mode it does not list with `null` and a
+`TYPE` warning.
 
 The admitted values are part of the function definition
 (`FunctionParamDefinition.literalValues`), so an editor holding the
