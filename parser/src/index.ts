@@ -1515,10 +1515,11 @@ function checkPassedArguments(
       return;
     }
     // Exit, never taken for the core definitions: every invocation passes on only arguments after
-    // the callable (the table spec checks it), so each nested callable is named by a later formula
-    // argument than the one before and a call with n arguments nests fewer than n levels. A host
-    // definition reusing a core name with another parameter layout gets the core invocation (the
-    // table is keyed by name), and for it this bound keeps the walk finite.
+    // the callable (the table spec checks it), so each nested callable is named by a formula
+    // argument to the right of the one naming the callable before it, and a call with n arguments
+    // nests fewer than n levels. A host definition reusing a core name with another parameter
+    // layout gets the core invocation (the table is keyed by name), and for it this bound keeps
+    // the walk finite.
     if (at.depth >= at.call.args.length) return;
     const followed = new Set<string>();
     for (const def of at.chosen === null ? at.candidates : [at.chosen, ...at.candidates]) {

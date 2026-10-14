@@ -62,7 +62,7 @@ describe('callable invocations', () => {
   });
 
   it('passes on only arguments after the callable, in order', () => {
-    // What bounds the nested follow: each nested callable is named by a later formula argument.
+    // What bounds the nested follow: each nested callable is named by an argument further right.
     let checked = 0;
     for (const def of coreHigherOrderFunctions()) {
       const callableAt = def.params.findIndex(
