@@ -1076,6 +1076,7 @@ function bindTypesAndRequirements(
                 call: { signatureId: def.signatureId, args: node.args },
                 host: def,
                 callable: chosen,
+                candidates,
                 passed: invoked.map((invokedArg) => ({
                   type: invokedArg.type,
                   source: invokedArg.forwards,
@@ -1396,6 +1397,22 @@ function callableCandidates(
 }
 
 /**
+ * A literal-only parameter that another definition of the callable's name has at `position`, with
+ * its literal rule only: the run time may hand that definition the argument, so the argument must
+ * be a literal, but which literals that definition admits is for it to check when it runs.
+ */
+function literalOnlyElsewhere(
+  candidates: readonly FunctionDefinition[],
+  position: number,
+): FunctionParamDefinition | undefined {
+  for (const candidate of candidates) {
+    const param = paramAt(candidate.params, position);
+    if (param?.literalOnly === true) return { ...param, literalValues: undefined };
+  }
+  return undefined;
+}
+
+/**
  * An argument a higher-order function passes to its callable: its type, and the index of the
  * formula argument it passes on unchanged. `source` is undefined for a value the higher-order
  * function supplies at run time: a list item, a key, a property value, an accumulator.
@@ -1406,7 +1423,9 @@ type PassedArgument = { type: FormulaType; source: number | undefined };
  * Holds every argument a core higher-order function passes to the callable it names to that
  * callable's literal-only rules. An argument passed on must be a string literal, and one of the
  * parameter's `literalValues` when it lists them; a parameter the higher-order function fills at run
- * time must not be literal-only. When the callable is itself a core higher-order function, the
+ * time must not be literal-only. The literal rule also holds where another definition of the same
+ * name has a literal-only parameter, since the run time may invoke that one instead. When the
+ * callable is itself a core higher-order function, the
  * argument that names ITS callable is followed into the invocation it makes in turn, so the rules
  * hold at any depth. A name passed on is resolved when the call runs, so a name the registry does
  * not know is no error here: the nested call invokes nothing and yields null.
@@ -1421,6 +1440,12 @@ function checkPassedArguments(
     host: FunctionDefinition;
     /** The callable's definition, chosen for the types of the passed arguments. */
     callable: FunctionDefinition;
+    /**
+     * Every definition the callable's name can reference. The higher-order function may invoke
+     * another of them than `callable` at run time: `EACH`, `FILTER`, `FILTER_PROPERTY` and
+     * `REDUCE` take the first that has an implementation.
+     */
+    candidates: readonly FunctionDefinition[];
     passed: readonly PassedArgument[];
     /** The formula argument that names the callable. */
     named: { index: number; span: SourceSpan | undefined };
@@ -1429,8 +1454,12 @@ function checkPassedArguments(
   },
 ): void {
   at.passed.forEach((passed, position) => {
-    const target = paramAt(at.callable.params, position);
-    if (!target || target.literalOnly !== true) return;
+    const chosenTarget = paramAt(at.callable.params, position);
+    const target =
+      chosenTarget?.literalOnly === true
+        ? chosenTarget
+        : literalOnlyElsewhere(at.candidates, position);
+    if (target === undefined) return;
     const arg = passed.source === undefined ? undefined : at.call.args[passed.source];
     const literal = readLiteralArgument(target, arg, {
       subject: `Parameter '${target.name}' of ${at.callable.name}`,
@@ -1443,8 +1472,10 @@ function checkPassedArguments(
       return;
     }
 
-    // Each nested callable is named by a different formula argument, so a call with n arguments
-    // nests at most n levels; the depth bound makes that a guarantee.
+    // Only the chosen overload is followed into a nested invocation. Each nested callable is named
+    // by a different formula argument, so a call with n arguments nests at most n levels; the
+    // depth bound makes that a guarantee.
+    if (target !== chosenTarget) return;
     const targetBase = stripNullability(target.type);
     const invocation = CALLABLE_INVOCATIONS.get(at.callable.signatureId);
     if (targetBase.kind !== 'callable' || invocation === undefined) return;
@@ -1461,6 +1492,7 @@ function checkPassedArguments(
       call: at.call,
       host: at.callable,
       callable,
+      candidates,
       passed: invoked.map((invokedArg) => ({
         type: invokedArg.type,
         source:

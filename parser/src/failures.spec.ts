@@ -365,6 +365,56 @@ describe('parseFormula failures', () => {
       ]);
     });
 
+    it('holds an argument passed on to the literal rule of every overload the name has', () => {
+      // EACH invokes the first PICK that has an implementation, whichever overload the parser
+      // chose, so PICK(text; mode)'s literal-only mode binds the argument PICK(list; key) takes.
+      const registry = makeTagRegistry();
+      registry.registerFunction({
+        signatureId: 'PICK/v1',
+        name: 'PICK',
+        category: 'core',
+        description: 'Test overload with an enumerated mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            literalValues: ['a', 'b'],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      registry.registerFunction({
+        signatureId: 'PICK_LIST/v1',
+        name: 'PICK',
+        category: 'core',
+        description: 'Test overload without a literal-only parameter.',
+        params: [
+          { name: 'list', type: FormulaTypes.list(FormulaTypes.text(true), true) },
+          { name: 'key', type: FormulaTypes.text(true) },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      const codes = (source: string) =>
+        parseFormula(source, { registry }).errors.map((e) => e.code);
+      // A list item selects PICK(list; key): any literal, but a literal.
+      expect(codes('EACH(LIST(LIST("x")); "PICK"; "zzz")')).toStrictEqual([]);
+      expect(codes('EACH(LIST(LIST("x")); "PICK"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+      expect(codes('EACH(LIST(LIST(LIST("x"))); "EACH"; "PICK"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+      // A text item selects PICK(text; mode), whose admitted values hold.
+      expect(codes('EACH(LIST("x"); "PICK"; "zzz")')).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
+      expect(codes('EACH(LIST("x"); "PICK"; "a")')).toStrictEqual([]);
+    });
+
     it('resolves a function name passed on when the call runs, so an unknown one compiles', () => {
       // The nested FILTER invokes nothing for "NOPE" and yields null, as it always has; only the
       // name written as a higher-order function's own argument is checked against the registry.
