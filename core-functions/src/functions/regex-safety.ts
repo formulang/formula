@@ -123,9 +123,9 @@ function overlaps(a: CodeSet, b: CodeSet): boolean {
 }
 
 /**
- * The characters a set matches under case-insensitive matching, over-approximated: both cases
- * of every ASCII letter, every non-ASCII character when the set holds one, and the two
- * characters `iu` matching folds onto `k` and `s`.
+ * A superset of the characters a set matches under case-insensitive matching: both cases of
+ * every ASCII letter, every non-ASCII character when the set holds one, and the two characters
+ * `iu` matching folds onto `k` and `s`.
  */
 function caseFolded(set: CodeSet): CodeSet {
   const extra: Array<readonly [number, number]> = [];
@@ -156,7 +156,7 @@ const ASCII_LETTERS: CodeSet = [
   [0x41, 0x5a],
   [0x61, 0x7a],
 ];
-/** General categories of letters and marks (`\p{L}`, `\p{Lu}`, `\p{M}`, ...). */
+/** The letter and mark categories (`\p{L}`, `\p{Lu}`, `\p{M}`, ...) and `\p{Alphabetic}`. */
 const LETTER_CATEGORIES: ReadonlySet<string> = new Set([
   'L',
   'Letter',
@@ -197,7 +197,7 @@ const NUMBER_CATEGORIES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The characters of a `\p{...}` property, over-approximated: letters, marks and numbers hold no
+ * A superset of the characters of a `\p{...}` property: letters, marks and numbers hold no
  * whitespace and no ASCII punctuation (letters and marks no ASCII digit, numbers no ASCII
  * letter); any other property may match any character.
  */
@@ -339,7 +339,8 @@ class PatternReader {
       const modifiers = this.sticky(GROUP_MODIFIERS, this.index);
       if (modifiers === null) throw new Unanalysable();
       this.index += modifiers[0].length;
-      // Over-approximated: a modifier that names a flag turns it on for the group.
+      // A modifier that names a flag turns it on for the group, even one that turns it off:
+      // the character sets only grow.
       const named = `${modifiers[1]}${modifiers[2] ?? ''}`;
       const outer = this.flags;
       this.flags = {
@@ -382,7 +383,7 @@ class PatternReader {
     }
     this.index += 1;
     const set = normalize(ranges);
-    // Folding after the negation over-approximates what a negated class matches.
+    // Folding after the negation yields a superset of what a negated class matches.
     return this.chars(negated ? complement(set) : set);
   }
 
@@ -651,12 +652,12 @@ class BacktrackingBound {
     let cost = 0;
     for (const member of ordered) {
       let ways = 1;
-      for (const earlier of ordered) {
-        if (earlier.low >= member.low) break;
+      for (const upstream of ordered) {
+        if (upstream.low >= member.low) break;
         // A member that holds this one does not precede it.
-        if (earlier.high >= member.low) continue;
-        if (this.competes(earlier, member)) {
-          ways = Math.max(ways, (before.get(earlier) ?? 1) * earlier.ways);
+        if (upstream.high >= member.low) continue;
+        if (this.competes(upstream, member)) {
+          ways = Math.max(ways, (before.get(upstream) ?? 1) * upstream.ways);
         }
       }
       before.set(member, ways);
@@ -789,21 +790,21 @@ class BacktrackingBound {
   }
 
   /**
-   * Whether `later` competes with `earlier` for the same characters: an alternation whose
+   * Whether `downstream` competes with `upstream` for the same characters: an alternation whose
    * alternatives overlap multiplies every choice point after it; a quantifier competes with a
-   * later choice point it can reach over positions all three can match a character of.
+   * choice point after it that it reaches over positions all three can match a character of.
    */
-  private competes(earlier: Member, later: Member): boolean {
-    const shared = intersect(earlier.chars, later.chars);
-    if (earlier.kind === 'repeat' && shared.length === 0) return false;
+  private competes(upstream: Member, downstream: Member): boolean {
+    const shared = intersect(upstream.chars, downstream.chars);
+    if (upstream.kind === 'repeat' && shared.length === 0) return false;
     const passable = (position: Position): boolean =>
-      earlier.kind === 'alternation' || position.assertion || overlaps(position.set, shared);
-    const targets = new Set(later.first.map((position) => position.id));
+      upstream.kind === 'alternation' || position.assertion || overlaps(position.set, shared);
+    const targets = new Set(downstream.first.map((position) => position.id));
     const seen = new Set<number>();
     const queue: Position[] = [];
-    for (const position of earlier.last) {
+    for (const position of upstream.last) {
       for (const next of this.follow[position.id]) {
-        if (next.id >= earlier.low && next.id <= earlier.high) continue;
+        if (next.id >= upstream.low && next.id <= upstream.high) continue;
         if (!seen.has(next.id) && passable(next)) {
           seen.add(next.id);
           queue.push(next);

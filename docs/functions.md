@@ -823,7 +823,7 @@ security error `REGEX_UNSAFE`, after reading it into its parts:
   `((a)+)+b`, `(a|b)*`, `(x{1,3})+`;
 - two unbounded quantifiers next to each other that can both take the
   character between them: `a*a*`, `\w+\w*`, `.*.*`, `.*\d+`;
-- quantifiers that compete for the same characters — the later one is reached
+- quantifiers that compete for the same characters — the second is reached
   over parts that match nothing or characters both can match — before a part
   that can fail, when the ways they can split the text exceed four scans of the
   whole text per start position: `\d+\s*\d+x`, `.*foo.*bar`, `a?a?a?a+x`,

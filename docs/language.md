@@ -573,9 +573,12 @@ WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whit
                                  --   "letters", "locale", "pattern"; got "whitespce"
 ```
 
-The rule holds when a higher-order function passes the literal on:
+The rule holds when a built-in higher-order function passes the literal on:
 `EACH(value; "WORD_COUNT"; "whitespce")` fails the same way, naming
 `WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
+A higher-order function an embedder registers is checked at parse time only
+for the name of its callable; what it passes the callable is checked by the
+callable when it runs ([extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters)).
 
 The admitted values are part of the function definition
 (`FunctionParamDefinition.literalValues`), so an editor holding the
