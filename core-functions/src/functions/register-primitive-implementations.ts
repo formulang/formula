@@ -113,6 +113,14 @@ import {
   ToTextImplementation,
   TrimImplementation,
 } from './text-extra';
+import {
+  LeadingWordsImplementation,
+  LineCountImplementation,
+  LinesImplementation,
+  SentencesImplementation,
+  WordCountImplementation,
+  WordsImplementation,
+} from './text-segmentation';
 import { IsNumberImplementation, IsTextImplementation } from './type-predicates';
 import { UpperImplementation } from './upper';
 
@@ -352,4 +360,30 @@ export function registerPrimitiveFormulaImplementations(
     new EncodeUrlImplementation({ signatureId: 'ENCODEURL/v1' }),
   );
   implementations.register('ISURL/v1', new IsUrlImplementation({ signatureId: 'ISURL/v1' }));
+
+  // Text segmentation
+  implementations.register(
+    BuiltinSignatureIds.WORDS,
+    new WordsImplementation({ signatureId: BuiltinSignatureIds.WORDS }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.WORD_COUNT,
+    new WordCountImplementation({ signatureId: BuiltinSignatureIds.WORD_COUNT }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.LEADING_WORDS,
+    new LeadingWordsImplementation({ signatureId: BuiltinSignatureIds.LEADING_WORDS }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.SENTENCES,
+    new SentencesImplementation({ signatureId: BuiltinSignatureIds.SENTENCES }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.LINES,
+    new LinesImplementation({ signatureId: BuiltinSignatureIds.LINES }),
+  );
+  implementations.register(
+    BuiltinSignatureIds.LINE_COUNT,
+    new LineCountImplementation({ signatureId: BuiltinSignatureIds.LINE_COUNT }),
+  );
 }

@@ -123,4 +123,10 @@ export const BuiltinSignatureIds = {
   TRIM: 'TRIM/v1',
   ENCODEURL: 'ENCODEURL/v1',
   ISURL: 'ISURL/v1',
+  WORDS: 'WORDS/v1',
+  WORD_COUNT: 'WORD_COUNT/v1',
+  LEADING_WORDS: 'LEADING_WORDS/v1',
+  SENTENCES: 'SENTENCES/v1',
+  LINES: 'LINES/v1',
+  LINE_COUNT: 'LINE_COUNT/v1',
 } as const;

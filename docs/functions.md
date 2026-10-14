@@ -53,7 +53,7 @@ arguments with `,` instead.
 - **Math:** [ADD](#add) · [SUB](#sub) · [MUL](#mul) · [DIV](#div) · [POW](#pow) · [SUM](#sum) · [PRODUCT](#product) · [MOD](#mod) · [ROUND](#round) · [ROUNDDOWN](#rounddown) · [ROUNDUP](#roundup) · [CEILING](#ceiling) · [FLOOR](#floor) · [SQRT](#sqrt) · [EXP](#exp) · [LOG](#log) · [LOG10](#log10) · [PI](#pi) · [SIN](#sin) · [COS](#cos) · [TAN](#tan) · [ASIN](#asin) · [ACOS](#acos) · [ATAN](#atan) · [ISEVEN](#iseven) · [ISODD](#isodd) · [RANGE_SCORE](#range_score)
 - **Aggregation:** [AVG](#avg) · [MIN](#min) · [MAX](#max) · [MEDIAN](#median) · [COUNT](#count) · [COUNT_UNIQUE](#count_unique)
 - **Logic & comparison:** [EQ](#eq) · [NEQ](#neq) · [GT](#gt) · [GTE](#gte) · [LT](#lt) · [LTE](#lte) · [AND](#and) · [OR](#or) · [NOT](#not)
-- **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl)
+- **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl) · [WORDS](#words) · [WORD_COUNT](#word_count) · [LEADING_WORDS](#leading_words) · [SENTENCES](#sentences) · [LINES](#lines) · [LINE_COUNT](#line_count)
 - **Lists:** [LIST](#list) · [INDEX](#index) · [FLAT](#flat) · [SORT](#sort) · [SORT_BY_PROPERTY](#sort_by_property) · [FILTER](#filter) · [FILTER_PROPERTY](#filter_property) · [EACH](#each) · [REDUCE](#reduce) · [INCLUDES](#includes)
 - **Date & time:** [DATE](#date) · [DATEVALUE](#datevalue) · [TIME](#time) · [TIMEVALUE](#timevalue) · [NOW](#now) · [TODAY](#today) · [DAY](#day) · [MONTH](#month) · [YEAR](#year) · [HOUR](#hour) · [MINUTE](#minute) · [SECOND](#second) · [DAYS](#days) · [DATEDIF](#datedif) · [WEEKDAY](#weekday) · [WEEKNUM](#weeknum) · [ISOWEEKNUM](#isoweeknum)
 - **Control flow:** [IF](#if) · [SWITCH](#switch)
@@ -559,6 +559,53 @@ await evalOk('NOT("false")'); // true
 Most text functions return `null` (often with a `TYPE` warning) when given a
 non-empty, non-text value, and plain `null` when the input is empty.
 
+**Text segmentation.** `WORDS`, `WORD_COUNT` and `LEADING_WORDS` share one
+tokeniser, chosen by an optional `mode` literal (a misspelt mode is a
+compile-time `LITERAL_VALUE_NOT_ALLOWED` error):
+
+- `"whitespace"` (default) — the text is trimmed and split at every run of
+  whitespace. Whitespace is JavaScript's `\s`: tabs, line breaks and the
+  no-break space U+00A0 separate words; U+0085 and U+001C–U+001F do not
+  (Python's `str.split()` also splits at those).
+- `"letters"` — runs of letters, marks and numbers (`\p{L}`, `\p{M}`,
+  `\p{N}`). An apostrophe (`'`, `’`) or a hyphen (`-`, U+2010, U+2011, the soft
+  hyphen U+00AD) between two runs joins them into one word, and so does `.` or
+  `,` between two digits: `don't`, `E-Mail-Adresse` and `3,5` are one word
+  each, `Kund:innen` is two.
+- `"locale"` — the word-like segments `Intl.Segmenter` finds for the BCP 47
+  language tag in `option` (`"de"`, `"en-GB"`). A malformed tag, or one the
+  runtime holds no segmentation data for, returns `null` with a `TYPE` warning
+  instead of falling back to the host's locale. The segmentation comes from the
+  runtime's ICU data, so a runtime that upgrades ICU can answer differently;
+  the other modes do not depend on ICU.
+- `"pattern"` — every non-empty match of the regular expression in `option`,
+  written raw or as `/pattern/flags` with flags from `imsu` (`g` is implied).
+  The pattern is compiled under the safety rules of
+  [MATCH_EXPRESSION](#match_expression), including the 8,000-character input
+  limit.
+
+`option` is accepted only in the `"locale"` and `"pattern"` modes; elsewhere
+it returns `null` with a `TYPE` warning, and an omitted tag or pattern in those
+modes does the same. An empty `option` there is an empty input and returns
+`null`.
+
+`SENTENCES` takes a `mode` too: `"punctuation"` (default) ends a sentence at a
+whitespace run directly after `.`, `!` or `?`; `"terminators"` ends one at
+every run of `.`, `!`, `?`, `。`, `！`, `？`. The optional `keep` list names
+tokens that never end a sentence — abbreviations such as `"z. B."`, `"Dr."`,
+`"ca."` — so each language's abbreviations are data the caller supplies. There
+is no locale sentence mode: `Intl.Segmenter` has no abbreviation data for
+sentences and splits German `"Wir helfen z. B. Handwerkern."` after `z.` and
+after `B.`.
+
+List results (`WORDS`, `SENTENCES`, `LINES`) longer than
+`maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security error, as
+`FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count past that
+bound. A `keep` list longer than `maxListLength` (1,000) raises
+`LIST_TOO_LARGE`. Embedders that count outside a formula import the same
+tokenisers from `@formulang/core-functions`: `splitWords(text, mode?, option?)`
+and `splitSentences(text, mode?, keep?)`.
+
 ### CONCAT
 
 `CONCAT(...values: any) -> text` · operator `&`
@@ -811,6 +858,93 @@ single-label hosts are rejected. Return type is non-nullable; non-text input is
 ```ts
 await evalOk('ISURL("https://example.com")'); // true
 await evalOk('ISURL("localhost")'); // false
+```
+
+### WORDS
+
+`WORDS(text: text, mode?: text, option?: text) -> list<text>`
+
+The words of `text`, in order, found by the [text segmentation](#text) mode:
+`mode` is one of the literals `"whitespace"` (default), `"letters"`,
+`"locale"`, `"pattern"`, and `option` carries the language tag or the pattern
+of the last two. An empty text yields `[]`.
+
+```ts
+await evalOk('WORDS("  Kennst du   das? ")'); // ["Kennst", "du", "das?"]
+await evalOk('WORDS("Für 3,5 Mio. Kund:innen"; "letters")'); // ["Für", "3,5", "Mio", "Kund", "innen"]
+await evalOk('WORDS("Kund:innen"; "locale"; "de")'); // ["Kund:innen"]
+await evalOk('WORDS(LOWER("Für 50$ – sofort!"); "pattern"; "[A-Za-z0-9$\']+")'); // ["f", "r", "50$", "sofort"]
+```
+
+### WORD_COUNT
+
+`WORD_COUNT(text: text, mode?: text, option?: text) -> number`
+
+The number of words `WORDS` finds with the same arguments; `""` counts `0`.
+No list is built, so a long text is countable past the list-result limit.
+
+```ts
+await evalOk('WORD_COUNT("  Kennst du   das? ")'); // 3
+await evalOk('WORD_COUNT("Don\'t re-enter the e-mail, oder?"; "letters")'); // 5
+await evalOk('WORD_COUNT(""; "whitespace")'); // 0
+```
+
+### LEADING_WORDS
+
+`LEADING_WORDS(text: text, count: number, mode?: text, option?: text) -> text`
+
+The first `count` words joined by one space, or `null` when the text has fewer
+words. A `count` that is not a positive whole number returns `null` with a
+`TYPE` warning. `mode` and `option` work as for `WORDS`.
+
+```ts
+await evalOk('LEADING_WORDS("eins zwei  drei vier"; 2)'); // "eins zwei"
+await evalOk('LEADING_WORDS("eins zwei"; 3)'); // null
+await evalOk('EACH(LIST("a b"; "c d e"); "LEADING_WORDS"; 2)'); // ["a b", "c d"]
+```
+
+### SENTENCES
+
+`SENTENCES(text: text, mode?: text, keep?: list<text>) -> list<text>`
+
+The sentences of `text`, each trimmed, empty pieces dropped. `mode` is
+`"punctuation"` (default) or `"terminators"` (see
+[text segmentation](#text)). `keep` lists tokens that never end a sentence: a
+split that falls inside or at the end of an occurrence of a listed token is
+suppressed when the occurrence starts at a word boundary (matching is
+case-sensitive, empty entries are skipped). In `"terminators"` mode the
+terminator run stays with the sentence it ends, and a piece holding nothing
+but terminators is not a sentence.
+
+```ts
+await evalOk('SENTENCES("Hi. Ok!  Next? end")'); // ["Hi.", "Ok!", "Next?", "end"]
+await evalOk('SENTENCES("3.5 Uhr. Gut."; "terminators")'); // ["3.", "5 Uhr.", "Gut."]
+await evalOk('SENTENCES("Wir helfen z. B. Handwerkern."; "punctuation"; LIST("z. B."))'); // ["Wir helfen z. B. Handwerkern."]
+```
+
+### LINES
+
+`LINES(text: text, mode?: text) -> list<text>`
+
+The lines of `text` as written (not trimmed). A line ends at `\r\n`, `\n`,
+`\r`, U+000B, U+000C, U+0085, U+2028 or U+2029; a final line break ends the
+last line instead of starting an empty one. `mode` is `"non-blank"` (default),
+which drops lines that are empty after trimming, or `"all"`.
+
+```ts
+await evalOk('LINES(value)', { value: 'a\n\n b' }); // ["a", " b"]
+await evalOk('LINES(value; "all")', { value: 'a\n\n b' }); // ["a", "", " b"]
+```
+
+### LINE_COUNT
+
+`LINE_COUNT(text: text, mode?: text) -> number`
+
+The number of lines `LINES` returns with the same arguments; `""` counts `0`.
+
+```ts
+await evalOk('LINE_COUNT(value)', { value: 'a\r\nb\rc' }); // 3
+await evalOk('LINE_COUNT(""; "all")'); // 0
 ```
 
 ---

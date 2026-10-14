@@ -32,6 +32,26 @@ export function isEmptyValue(value: unknown): boolean {
   return false;
 }
 
+/** A letter, mark or number: the characters a word is made of. */
+const WORD_CHARACTER = /^[\p{L}\p{M}\p{N}]$/u;
+
+/** Whether the character ending just before `index` is a letter, mark or number. */
+export function isWordCharacterBefore(text: string, index: number): boolean {
+  if (index <= 0 || index > text.length) return false;
+  const last = text.charCodeAt(index - 1);
+  const first = index >= 2 ? text.charCodeAt(index - 2) : 0;
+  const isPair = last >= 0xdc00 && last <= 0xdfff && first >= 0xd800 && first <= 0xdbff;
+  const codePoint = text.codePointAt(isPair ? index - 2 : index - 1);
+  return codePoint !== undefined && WORD_CHARACTER.test(String.fromCodePoint(codePoint));
+}
+
+/** Whether the character starting at `index` is a letter, mark or number. */
+export function isWordCharacterAt(text: string, index: number): boolean {
+  if (index < 0 || index >= text.length) return false;
+  const codePoint = text.codePointAt(index);
+  return codePoint !== undefined && WORD_CHARACTER.test(String.fromCodePoint(codePoint));
+}
+
 function readOwnProperty(obj: object, property: string): unknown {
   if (!Object.prototype.hasOwnProperty.call(obj, property)) return null;
   return (obj as any)[property] ?? null;

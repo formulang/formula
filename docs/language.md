@@ -553,16 +553,18 @@ in the call, like the callable references above — can also list the exact
 values it admits: a mode switch, for example. Any other literal fails at
 parse time with `LITERAL_VALUE_NOT_ALLOWED`, and the message names every
 admitted value, so a misspelt mode never compiles. Matching is exact and
-case-sensitive. For a parameter `mode` that admits `"upper"` and `"lower"`,
-the literal `"uper"` is reported as:
+case-sensitive.
 
 ```
-Parameter 'mode' must be one of "upper", "lower"; got "uper"
+WORD_COUNT(value; "letters")     -- counts words by letter runs
+WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whitespace",
+                                 --   "letters", "locale", "pattern"; got "whitespce"
 ```
 
 The admitted values are part of the function definition
 (`FunctionParamDefinition.literalValues`), so an editor holding the
-definitions can offer them as completions.
+definitions can offer them as completions; [functions.md](functions.md) lists
+them for every built-in that has a mode.
 
 ## Types
 
@@ -691,7 +693,7 @@ Errors you are most likely to see, with a minimal trigger for each:
 | `ARGUMENT_TYPES_MUST_HAVE_SAME_TYPE` | `LIST(1; "a")`, `IF(TRUE; "x"; 0)`                             |
 | `NULL_NOT_ALLOWED`                   | passing `EMPTY()` to a non-nullable parameter                  |
 | `EXPECTED_STRING_LITERAL_REFERENCE`  | `FILTER(LIST(1;2); value; 1)`                                  |
-| `LITERAL_VALUE_NOT_ALLOWED`          | a literal outside a parameter's admitted values                |
+| `LITERAL_VALUE_NOT_ALLOWED`          | `WORD_COUNT(value; "whitespce")`                               |
 | `UNKNOWN_FUNCTION_REFERENCE`         | `FILTER(LIST(1;2); "NOPE"; 1)`                                 |
 | `PROPERTY_TARGET_NOT_OBJECT`         | `value.id` where `value` is a number                           |
 | `WILDCARD_TARGET_NOT_LIST`           | `value.*.id` where `value` is a number                         |
@@ -710,18 +712,19 @@ Formulas run inside conservative resource limits. The host can raise or
 lower them; the defaults below are what ships. Authors mostly notice these
 when a formula is generated or pathological.
 
-| Limit                                         | Default           | Error when exceeded         |
-| --------------------------------------------- | ----------------- | --------------------------- |
-| Source length                                 | 16,000 characters | `SOURCE_TOO_LONG`           |
-| Tokens                                        | 500               | `TOO_MANY_TOKENS`           |
-| String literal length                         | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
-| Identifier length                             | 64 characters     | `IDENTIFIER_TOO_LONG`       |
-| Parenthesis nesting                           | 16 levels         | `PARENS_TOO_DEEP`           |
-| AST nodes                                     | 500               | `TOO_MANY_AST_NODES`        |
-| List size (EACH/FILTER/wildcard/REDUCE input) | 1,000 items       | `LIST_TOO_LARGE`            |
-| Wildcard output size                          | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
-| Regex pattern length                          | 100 characters    | `REGEX_UNSAFE`              |
-| Regex input length                            | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
+| Limit                                                | Default           | Error when exceeded         |
+| ---------------------------------------------------- | ----------------- | --------------------------- |
+| Source length                                        | 16,000 characters | `SOURCE_TOO_LONG`           |
+| Tokens                                               | 500               | `TOO_MANY_TOKENS`           |
+| String literal length                                | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
+| Identifier length                                    | 64 characters     | `IDENTIFIER_TOO_LONG`       |
+| Parenthesis nesting                                  | 16 levels         | `PARENS_TOO_DEEP`           |
+| AST nodes                                            | 500               | `TOO_MANY_AST_NODES`        |
+| List size (EACH/FILTER/wildcard/REDUCE input)        | 1,000 items       | `LIST_TOO_LARGE`            |
+| Wildcard output size                                 | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
+| List results (`FLAT`, `WORDS`, `SENTENCES`, `LINES`) | 5,000 items       | `LIST_TOO_LARGE`            |
+| Regex pattern length                                 | 100 characters    | `REGEX_UNSAFE`              |
+| Regex input length                                   | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
 
 Evaluation is additionally bounded by step, cost, and wall-time budgets
 (`EVAL_LIMIT_EXCEEDED`, `COST_LIMIT_EXCEEDED`, `WALL_TIME_LIMIT_EXCEEDED`);

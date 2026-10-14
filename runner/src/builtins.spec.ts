@@ -198,6 +198,25 @@ describe('builtins', () => {
     expect(res.value).toStrictEqual([items[1]]);
   });
 
+  it('segments a text variable into words, sentences and lines', async () => {
+    const text = 'Wir helfen z. B. Handwerkern.\nKennst du das?';
+    const counts = await evalFormula(
+      'LIST(WORD_COUNT(value); COUNT(SENTENCES(value; "punctuation"; LIST("z. B."))); LINE_COUNT(value))',
+      { value: text },
+      FormulaTypes.text(true),
+    );
+    expect(counts.res.errors).toStrictEqual([]);
+    expect(counts.res.value).toStrictEqual([8, 2, 2]);
+
+    const opening = await evalFormula(
+      'LEADING_WORDS(value; 2)',
+      { value: text },
+      FormulaTypes.text(true),
+    );
+    expect(opening.res.errors).toStrictEqual([]);
+    expect(opening.res.value).toBe('Wir helfen');
+  });
+
   it('estimated cost counts nested calls exactly once', () => {
     const { registry } = createTestRuntime();
     registry.registerVariable({

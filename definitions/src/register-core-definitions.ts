@@ -1,5 +1,5 @@
 import { BuiltinSignatureIds } from './builtin-signature-ids';
-import type { MutableFormulaRegistry } from './registry';
+import type { FunctionParamDefinition, MutableFormulaRegistry } from './registry';
 import { FormulaTypes } from './types';
 
 /**
@@ -1299,6 +1299,116 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
     description: 'Whether the value is a valid URL.',
     params: [{ name: 'value', type: FormulaTypes.any(true) }],
     returnType: FormulaTypes.boolean(false),
+    purity: 'pure',
+  });
+
+  // Text segmentation: words, sentences and lines. Each definition gets its own parameter
+  // objects, so no two definitions share a mutable `literalValues` array.
+  const wordModeParam = (): FunctionParamDefinition => ({
+    name: 'mode',
+    description: 'How words are found: "whitespace" (default), "letters", "locale" or "pattern".',
+    type: FormulaTypes.text(false),
+    optional: true,
+    literalOnly: true,
+    literalValues: ['whitespace', 'letters', 'locale', 'pattern'],
+  });
+  const wordOptionParam = (): FunctionParamDefinition => ({
+    name: 'option',
+    description: 'The BCP 47 language tag in "locale" mode, the token pattern in "pattern" mode.',
+    type: FormulaTypes.text(true),
+    optional: true,
+  });
+  const lineModeParam = (): FunctionParamDefinition => ({
+    name: 'mode',
+    description: 'Which lines count: "non-blank" (default) or "all".',
+    type: FormulaTypes.text(false),
+    optional: true,
+    literalOnly: true,
+    literalValues: ['non-blank', 'all'],
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.WORDS,
+    name: 'WORDS',
+    category: 'core',
+    description: 'Splits a text into its words.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, wordModeParam(), wordOptionParam()],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.WORD_COUNT,
+    name: 'WORD_COUNT',
+    category: 'core',
+    description: 'Counts the words in a text.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, wordModeParam(), wordOptionParam()],
+    returnType: FormulaTypes.number(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.LEADING_WORDS,
+    name: 'LEADING_WORDS',
+    category: 'core',
+    description: 'The first words of a text, joined by one space.',
+    params: [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'count',
+        description: 'How many words to take; null when the text has fewer.',
+        type: FormulaTypes.number(true),
+      },
+      wordModeParam(),
+      wordOptionParam(),
+    ],
+    returnType: FormulaTypes.text(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.SENTENCES,
+    name: 'SENTENCES',
+    category: 'core',
+    description: 'Splits a text into its sentences.',
+    params: [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'mode',
+        description: 'What ends a sentence: "punctuation" (default) or "terminators".',
+        type: FormulaTypes.text(false),
+        optional: true,
+        literalOnly: true,
+        literalValues: ['punctuation', 'terminators'],
+      },
+      {
+        name: 'keep',
+        description: 'Tokens that never end a sentence, such as abbreviations.',
+        type: FormulaTypes.list(FormulaTypes.text(true), true),
+        optional: true,
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.LINES,
+    name: 'LINES',
+    category: 'core',
+    description: 'Splits a text into its lines.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, lineModeParam()],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.LINE_COUNT,
+    name: 'LINE_COUNT',
+    category: 'core',
+    description: 'Counts the lines in a text.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, lineModeParam()],
+    returnType: FormulaTypes.number(true),
     purity: 'pure',
   });
 }
