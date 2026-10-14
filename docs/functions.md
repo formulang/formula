@@ -806,9 +806,35 @@ await evalOk('CONTAINS("abc"; "b")'); // true
 
 Whether `text` matches the regular-expression `pattern`. Patterns are compiled
 under safety limits: overly long text/patterns are security errors; unsafe
-patterns (nested quantifiers such as `(a+)+`) are rejected; backreferences and
-lookbehind are disallowed and yield `null` with a `REGEX` warning. Invalid
-patterns also return `null` + `REGEX` warning. Allowed flags: `imsu` (no `g`).
+patterns are rejected (see below); backreferences and lookbehind are
+disallowed and yield `null` with a `REGEX` warning. Invalid patterns also
+return `null` + `REGEX` warning. Allowed flags: `imsu` (no `g`).
+
+**Unsafe patterns.** JavaScript matches regular expressions by backtracking,
+so a pattern whose quantifiers can split one run of characters in many ways
+takes time that grows with a high power of the text length, or exponentially.
+Every regex built-in (`MATCH_EXPRESSION`, `REGEXEXTRACT`, `REGEXREPLACE` and
+the `"pattern"` mode of [WORDS](#words)) refuses such a pattern with the
+security error `REGEX_UNSAFE`, after reading it into its parts:
+
+- a quantifier that repeats a group more than once while the group holds a
+  quantifier with a variable count or an alternation, at any depth: `(a+)+`,
+  `((a)+)+b`, `(a|b)*`, `(x{1,3})+`;
+- two unbounded quantifiers next to each other that can both take the
+  character between them: `a*a*`, `\w+\w*`, `.*.*`, `.*\d+`;
+- quantifiers that compete for the same characters — the later one is reached
+  over parts that match nothing or characters both can match — before a part
+  that can fail, when the ways they can split the text exceed four scans of the
+  whole text per start position: `\d+\s*\d+x`, `.*foo.*bar`, `a?a?a?a+x`,
+  `.*\d{16}`.
+
+A quantifier allowing at least 16 repetitions beyond its minimum counts as
+unbounded, and a pattern anchored with `^` (without the `m` flag) has one start
+position instead of one per character. `\w+@\w+\.\w+`, `\d+\s*\d+`,
+`[A-Za-z0-9$']+`, `.*foo.*` and `^\d+\s*\d+$` are admitted: their worst case
+stays quadratic in the text length, which the 8,000-character input limit
+bounds. Patterns that version 1.0.0 compiled can be refused now; a repeated
+group holding only fixed counts, such as `\d{1,3}(?:,\d{3})*`, is admitted.
 
 ```ts
 await evalOk('MATCH_EXPRESSION("abc123"; "^abc")'); // true
