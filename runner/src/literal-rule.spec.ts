@@ -485,12 +485,34 @@ describe('the enumerated-literal rule, generated', () => {
         vehicle,
       ).toBe(true);
     }
-    // Every position each invocation passes something to, from 0 on; EACH passes on every
-    // argument after its callable, up to one past the longest parameter list a callable can have.
+    // Every table entry is exercised by the cells at every position its invocation passes
+    // something to, the forwarded ones with the argument the entry forwards there; EACH passes on
+    // every argument after its callable, up to one past the longest parameter list a callable can
+    // have.
     for (const vehicle of VEHICLES) {
-      const positions = REACHES.filter((reach) => reach.vehicle === vehicle).map((r) => r.position);
-      expect(positions, vehicle).toStrictEqual(positions.map((_, index) => index));
-      expect(positions.length, vehicle).toBeGreaterThanOrEqual(2);
+      const def = coreHigherOrder.find((candidate) => candidate.name.toUpperCase() === vehicle);
+      const entry = def && invocationOf(def);
+      if (def === undefined || entry === undefined) throw new Error(`no invocation: ${vehicle}`);
+      const invoked = invokedArguments(
+        entry,
+        def.params.map(() => anything),
+      );
+      expect(invoked.length, vehicle).toBeGreaterThanOrEqual(2);
+      invoked.forEach((passed, position) => {
+        const covering = cells.filter(
+          (cell) =>
+            cell.placement.kind === 'passed' &&
+            cell.placement.reach.vehicle === vehicle &&
+            cell.placement.reach.position === position,
+        );
+        expect(covering.length, `${vehicle} ${position}`).toBeGreaterThan(0);
+        for (const cell of covering) {
+          if (cell.placement.kind !== 'passed') continue;
+          expect(cell.placement.reach.forwardedFrom, `${vehicle} ${position}`).toBe(
+            passed.forwards,
+          );
+        }
+      });
     }
     expect(
       REACHES.filter((reach) => reach.vehicle === 'EACH').map((r) => r.position),
@@ -595,6 +617,79 @@ describe('the enumerated-literal rule, generated', () => {
     },
     300_000,
   );
+
+  it('runs every higher-order function as its table entry says it invokes the callable', async () => {
+    // The implementations live in core-functions, which the parser's table cannot reach: a callee
+    // that records what it receives shows that each function passes, at every position of its
+    // entry, the argument the entry forwards there, or an item of the list the entry names.
+    const { registry, implementations } = createCoreFormulaRuntime();
+    registry.registerVariable({ name: 'rows', description: 'Rows of `p`.', type: anything });
+    registry.registerFunction({
+      signatureId: 'REC/v1',
+      name: 'REC',
+      category: 'custom',
+      description: 'Records the arguments it receives.',
+      params: [{ name: 'values', type: anything, variadic: true }],
+      returnType: anything,
+      purity: 'uncached',
+    });
+    let received: unknown[][] = [];
+    implementations.register('REC/v1', {
+      estimateCostsInSeconds: () => 0.0001,
+      evaluateMultiple: async (calls) => {
+        for (const call of calls) {
+          received.push(await Promise.all(call.args.map((arg) => arg.value())));
+        }
+        return calls.map(() => makeOkBoolean('REC/v1', true));
+      },
+    });
+    const checked = new Map<string, number>();
+    for (const vehicle of VEHICLES) {
+      const def = coreHigherOrder.find((candidate) => candidate.name.toUpperCase() === vehicle);
+      const entry = def && invocationOf(def);
+      if (def === undefined || entry === undefined) throw new Error(`no invocation: ${vehicle}`);
+      const callableAt = def.params.findIndex((p) => stripNullability(p.type).kind === 'callable');
+      const count = def.params.length + (def.params[def.params.length - 1]?.variadic ? 2 : 0);
+      const listed = entry.flatMap((source) => (source.kind === 'item' ? [source.of] : []));
+      // The callable, one item in each list the entry names, the vehicle's other arguments as the
+      // matrix writes them, and a marker for every argument it may forward.
+      const args = Array.from({ length: count }, (_, index) => {
+        if (index === callableAt) return '"REC"';
+        if (listed.includes(index)) return `LIST("item${index}")`;
+        return UNDESCRIBED[vehicle]?.[index] ?? `"arg${index}"`;
+      });
+      const source = `${vehicle}(${args.join('; ')})`;
+      const parsed = parseFormula(source, { registry });
+      expect(parsed.errors, source).toStrictEqual([]);
+      received = [];
+      await evaluateRuleOutputAsync(optimizeRule(parsed, { registry }), {
+        registry,
+        resolver: implementations,
+        variables: { rows: [{ p: 'property' }] },
+      });
+      const types = args.map(() => anything);
+      const invoked = invokedArguments(entry, types);
+      // The entry's source behind each position it passes.
+      const behind = entry.flatMap((each) => invokedArguments([each], types).map(() => each));
+      expect(received.length, source).toBe(1);
+      for (const values of received) {
+        expect(values.length, source).toBe(invoked.length);
+        invoked.forEach((passed, position) => {
+          const from = behind[position];
+          if (passed.forwards !== undefined) {
+            expect(values[position], `${source} ${position}`).toBe(`arg${passed.forwards}`);
+          } else if (from?.kind === 'item') {
+            expect(values[position], `${source} ${position}`).toBe(`item${from.of}`);
+          } else {
+            return;
+          }
+          checked.set(vehicle, (checked.get(vehicle) ?? 0) + 1);
+        });
+      }
+    }
+    // Not vacuous: an argument or an item of every function, checked where it arrives.
+    expect([...checked.keys()].sort()).toStrictEqual([...VEHICLES]);
+  });
 
   it('keeps FILTER_BY’s checks when it is registered again under another signature id', () => {
     const check = runtimeFor('reversioned', SETS[0] as OverloadSet, 'listed', []);

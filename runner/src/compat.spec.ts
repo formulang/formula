@@ -111,6 +111,10 @@ describe('compatibility with 1.0.0', () => {
   });
 
   it('derives a host-function shape for every name 1.1.0 adds, and for no other name', () => {
+    // The re-versioned shape re-registers exactly the functions of the parser's invocation table.
+    expect(harness.higherOrderNames(packages)).toStrictEqual(
+      [...INVOCATIONS_BY_NAME.keys()].sort(),
+    );
     expect(added.length).toBeGreaterThan(0);
     expect(baseline.addedFunctionNames).toStrictEqual(added);
     for (const name of baseline.addedFunctionNames) {

@@ -71,8 +71,10 @@ export function invokedArguments(
  * a definition under any other name invokes nothing the parser knows, so a copy of one of these
  * functions under a new name is a plain function. The table is closed: a definition cannot add to
  * it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
- * and check that every entry passes the callable fewer arguments than its call holds whenever it
- * passes one on, which ends the parser's walk through nested callables.
+ * with the implementations of those functions (what each passes its callable when it runs), with
+ * every module of the parser (no other names a higher-order function) and with the
+ * enumerated-literal matrix, and check that every entry passes the callable fewer arguments than its
+ * call holds whenever it passes one on, which ends the parser's walk through nested callables.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
@@ -114,6 +116,21 @@ export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new 
       { kind: 'argument', at: 3 },
     ],
   ],
+]);
+
+/**
+ * How a call of a higher-order function is typed by name, as 1.0.0 typed it: `items`, a list of the
+ * items of the list its first argument holds (the filters); `results`, a list of what its callable,
+ * named by its second argument, returns for the arguments the table's entry passes it (EACH). A
+ * function of the table without a rule here (REDUCE, FILTER_BY) is typed by its definition.
+ */
+export const RESULTS_BY_NAME: ReadonlyMap<string, 'items' | 'results'> = new Map<
+  string,
+  'items' | 'results'
+>([
+  ['EACH', 'results'],
+  ['FILTER', 'items'],
+  ['FILTER_PROPERTY', 'items'],
 ]);
 
 /**

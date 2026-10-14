@@ -62,13 +62,28 @@ function hasCallableParam(definitions, def) {
 }
 
 /**
- * Every core definition with a callable parameter retired and re-registered under `NAME/v2`, the
- * documented way to change a function's behaviour, with the same implementation.
+ * The names of the core higher-order functions (the core definitions with a callable parameter),
+ * upper case, sorted: the functions the parser's invocation table holds, which
+ * `runner/src/compat.spec.ts` checks.
+ */
+function higherOrderNames(packages) {
+  const { registry } = packages.coreFunctions.createCoreFormulaRuntime();
+  const names = registry
+    .listFunctions()
+    .filter((def) => hasCallableParam(packages.definitions, def))
+    .map((def) => def.name.toUpperCase());
+  return [...new Set(names)].sort();
+}
+
+/**
+ * Every core higher-order function retired and re-registered under `NAME/v2`, the documented way
+ * to change a function's behaviour, with the same implementation.
  */
 function reversionHigherOrder(packages, registry, implementations) {
+  const names = higherOrderNames(packages);
   const higherOrder = registry
     .listFunctions()
-    .filter((def) => hasCallableParam(packages.definitions, def));
+    .filter((def) => names.includes(def.name.toUpperCase()));
   for (const def of higherOrder) {
     const next = `${def.signatureId.split('/')[0]}/v2`;
     registry.retireFunction(def.signatureId);
@@ -526,6 +541,7 @@ module.exports = {
   shapeNames,
   coreFunctionNames,
   addedFunctionNames,
+  higherOrderNames,
   addHostFunction,
   probesFor,
   formulasFor,

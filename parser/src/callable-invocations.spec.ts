@@ -6,10 +6,13 @@ import {
   registerCoreFormulaDefinitions,
   stripNullability,
 } from '@formulang/definitions';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import baseline from '../../scripts/compat/baseline-1.0.0.json';
 import {
   INVOCATIONS_BY_NAME,
+  RESULTS_BY_NAME,
   invocationOf,
   invokedArguments,
   walkStateKey,
@@ -67,6 +70,26 @@ describe('callable invocations', () => {
     // Not vacuous: EACH, FILTER, FILTER_PROPERTY and REDUCE from 1.0.0, and FILTER_BY since.
     expect(names.filter((name) => NAMES_IN_1_0_0.includes(name)).length).toBe(4);
     expect(names.filter((name) => !NAMES_IN_1_0_0.includes(name)).length).toBeGreaterThan(0);
+  });
+
+  it('names a higher-order function in the parser only in its table module', () => {
+    // Every reader of an invocation reads the table: no other module of the parser names a core
+    // higher-order function, so no name-keyed rule decides an invocation on its own, and every
+    // name-keyed result rule of the table module names an entry.
+    const names = [...new Set(coreHigherOrderFunctions().map((def) => def.name.toUpperCase()))];
+    const modules = readdirSync(__dirname).filter(
+      (file) => file.endsWith('.ts') && !file.endsWith('.spec.ts'),
+    );
+    expect(modules).toContain('index.ts');
+    for (const module of modules) {
+      if (module === 'callable-invocations.ts') continue;
+      const text = readFileSync(join(__dirname, module), 'utf8');
+      const named = names.filter((name) => new RegExp(`['"\`]${name}['"\`]`).test(text));
+      expect(named, module).toStrictEqual([]);
+    }
+    const resultRules = [...RESULTS_BY_NAME.keys()];
+    expect(resultRules.filter((name) => !INVOCATIONS_BY_NAME.has(name))).toStrictEqual([]);
+    expect(resultRules.length).toBeGreaterThan(0);
   });
 
   it('gives the entry to every definition of the name, and to none under another name', () => {

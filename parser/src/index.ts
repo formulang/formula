@@ -27,6 +27,7 @@ import {
 import {
   invocationOf,
   invokedArguments,
+  RESULTS_BY_NAME,
   walkStateKey,
   type CallableInvocation,
 } from './callable-invocations';
@@ -1158,6 +1159,11 @@ function bindTypesAndRequirements(
         }
       }
 
+      // Result types refined by name, as 1.0.0 refines them; the higher-order functions' rules and
+      // what their callables receive come from the invocation table.
+      const resultRule = RESULTS_BY_NAME.get(def.name.toUpperCase());
+      const tableEntry = invocationOf(def);
+
       // Special-case: LIST() should be type-consistent (spec: values must have same type).
       // We infer element type from the first concrete (non-null, non-any) argument.
       if (def.name.toUpperCase() === 'LIST') {
@@ -1194,10 +1200,7 @@ function bindTypesAndRequirements(
         } else {
           node.type = def.returnType;
         }
-      } else if (
-        def.name.toUpperCase() === 'FILTER' ||
-        def.name.toUpperCase() === 'FILTER_PROPERTY'
-      ) {
+      } else if (resultRule === 'items') {
         const targetType = argTypes[0];
         const stripped = stripNullability(targetType);
         if (stripped.kind === 'list') {
@@ -1205,7 +1208,7 @@ function bindTypesAndRequirements(
         } else {
           node.type = def.returnType;
         }
-      } else if (def.name.toUpperCase() === 'EACH') {
+      } else if (resultRule === 'results' && tableEntry !== undefined) {
         const targetType = argTypes[0];
         const opArg = node.args[1];
 
@@ -1223,7 +1226,11 @@ function bindTypesAndRequirements(
           } else {
             const candidates = registry.listFunctionsByName(opName);
             if (candidates.length > 0) {
-              const opArgTypes: FormulaType[] = [stripped.of, ...argTypes.slice(2)];
+              // What the table's entry passes the callable: for EACH, the item and every argument
+              // after the callable.
+              const opArgTypes = invokedArguments(tableEntry, argTypes).map(
+                (invoked) => invoked.type,
+              );
               chosenOp =
                 chooseOverload(
                   candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
