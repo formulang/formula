@@ -6,7 +6,8 @@ import {
   evalOk,
   evalOkWithOutput,
 } from '../test-helpers/eval-formula';
-import { PHRASE_MATCH_MODES, PHRASE_NORMALISATIONS } from './phrase-match';
+import { containsAsWord, PHRASE_MATCH_MODES, PHRASE_NORMALISATIONS } from './phrase-match';
+import type { SearchWork } from './text-search';
 
 async function errorCodes(source: string, vars: Record<string, unknown> = {}) {
   const { parsed, compiled, res } = await evalFormula(source, vars);
@@ -65,6 +66,23 @@ describe('Phrase matching', () => {
       );
       // An occurrence further on can satisfy the boundaries where the first one does not.
       expect(await evalOk('CONTAINS_ANY("homeowner and owner"; LIST("owner"); "word")')).toBe(true);
+    });
+
+    it('matches a word phrase in work linear in the text and the phrase', async () => {
+      // A run of one letter holds the half-length phrase at every position, never as a whole
+      // word: re-checking each occurrence re-read half the text each time (seconds at 80,000).
+      for (const n of [20_000, 80_000]) {
+        const text = 'a'.repeat(n);
+        const phrase = 'a'.repeat(n / 2);
+        const work: SearchWork = { steps: 0 };
+        expect(containsAsWord(text, phrase, work)).toBe(false);
+        expect(work.steps).toBeGreaterThanOrEqual(text.length);
+        expect(work.steps).toBeLessThanOrEqual(2 * (text.length + phrase.length));
+        expect(containsAsWord(`${text} ${phrase}`, phrase)).toBe(true);
+      }
+      expect(
+        await evalOk('CONTAINS_ANY(value; LIST("aa"); "word")', { value: 'a'.repeat(1_000) }),
+      ).toBe(false);
     });
 
     it('treats an empty list as no match and skips empty phrases', async () => {

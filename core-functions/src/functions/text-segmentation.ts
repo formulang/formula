@@ -25,6 +25,7 @@ import {
 } from './argument-readers';
 import { asNumber, isEmptyValue, isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { compileSafeRegex, type RegexCompileFailure } from './regex';
+import { someOccurrence, type SearchWork } from './text-search';
 
 /** How `WORDS`, `WORD_COUNT` and `LEADING_WORDS` find the words of a text. */
 export type WordSplitMode = 'whitespace' | 'letters' | 'locale' | 'pattern';
@@ -189,20 +190,33 @@ function scanWords(
  * The split positions a `keep` token protects: every position inside or at the end of an
  * occurrence that starts at a word boundary. A token that starts with a letter, mark or number
  * starts at one where no such character precedes it; a token that starts with anything else
- * (`...`) always does. `null` when no token occurs.
+ * (`...`) always does. `null` when no token occurs. Each token is found in time linear in the
+ * lengths of the text and the token (`work` counts the characters compared).
  */
-function protectedPositions(text: string, keep: readonly string[]): Uint8Array | null {
-  let depth: Int32Array | null = null;
+export function protectedPositions(
+  text: string,
+  keep: readonly string[],
+  work: SearchWork = { steps: 0 },
+): Uint8Array | null {
+  // depth[p + 1] - depth[p]: how many protected ranges open (+) or close (-) at position p.
+  const ranges: { depth: Int32Array | null } = { depth: null };
   for (const token of keep) {
-    if (token.length === 0) continue;
     const startsWithWordCharacter = isWordCharacterAt(token, 0);
-    for (let at = text.indexOf(token); at >= 0; at = text.indexOf(token, at + 1)) {
-      if (startsWithWordCharacter && isWordCharacterBefore(text, at)) continue;
-      if (depth === null) depth = new Int32Array(text.length + 2);
-      depth[at + 1] += 1;
-      depth[at + token.length + 1] -= 1;
-    }
+    someOccurrence(
+      text,
+      token,
+      (at) => {
+        if (startsWithWordCharacter && isWordCharacterBefore(text, at)) return false;
+        if (ranges.depth === null) ranges.depth = new Int32Array(text.length + 2);
+        ranges.depth[at + 1] += 1;
+        ranges.depth[at + token.length + 1] -= 1;
+        // Every occurrence protects its range, so the search continues to the end.
+        return false;
+      },
+      work,
+    );
   }
+  const depth = ranges.depth;
   if (depth === null) return null;
   const marks = new Uint8Array(text.length + 1);
   let open = 0;

@@ -6,8 +6,10 @@ import {
   evalOk,
   evalOkWithOutput,
 } from '../test-helpers/eval-formula';
+import type { SearchWork } from './text-search';
 import {
   LINE_SPLIT_MODES,
+  protectedPositions,
   SENTENCE_SPLIT_MODES,
   splitSentences,
   splitWords,
@@ -283,6 +285,28 @@ describe('Text segmentation', () => {
       expect(
         await warningCodes('SENTENCES("a. b."; "punctuation"; value)', { value: [1] }),
       ).toStrictEqual({ value: null, codes: ['TYPE'] });
+    });
+
+    it('finds keep tokens in work linear in the text and the tokens', async () => {
+      // A run of one letter holds the half-length token at every position; only the one at the
+      // start begins at a word boundary. Re-checking each occurrence re-read half the text each
+      // time (seconds at 80,000).
+      for (const n of [20_000, 80_000]) {
+        const text = 'a'.repeat(n);
+        const token = 'a'.repeat(n / 2);
+        const work: SearchWork = { steps: 0 };
+        const marks = protectedPositions(text, [token], work);
+        expect(marks?.indexOf(1)).toBe(1);
+        expect(marks?.lastIndexOf(1)).toBe(token.length);
+        expect(work.steps).toBeGreaterThanOrEqual(text.length);
+        expect(work.steps).toBeLessThanOrEqual(2 * (text.length + token.length));
+      }
+      expect(protectedPositions('abc', ['x', ''])).toBe(null);
+      expect(
+        await evalOk('COUNT(SENTENCES(value; "punctuation"; LIST("aa")))', {
+          value: 'a'.repeat(1_000),
+        }),
+      ).toBe(1);
     });
 
     it('bounds the keep list and the sentence list', async () => {

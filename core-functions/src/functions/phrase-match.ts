@@ -13,6 +13,7 @@ import {
   typeWarning,
 } from './argument-readers';
 import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
+import { someOccurrence, type SearchWork } from './text-search';
 
 /** How `FIRST_CONTAINED` and `CONTAINS_ANY` match a phrase. */
 export type PhraseMatchMode = 'substring' | 'word';
@@ -62,14 +63,21 @@ function normalise(value: string, mode: PhraseNormalisation): string {
   }
 }
 
-/** Whether `phrase` occurs in `text` with no letter, mark or number directly on either side. */
-function containsAsWord(text: string, phrase: string): boolean {
-  for (let at = text.indexOf(phrase); at >= 0; at = text.indexOf(phrase, at + 1)) {
-    if (!isWordCharacterBefore(text, at) && !isWordCharacterAt(text, at + phrase.length)) {
-      return true;
-    }
-  }
-  return false;
+/**
+ * Whether `phrase` occurs in `text` with no letter, mark or number directly on either side, in
+ * time linear in their lengths (`work` counts the characters compared).
+ */
+export function containsAsWord(
+  text: string,
+  phrase: string,
+  work: SearchWork = { steps: 0 },
+): boolean {
+  return someOccurrence(
+    text,
+    phrase,
+    (at) => !isWordCharacterBefore(text, at) && !isWordCharacterAt(text, at + phrase.length),
+    work,
+  );
 }
 
 /** The first phrase, in list order, that the text contains; `null` when none does. */

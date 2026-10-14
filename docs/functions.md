@@ -608,7 +608,9 @@ Embedders that count outside a formula import the same tokenisers from
 longer than `maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security
 error, as `FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count
 past that bound. List arguments (`keep`, `phrases`, `items`) longer than
-`maxListLength` (1,000) raise `LIST_TOO_LARGE`.
+`maxListLength` (1,000) raise `LIST_TOO_LARGE`. Each `keep` token, and each
+phrase in `"word"` mode, is found in time linear in the lengths of the text
+and of the token or phrase, however often their occurrences overlap.
 
 ### CONCAT
 
