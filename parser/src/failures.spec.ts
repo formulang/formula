@@ -238,4 +238,127 @@ describe('parseFormula failures', () => {
       ]);
     });
   });
+
+  describe('literal-only arguments: variadic parameters and higher-order calls', () => {
+    function makeTagRegistry() {
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'TAG/v1',
+        name: 'TAG',
+        category: 'core',
+        description: 'Test function with a variadic enumerated mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'modes',
+            type: FormulaTypes.text(false),
+            optional: true,
+            variadic: true,
+            literalOnly: true,
+            literalValues: ['a', 'b'],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      registry.registerFunction({
+        signatureId: 'IS_MODE/v1',
+        name: 'IS_MODE',
+        category: 'core',
+        description: 'Test predicate with an enumerated mode.',
+        params: [
+          { name: 'value', type: FormulaTypes.any(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            literalValues: ['upper', 'lower'],
+          },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+      return registry;
+    }
+
+    const errorsOf = (source: string) =>
+      parseFormula(source, { registry: makeTagRegistry() }).errors;
+    const codesOf = (source: string) => errorsOf(source).map((e) => e.code);
+
+    it('checks every argument a variadic literal-only parameter takes', () => {
+      expect(codesOf('TAG("x")')).toStrictEqual([]);
+      expect(codesOf('TAG("x"; "a"; "b"; "a")')).toStrictEqual([]);
+      const [notAdmitted, ...rest] = errorsOf('TAG("x"; "a"; "zzz")');
+      expect(rest).toStrictEqual([]);
+      expect(notAdmitted?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
+      expect(notAdmitted?.path).toStrictEqual(['call', 'TAG/v1', 'arg', '2']);
+      expect(codesOf('TAG("x"; "a"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+    });
+
+    it("applies the callable's literal rules to every argument a higher-order call forwards", () => {
+      const source = 'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")';
+      const errors = errorsOf(source);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
+      expect(errors[0]?.message).toBe(
+        `Parameter 'mode' of WORD_COUNT must be one of "whitespace", "letters", "locale", "pattern"; got "whitespce"`,
+      );
+      expect(errors[0]?.path).toStrictEqual(['call', 'EACH/v1', 'arg', '2']);
+      expect(source.slice(errors[0]?.span?.start, errors[0]?.span?.end)).toBe('"whitespce"');
+
+      const nonLiteral = 'EACH(LIST("a b"); "WORD_COUNT"; value)';
+      const [notLiteral, ...others] = errorsOf(nonLiteral);
+      expect(others).toStrictEqual([]);
+      expect(notLiteral?.code).toBe(FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE);
+      expect(nonLiteral.slice(notLiteral?.span?.start, notLiteral?.span?.end)).toBe('value');
+
+      for (const misspelt of [
+        'EACH(LIST("a b"); "LEADING_WORDS"; 2; "whitspace")',
+        'EACH(LIST("a b"); "FIRST_CONTAINED"; LIST("a"); "wrd")',
+        'EACH(LIST("a b"); "PLAIN_TEXT"; "htm")',
+        'EACH(LIST("x"); "TAG"; "a"; "zzz")',
+        'FILTER(LIST("x"); "IS_MODE"; "uper")',
+        'FILTER_PROPERTY(value; "p"; "IS_MODE"; "uper")',
+        'FILTER_BY(LIST(1); LIST("x"); "IS_MODE"; "uper")',
+      ]) {
+        expect(codesOf(misspelt), misspelt).toStrictEqual([
+          FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+        ]);
+      }
+      for (const admitted of [
+        'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "letters")',
+        'EACH(LIST("x"); "TAG"; "a"; "b")',
+        'FILTER(LIST("x"); "IS_MODE"; "upper")',
+        'FILTER_BY(LIST(1); LIST("x"); "IS_MODE"; "lower")',
+      ]) {
+        expect(codesOf(admitted), admitted).toStrictEqual([]);
+      }
+    });
+
+    it('refuses a literal-only parameter that a higher-order call fills at run time', () => {
+      const errors = errorsOf('REDUCE("x"; LIST("a"); "TAG")');
+      expect(errors.map((e) => e.code)).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+      expect(errors[0]?.message).toBe(
+        `Parameter 'modes' of TAG must be a string literal; REDUCE passes it a value at run time`,
+      );
+    });
+
+    it('holds property paths and callable references passed through a higher-order call to the same rules', () => {
+      expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; "name")')).toStrictEqual([]);
+      expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+      expect(codesOf('REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; ">"; 0)')).toStrictEqual([]);
+      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; "NOPE")')).toStrictEqual([
+        FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+      ]);
+    });
+  });
 });

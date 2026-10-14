@@ -561,7 +561,8 @@ non-empty, non-text value, and plain `null` when the input is empty.
 
 **Text segmentation.** `WORDS`, `WORD_COUNT` and `LEADING_WORDS` share one
 tokeniser, chosen by an optional `mode` literal (a misspelt mode is a
-compile-time `LITERAL_VALUE_NOT_ALLOWED` error):
+compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when `EACH` passes the
+mode on):
 
 - `"whitespace"` (default) — the text is trimmed and split at every run of
   whitespace. Whitespace is JavaScript's `\s`: tabs, line breaks and the

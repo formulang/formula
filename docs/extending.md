@@ -59,7 +59,7 @@ Each `FunctionParamDefinition` supports:
 | `literalValues` | With `literalOnly`: the only literals the parameter admits. Any other literal is a parse-time `LITERAL_VALUE_NOT_ALLOWED` error whose message names the list.          |
 | `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                   |
 
-A mode switch is the typical use of `literalValues`: the parser refuses a misspelt mode at compile time, and editors read the list from the definition to offer completions. An implementation still validates the value it receives, because a higher-order call such as `EACH(list; "MY_FN"; "mode")` passes its extra arguments without parse-time checks against `MY_FN`'s parameters:
+A mode switch is the typical use of `literalValues`: the parser refuses a misspelt mode at compile time — also when a core higher-order function passes the mode on, as in `EACH(list; "SHOUT"; "uper")` — and editors read the list from the definition to offer completions. An implementation still validates the value it receives, because a custom higher-order function (§2.2) can hand it values the parser does not see:
 
 ```ts
 registry.registerFunction({
@@ -121,6 +121,8 @@ registry.registerFunction({
 ```
 
 At parse time the template `T` is inferred from the argument list's element type, the referenced callable is resolved against the registry and validated (arity, parameter types, return type), and `R` is bound from its return type — so `EACH(value; "LEN")` over a `List<text>` types as `List<number?>?`. There are no closures in the language; callables are referenced by name as string literals, which keeps the reachable code surface fully enumerable.
+
+The parser knows how each core higher-order function invokes its callable — one table, `parser/src/callable-invocations.ts`, reconciled by a spec with every core definition that has a callable parameter — so it also holds each argument of that invocation to the referenced function's literal-only rules: a forwarded argument must be a literal the parameter admits, and a parameter filled at run time (an item, a key, an accumulator) must not be literal-only. For a custom function with a callable parameter, the parser checks that the reference names a registered function or operator; the arguments the custom function then passes are checked at run time by the implementation that receives them.
 
 ### 2.3 Purity and its caching consequences
 

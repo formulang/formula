@@ -231,6 +231,9 @@ describe('Markup text', () => {
       expect(await errorCodes('MARKDOWN_BLOCKS("x"; "heading-7")')).toStrictEqual([
         FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
       ]);
+      expect(await errorCodes('EACH(LIST("a"); "PLAIN_TEXT"; "htm")')).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
       // The kind is required: omitting it is a compile error.
       expect(await errorCodes('MARKDOWN_BLOCKS("x")')).toStrictEqual([
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,

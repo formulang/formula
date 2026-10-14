@@ -1,10 +1,14 @@
 import type {
+  CallableReferenceKind,
+  FormulaError,
   FormulaLimits,
   FormulaRegistry,
   FormulaRequirements,
   FormulaType,
   FunctionDefinition,
+  FunctionParamDefinition,
   RuleNode,
+  SourceSpan,
   TypedRule,
   VariableOnlyRegistry,
 } from '@formulang/definitions';
@@ -20,6 +24,7 @@ import {
   resolveFormulaLimits,
   stripNullability,
 } from '@formulang/definitions';
+import { CALLABLE_INVOCATIONS } from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
 import { assignStableNodeIds } from './node-id';
 import { TokenStream } from './pratt';
@@ -976,99 +981,49 @@ function bindTypesAndRequirements(
 
       const baseReturnType = instantiateGenericReturnType(def, argTypes);
 
-      // Literal-only reference validation (e.g., FILTER(list, "STARTS_WITH", ...))
-      for (let i = 0; i < def.params.length; i++) {
-        const p = def.params[i];
+      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)): every argument a
+      // literal-only parameter takes, each argument of a variadic one included.
+      for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
+        const p = paramAt(def.params, i);
         if (!p || p.literalOnly !== true) continue;
         const arg = node.args[i];
-        if (!arg) {
-          // Optional literal-only parameters may be omitted.
-          if (p.optional === true) continue;
-        }
-        if (!arg || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
-          errors.push(
-            makeFormulaError({
-              kind: 'type',
-              code: FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-              message: `Parameter '${p.name}' must be a string literal`,
-              span: arg?.span ?? node.span,
-            }),
-          );
+        // Optional literal-only parameters may be omitted.
+        if (!arg && p.optional === true) continue;
+        const literal = readLiteralArgument(p, arg, {
+          subject: `Parameter '${p.name}'`,
+          span: arg?.span ?? node.span,
+          path: ['call', def.signatureId, 'arg', String(i)],
+        });
+        if (!literal.ok) {
+          errors.push(literal.error);
           continue;
         }
-
-        // Enumerated literals: the parameter names the only values it admits.
-        if (p.literalValues !== undefined && !p.literalValues.includes(arg.predictableValue)) {
-          const admitted = p.literalValues.map((v) => JSON.stringify(v)).join(', ');
-          errors.push(
-            makeFormulaError({
-              kind: 'type',
-              code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-              message: `Parameter '${p.name}' must be one of ${admitted}; got ${JSON.stringify(arg.predictableValue)}`,
-              span: arg.span,
-              path: ['call', def.signatureId, 'arg', String(i)],
-            }),
-          );
-          continue;
-        }
+        const ref = literal.value;
 
         const paramBase = stripNullability(p.type);
         if (paramBase.kind === 'callable') {
-          const ref = arg.predictableValue;
-          const ok =
-            paramBase.reference === 'function'
-              ? registry.listFunctionsByName(ref).length > 0
-              : paramBase.reference === 'operator'
-                ? !!registry.getOperator(ref)
-                : registry.listFunctionsByName(ref).length > 0 || !!registry.getOperator(ref);
-
-          if (!ok) {
+          if (!referenceExists(registry, paramBase.reference, ref)) {
             errors.push(
               makeFormulaError({
                 kind: 'type',
                 code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
                 message: `Unknown function/operator reference: ${ref}`,
-                span: arg.span,
+                span: literal.span,
               }),
             );
             continue;
           }
 
-          // Strict callable signature validation (when the callable type declares param/return types).
-          // This is only implemented for core higher-order functions that invoke the referenced
-          // callable in a known way.
-          const defName = def.name.toUpperCase();
+          // Strict callable validation for the core higher-order functions, whose invocations
+          // CALLABLE_INVOCATIONS declares: arity, overload, return type, and the referenced
+          // function's literal-only rules for every argument the invocation passes it.
           const outerBindings = inferGenericBindingsForCall(def, argTypes);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
+          const invocation = CALLABLE_INVOCATIONS.get(def.signatureId);
+          const invoked = invocation === undefined ? null : invocation(argTypes);
 
-          let invokedArgTypes: FormulaType[] | null = null;
-          // TODO: This should be generalized if we add more higher-order functions. Functions must declare how they invoke their callable parameters.
-          if (defName === 'EACH') {
-            const targetType = stripNullability(argTypes[0] ?? FormulaTypes.any(true));
-            const elementType = targetType.kind === 'list' ? targetType.of : FormulaTypes.any(true);
-            invokedArgTypes = [elementType, ...argTypes.slice(2)];
-          } else if (defName === 'FILTER') {
-            const targetType = stripNullability(argTypes[0] ?? FormulaTypes.any(true));
-            const elementType = targetType.kind === 'list' ? targetType.of : FormulaTypes.any(true);
-            invokedArgTypes = [elementType];
-            if (node.args[2]) invokedArgTypes.push(argTypes[2] ?? FormulaTypes.any(true));
-          } else if (defName === 'FILTER_PROPERTY') {
-            invokedArgTypes = [FormulaTypes.any(true)];
-            if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
-          } else if (defName === 'FILTER_BY') {
-            // FILTER_BY calls the operator with (key[, operatorValue]) for each key of `keys`.
-            const keysType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
-            const keyType = keysType.kind === 'list' ? keysType.of : FormulaTypes.any(true);
-            invokedArgTypes = [keyType];
-            if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
-          } else if (defName === 'REDUCE') {
-            const accType = argTypes[0] ?? FormulaTypes.any(true);
-            const listType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
-            const elementType = listType.kind === 'list' ? listType.of : FormulaTypes.any(true);
-            invokedArgTypes = [accType, elementType];
-          }
-
-          if (invokedArgTypes) {
+          if (invoked) {
+            const invokedArgTypes = invoked.map((invokedArg) => invokedArg.type);
             if (
               expectedCallable.kind === 'callable' &&
               expectedCallable.minArity !== undefined &&
@@ -1079,7 +1034,7 @@ function bindTypesAndRequirements(
                   kind: 'type',
                   code: FormulaErrorCodes.NO_MATCHING_OVERLOAD,
                   message: `Callable '${ref}' must accept at least ${expectedCallable.minArity} arguments`,
-                  span: arg.span,
+                  span: literal.span,
                 }),
               );
             }
@@ -1093,7 +1048,7 @@ function bindTypesAndRequirements(
                   kind: 'type',
                   code: FormulaErrorCodes.NO_MATCHING_OVERLOAD,
                   message: `Callable '${ref}' must accept no more than ${expectedCallable.maxArity} arguments`,
-                  span: arg.span,
+                  span: literal.span,
                 }),
               );
             }
@@ -1128,78 +1083,106 @@ function bindTypesAndRequirements(
                   kind: 'type',
                   code: FormulaErrorCodes.NO_MATCHING_OVERLOAD,
                   message: `No matching overload for callable reference: ${ref}`,
-                  span: arg.span,
+                  span: literal.span,
                 }),
               );
-            } else if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
-              const expectedReturn = expectedCallable.returnType;
-              const chosenReturn = chosen.returnType ?? FormulaTypes.any(true);
-
-              if (expectedReturn.kind === 'template') {
-                // Bind unbound template return (e.g., EACH<T,R> binds R from the referenced callable).
-                const existing = outerBindings.get(expectedReturn.name);
-                if (!existing) {
-                  outerBindings.set(expectedReturn.name, stripNullability(chosenReturn));
+            } else {
+              invoked.forEach((invokedArg, position) => {
+                const target = paramAt(chosen.params, position);
+                if (!target || target.literalOnly !== true) return;
+                const forwardedArg =
+                  invokedArg.forwards === undefined ? undefined : node.args[invokedArg.forwards];
+                const forwarded = readLiteralArgument(target, forwardedArg, {
+                  subject: `Parameter '${target.name}' of ${chosen.name}`,
+                  span: forwardedArg?.span ?? literal.span,
+                  path: ['call', def.signatureId, 'arg', String(invokedArg.forwards ?? i)],
+                  suppliedBy: forwardedArg === undefined ? def.name : undefined,
+                });
+                if (!forwarded.ok) {
+                  errors.push(forwarded.error);
+                  return;
                 }
-              } else {
-                const okReturn = isAssignable(
-                  stripNullability(chosenReturn),
-                  stripNullability(expectedReturn),
-                );
-                if (!okReturn) {
+                const targetBase = stripNullability(target.type);
+                const reference =
+                  targetBase.kind === 'callable' ? targetBase.reference : target.reference;
+                if (
+                  reference !== undefined &&
+                  !referenceExists(registry, reference, forwarded.value)
+                ) {
                   errors.push(
                     makeFormulaError({
                       kind: 'type',
-                      code: FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
-                      message: `Callable '${ref}' must return ${formatType(expectedReturn)} but returns ${formatType(chosenReturn)}`,
-                      span: arg.span,
+                      code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+                      message: `Unknown function/operator reference: ${forwarded.value}`,
+                      span: forwarded.span,
                     }),
                   );
+                }
+              });
+
+              if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
+                const expectedReturn = expectedCallable.returnType;
+                const chosenReturn = chosen.returnType ?? FormulaTypes.any(true);
+
+                if (expectedReturn.kind === 'template') {
+                  // Bind unbound template return (e.g., EACH<T,R> binds R from the referenced callable).
+                  const existing = outerBindings.get(expectedReturn.name);
+                  if (!existing) {
+                    outerBindings.set(expectedReturn.name, stripNullability(chosenReturn));
+                  }
+                } else {
+                  const okReturn = isAssignable(
+                    stripNullability(chosenReturn),
+                    stripNullability(expectedReturn),
+                  );
+                  if (!okReturn) {
+                    errors.push(
+                      makeFormulaError({
+                        kind: 'type',
+                        code: FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
+                        message: `Callable '${ref}' must return ${formatType(expectedReturn)} but returns ${formatType(chosenReturn)}`,
+                        span: literal.span,
+                      }),
+                    );
+                  }
                 }
               }
             }
           }
         }
 
-        if (p.reference === 'function') {
-          const ref = arg.predictableValue;
-          if (registry.listFunctionsByName(ref).length === 0) {
-            errors.push(
-              makeFormulaError({
-                kind: 'type',
-                code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-                message: `Unknown function reference: ${ref}`,
-                span: arg.span,
-              }),
-            );
-          }
+        if (p.reference === 'function' && !referenceExists(registry, p.reference, ref)) {
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+              message: `Unknown function reference: ${ref}`,
+              span: literal.span,
+            }),
+          );
         }
-        if (p.reference === 'operator') {
-          const ref = arg.predictableValue;
-          if (!registry.getOperator(ref)) {
-            errors.push(
-              makeFormulaError({
-                kind: 'type',
-                code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-                message: `Unknown operator reference: ${ref}`,
-                span: arg.span,
-              }),
-            );
-          }
+        if (p.reference === 'operator' && !referenceExists(registry, p.reference, ref)) {
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+              message: `Unknown operator reference: ${ref}`,
+              span: literal.span,
+            }),
+          );
         }
-        if (p.reference === 'function_or_operator') {
-          const ref = arg.predictableValue;
-          const ok = registry.listFunctionsByName(ref).length > 0 || !!registry.getOperator(ref);
-          if (!ok) {
-            errors.push(
-              makeFormulaError({
-                kind: 'type',
-                code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-                message: `Unknown function/operator reference: ${ref}`,
-                span: arg.span,
-              }),
-            );
-          }
+        if (
+          p.reference === 'function_or_operator' &&
+          !referenceExists(registry, p.reference, ref)
+        ) {
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+              message: `Unknown function/operator reference: ${ref}`,
+              span: literal.span,
+            }),
+          );
         }
       }
 
@@ -1358,6 +1341,73 @@ function bindTypesAndRequirements(
       return node.type;
     }
   }
+}
+
+/** The parameter that takes argument `index`; a variadic last parameter takes every extra one. */
+function paramAt(
+  params: readonly FunctionParamDefinition[],
+  index: number,
+): FunctionParamDefinition | undefined {
+  if (index < params.length) return params[index];
+  const last = params[params.length - 1];
+  return last?.variadic === true ? last : undefined;
+}
+
+type LiteralArgument =
+  { ok: true; value: string; span: SourceSpan | undefined } | { ok: false; error: FormulaError };
+
+/**
+ * Reads the argument a literal-only parameter takes: a string literal written in the formula and,
+ * when the parameter lists `literalValues`, one of them. `suppliedBy` names the higher-order
+ * function that passes the parameter a value at run time instead, which no literal can be.
+ */
+function readLiteralArgument(
+  param: FunctionParamDefinition,
+  arg: RuleNode | undefined,
+  at: { subject: string; span: SourceSpan | undefined; path: string[]; suppliedBy?: string },
+): LiteralArgument {
+  if (!arg || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
+    const supplied =
+      at.suppliedBy === undefined ? '' : `; ${at.suppliedBy} passes it a value at run time`;
+    return {
+      ok: false,
+      error: makeFormulaError({
+        kind: 'type',
+        code: FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+        message: `${at.subject} must be a string literal${supplied}`,
+        span: at.span,
+      }),
+    };
+  }
+  const value = arg.predictableValue;
+  // Enumerated literals: the parameter names the only values it admits.
+  if (param.literalValues !== undefined && !param.literalValues.includes(value)) {
+    const admitted = param.literalValues.map((v) => JSON.stringify(v)).join(', ');
+    return {
+      ok: false,
+      error: makeFormulaError({
+        kind: 'type',
+        code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+        message: `${at.subject} must be one of ${admitted}; got ${JSON.stringify(value)}`,
+        span: arg.span,
+        path: at.path,
+      }),
+    };
+  }
+  return { ok: true, value, span: arg.span };
+}
+
+/** Whether `name` is a registered function or operator of the kind a reference admits. */
+function referenceExists(
+  registry: FormulaRegistry,
+  kind: CallableReferenceKind,
+  name: string,
+): boolean {
+  const isFunction = (): boolean => registry.listFunctionsByName(name).length > 0;
+  const isOperator = (): boolean => !!registry.getOperator(name);
+  if (kind === 'function') return isFunction();
+  if (kind === 'operator') return isOperator();
+  return isFunction() || isOperator();
 }
 
 function instantiateGenericReturnType(

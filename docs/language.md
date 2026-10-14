@@ -527,6 +527,17 @@ parsing:
 - Its return type must fit: `FILTER(LIST("a";"bb"); "LEN")` fails with
   `ARGUMENT_TYPE_MISMATCH` because a filter check must return a boolean,
   and `LEN` returns a number.
+- Its literal-only parameters keep their rules. An argument the host function
+  passes on (the extra arguments of `EACH`, the `x` of the filters) must be a
+  literal the parameter admits, and a literal-only parameter the host function
+  fills at run time with an item, a key or an accumulator can never hold a
+  literal:
+
+  ```
+  EACH(LIST("a b"); "WORD_COUNT"; "whitespce")      -- LITERAL_VALUE_NOT_ALLOWED
+  EACH(LIST("a b"); "WORD_COUNT"; value)            -- EXPECTED_STRING_LITERAL_REFERENCE
+  REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")   -- EXPECTED_STRING_LITERAL_REFERENCE
+  ```
 
 How each host function invokes the reference:
 
@@ -561,6 +572,10 @@ WORD_COUNT(value; "letters")     -- counts words by letter runs
 WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whitespace",
                                  --   "letters", "locale", "pattern"; got "whitespce"
 ```
+
+The rule holds when a higher-order function passes the literal on:
+`EACH(value; "WORD_COUNT"; "whitespce")` fails the same way, naming
+`WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
 
 The admitted values are part of the function definition
 (`FunctionParamDefinition.literalValues`), so an editor holding the

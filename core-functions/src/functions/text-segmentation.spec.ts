@@ -163,9 +163,17 @@ describe('Text segmentation', () => {
       expect(await evalOk('WORD_COUNT("a b"; "whitespace"; "")')).toBe(2);
     });
 
-    it('validates the mode at run time where the parser cannot see it', async () => {
-      // EACH passes extra arguments without checking them against the callable's literals.
-      expect(await evalOk('EACH(LIST("a b"); "WORD_COUNT"; "lettters")')).toStrictEqual([null]);
+    it('refuses a misspelt or non-literal mode passed on by a higher-order call', async () => {
+      // EACH passes its extra arguments to the callable's parameters, whose literal rules hold.
+      expect(
+        await errorCodes('EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")'),
+      ).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
+      expect(await errorCodes('EACH(LIST("a b"); "LEADING_WORDS"; 2; "whitspace")')).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
+      expect(
+        await errorCodes('EACH(LIST("a b"); "WORD_COUNT"; value)', { value: 'letters' }),
+      ).toStrictEqual([FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE]);
       expect(await evalOk('EACH(LIST("a b"; "c"); "WORD_COUNT"; "letters")')).toStrictEqual([2, 1]);
     });
   });
