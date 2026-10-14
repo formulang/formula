@@ -17,7 +17,14 @@ import {
 } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { listTooLarge, typeWarning } from './argument-readers';
-import { asNumber, asText, assumedListLength, isEmptyValue, readNestedProperty } from './helpers';
+import {
+  asNumber,
+  asText,
+  assumedListLength,
+  equalsUnknownType,
+  isEmptyValue,
+  readNestedProperty,
+} from './helpers';
 
 function constProvider(value: unknown): FormulaValueProvider {
   const out = makeOkUnknown('const', value);
@@ -274,9 +281,9 @@ function listCost(list: unknown): number {
 const TEMPORAL_KINDS: ReadonlySet<unknown> = new Set(['date', 'time', 'datetime']);
 
 /**
- * The equality of `DISTINCT`, `GROUP_COUNTS` and `INDEX_OF`: the key of a text, number or boolean,
- * equal exactly for equal values (no conversion between them), and of a date, time or datetime
- * value, equal when its kind and `iso` text are; `null` for a list or another object, which these
+ * The equality of `DISTINCT` and `GROUP_COUNTS`: the key of a text, number or boolean, equal
+ * exactly for equal values (no conversion between them), and of a date, time or datetime value,
+ * equal when its kind and `iso` text are; `null` for a list or another object, which these
  * functions do not compare.
  */
 function scalarKey(value: unknown): string | null {
@@ -296,14 +303,14 @@ function scalarKey(value: unknown): string | null {
 
 /**
  * The distinct non-empty members of a list, in first-occurrence order, and how often each occurs;
- * `null` when a member is a list or an object.
+ * `null` when a member is a list, the empty one included, or another object.
  */
 function groupMembers(list: readonly unknown[]): { members: unknown[]; counts: number[] } | null {
   const positions = new Map<string, number>();
   const members: unknown[] = [];
   const counts: number[] = [];
   for (const item of list) {
-    if (isEmptyValue(item)) continue;
+    if (!Array.isArray(item) && isEmptyValue(item)) continue;
     const key = scalarKey(item);
     if (key === null) return null;
     const position = positions.get(key);
@@ -358,18 +365,15 @@ export class IndexOfImplementation extends AbstractEagerBatchImplementation {
     const list = readList(args[0], ctx);
     if (list === null) return notAList('INDEX_OF', args[0]);
     const value = args[1];
-    if (isEmptyValue(value)) return makeOkNull('INDEX_OF');
-    // The equality of DISTINCT and GROUP_COUNTS, so a member DISTINCT keeps is found again.
-    const wanted = scalarKey(value);
-    if (wanted === null) return notScalars('INDEX_OF');
-    let found = -1;
-    for (let index = 0; index < list.length; index += 1) {
-      if (isEmptyValue(list[index])) continue;
-      const key = scalarKey(list[index]);
-      if (key === null) return notScalars('INDEX_OF');
-      if (found < 0 && key === wanted) found = index;
+    // A list, the empty one included, is neither a value to look for nor a member to find: the
+    // equality below would compare it with a number by its length.
+    if (Array.isArray(value) || list.some((item) => Array.isArray(item))) {
+      return typeWarning('INDEX_OF', 'INDEX_OF does not compare lists');
     }
-    return found < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', found + 1);
+    if (isEmptyValue(value)) return makeOkNull('INDEX_OF');
+    // The coerced equality of INCLUDES and `=`.
+    const index = list.findIndex((item) => equalsUnknownType(item, value) === true);
+    return index < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', index + 1);
   }
 }
 

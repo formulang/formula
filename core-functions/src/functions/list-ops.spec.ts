@@ -10,9 +10,22 @@ import {
   evalOkWithOutput,
 } from '../test-helpers/eval-formula';
 
-async function warningCodes(source: string, vars: Record<string, unknown> = {}) {
-  const { output, value } = await evalOkWithOutput(source, vars);
+async function warningCodes(
+  source: string,
+  vars: Record<string, unknown> = {},
+  setup?: (registry: MutableFormulaRegistry) => void,
+) {
+  const { output, value } = await evalOkWithOutput(source, vars, setup ? { setup } : undefined);
   return { value, codes: (output.warnings ?? []).map((w) => w.code) };
+}
+
+/** Registers `other`, a second input variable. */
+function withOther(registry: MutableFormulaRegistry): void {
+  registry.registerVariable({
+    name: 'other',
+    description: 'A second test input value.',
+    type: FormulaTypes.any(true),
+  });
 }
 
 async function runtimeErrorCodes(source: string, vars: Record<string, unknown> = {}) {
@@ -163,14 +176,30 @@ describe('List ops', () => {
       expect(await evalOk('INDEX_OF(LIST("a"; "A"); "A")')).toBe(2);
     });
 
-    it('compares as DISTINCT does: by value, with no conversion, dates by kind and ISO text', async () => {
+    it('compares as INCLUDES and = do: text converts to numbers and to booleans', async () => {
       expect(await evalOk('INDEX_OF(value; 2)', { value: [1, 2, 3] })).toBe(2);
-      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] })).toBe(null);
-      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, '2'] })).toBe(3);
-      expect(await evalOk('INDEX_OF(value; TRUE)', { value: ['true', true] })).toBe(2);
-      expect(
-        await evalOk('INDEX_OF(LIST(DATE(2024; 1; 3); DATE(2024; 1; 2)); DATE(2024; 1; 2))'),
-      ).toBe(2);
+      expect(await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] })).toBe(2);
+      expect(await evalOk('INDEX_OF(value; "2")', { value: ['x', '2.0', 2] })).toBe(2);
+      expect(await evalOk('INDEX_OF(value; TRUE)', { value: ['x', 'TRUE', true] })).toBe(2);
+      expect(await evalOk('INDEX_OF(value; "true")', { value: [1, 'True'] })).toBe(2);
+      expect(await evalOk('INDEX_OF(value; 1)', { value: [true, '1'] })).toBe(2);
+      // INDEX_OF finds an item exactly where INCLUDES finds one, for every pair.
+      const items = [1, '1', ' 1 ', 2, '2.0', true, 'TRUE', 'true', false, 'x', 'X', '', null];
+      let found = 0;
+      for (const item of items) {
+        for (const value of items) {
+          const vars = { value: ['zzz', item], other: value };
+          const includes = await evalOk('INCLUDES(value; other)', vars, { setup: withOther });
+          const index = await evalOk('INDEX_OF(value; other)', vars, { setup: withOther });
+          const expected = includes === true ? 2 : null;
+          expect(index, `${JSON.stringify(item)} ${JSON.stringify(value)}`).toBe(expected);
+          if (index !== null) found++;
+        }
+      }
+      expect(found).toBeGreaterThan(items.length);
+    });
+
+    it('compares dates as INCLUDES does: only as the same value object', async () => {
       // Two date values with the same day, held as separate objects, as input data is.
       const day = () => ({
         __formula_object_kind: 'date',
@@ -179,36 +208,43 @@ describe('List ops', () => {
         month: 1,
         day: 2,
       });
-      const setup = (registry: MutableFormulaRegistry) =>
-        registry.registerVariable({
-          name: 'other',
-          description: 'A second test input value.',
-          type: FormulaTypes.any(true),
-        });
-      const dates = { value: day(), other: day() };
-      expect(await evalOk('INDEX_OF(LIST(value); other)', dates, { setup })).toBe(1);
-      // The member DISTINCT keeps is found again.
-      expect(await evalOk('INDEX_OF(DISTINCT(LIST(value; other)); other)', dates, { setup })).toBe(
-        1,
+      const first = day();
+      const dates = { value: [first, day()], other: first };
+      // DISTINCT keeps the first of the two; INDEX_OF finds it as the same value object only.
+      expect(await evalOk('COUNT(DISTINCT(value))', dates, { setup: withOther })).toBe(1);
+      expect(await evalOk('INDEX_OF(DISTINCT(value); other)', dates, { setup: withOther })).toBe(1);
+      const equal = { value: [first, day()], other: day() };
+      expect(await evalOk('INDEX_OF(DISTINCT(value); other)', equal, { setup: withOther })).toBe(
+        null,
+      );
+      expect(await evalOk('INCLUDES(DISTINCT(value); other)', equal, { setup: withOther })).toBe(
+        false,
       );
       // =, INCLUDES and COUNT_UNIQUE keep their 1.0.0 answers: such dates are two values.
-      expect(await evalOk('value = other', dates, { setup })).toBe(false);
-      expect(await evalOk('INCLUDES(LIST(value); other)', dates, { setup })).toBe(false);
-      expect(await evalOk('COUNT_UNIQUE(value; other)', dates, { setup })).toBe(2);
-      expect(await evalOk('INCLUDES(value; "2")', { value: [1, 2] })).toBe(true);
+      const two = { value: day(), other: day() };
+      expect(await evalOk('value = other', two, { setup: withOther })).toBe(false);
+      expect(await evalOk('INCLUDES(LIST(value); other)', two, { setup: withOther })).toBe(false);
+      expect(await evalOk('INDEX_OF(LIST(value); other)', two, { setup: withOther })).toBe(null);
+      expect(await evalOk('COUNT_UNIQUE(value; other)', two, { setup: withOther })).toBe(2);
     });
 
-    it('answers null with TYPE for a list holding a list or an object, or such a value', async () => {
-      for (const [source, value] of [
-        ['INDEX_OF(value; "a")', ['a', { a: 1 }]],
-        ['INDEX_OF(value; "a")', [['a'], 'a']],
-        ['INDEX_OF(LIST(value); value)', { a: 1 }],
+    it('answers null with TYPE for a list holding a list, or a list value, the empty one included', async () => {
+      for (const [source, value, other] of [
+        ['INDEX_OF(value; "a")', [['a'], 'a'], null],
+        ['INDEX_OF(value; "a")', ['a', []], null],
+        ['INDEX_OF(value; "a")', [[], 1, 1], null],
+        ['INDEX_OF(value; other)', ['a'], []],
+        ['INDEX_OF(value; other)', [2, 3], [1, 2]],
       ] as const) {
-        expect(await warningCodes(source, { value }), source).toStrictEqual({
-          value: null,
-          codes: ['TYPE'],
-        });
+        expect(
+          await warningCodes(source, { value, other }, withOther),
+          `${source} ${JSON.stringify(value)} ${JSON.stringify(other)}`,
+        ).toStrictEqual({ value: null, codes: ['TYPE'] });
       }
+      // Another object compares as INCLUDES compares it, as the same value object.
+      expect(
+        await warningCodes('INDEX_OF(value; "a")', { value: ['x', { a: 1 }, 'a'] }),
+      ).toStrictEqual({ value: 3, codes: [] });
     });
 
     it('answers null for an empty value and follows the null convention', async () => {
@@ -288,8 +324,21 @@ describe('List ops', () => {
           ).toStrictEqual({ value: null, codes: ['TYPE'] });
         }
       }
-      // An empty member is skipped as before, an empty list included.
-      expect(await evalOk('GROUP_COUNTS(value)', { value: ['a', [], 'a'] })).toStrictEqual([2]);
+      // An empty member is skipped; an empty list is a list, which the functions do not compare.
+      expect(await evalOk('GROUP_COUNTS(value)', { value: ['a', '', null, 'a'] })).toStrictEqual([
+        2,
+      ]);
+      for (const value of [
+        ['a', [], 'a'],
+        [[], 1, 1],
+      ]) {
+        for (const fn of ['DISTINCT', 'GROUP_COUNTS']) {
+          expect(
+            await warningCodes(`${fn}(value)`, { value }),
+            `${fn} ${JSON.stringify(value)}`,
+          ).toStrictEqual({ value: null, codes: ['TYPE'] });
+        }
+      }
     });
 
     it('answers null with TYPE for a list of typed objects', async () => {
