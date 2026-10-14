@@ -21,7 +21,11 @@ Release and compatibility helper scripts live here.
   to produce the same outcomes for every formula that names no function added
   since (it writes none in its source, in any letter case, and neither 1.0.0
   nor the current source asked the registry for one), and, which names it asks
-  for aside, for every formula once the added definitions are retired. Regenerate when the corpus or the
+  for aside, for every formula once the added definitions are retired, except
+  the formulas that write `FILTER_BY` under the shape in which the host
+  registered its own `FILTER_BY`: the parser checks every function of that name
+  by the built-in's invocation, and the spec requires exactly the three such
+  formulas, each of which now fails to compile. Regenerate when the corpus or the
   added names change: run `pnpm run build` here and in a 1.0.0 checkout (after
   `pnpm install` there), then run these two from this repository:
   - `node scripts/compat/extract-corpus.js <checkout> <commit>`

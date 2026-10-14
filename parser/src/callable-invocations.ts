@@ -72,9 +72,10 @@ export function invokedArguments(
  * functions under a new name is a plain function. The table is closed: a definition cannot add to
  * it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
  * with the implementations of those functions (what each passes its callable when it runs), with
- * every module of the parser (no other names a higher-order function) and with the
- * enumerated-literal matrix, and check that every entry passes the callable fewer arguments than its
- * call holds whenever it passes one on, which ends the parser's walk through nested callables.
+ * every module of the parser (no other names a higher-order function), with the enumerated-literal
+ * matrix and with the compatibility harness, and check that every entry passes the callable fewer
+ * arguments than its call holds whenever it passes one on, which ends the parser's walk through
+ * nested callables.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
