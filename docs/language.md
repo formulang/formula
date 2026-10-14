@@ -24,6 +24,7 @@ separator `.`.
 - [Operators](#operators)
 - [Function calls](#function-calls)
 - [Callable references](#callable-references)
+- [Enumerated literals](#enumerated-literals)
 - [Types](#types)
 - [Null and empty values](#null-and-empty-values)
 - [When a formula is invalid](#when-a-formula-is-invalid)
@@ -545,6 +546,24 @@ FILTER_PROPERTY(value; "a.b"; "="; 2)
 SORT_BY_PROPERTY(value; "a.b")
 ```
 
+## Enumerated literals
+
+A literal-only parameter — one that takes a string literal written directly
+in the call, like the callable references above — can also list the exact
+values it admits: a mode switch, for example. Any other literal fails at
+parse time with `LITERAL_VALUE_NOT_ALLOWED`, and the message names every
+admitted value, so a misspelt mode never compiles. Matching is exact and
+case-sensitive. For a parameter `mode` that admits `"upper"` and `"lower"`,
+the literal `"uper"` is reported as:
+
+```
+Parameter 'mode' must be one of "upper", "lower"; got "uper"
+```
+
+The admitted values are part of the function definition
+(`FunctionParamDefinition.literalValues`), so an editor holding the
+definitions can offer them as completions.
+
 ## Types
 
 Formulang is statically typed. While parsing, every node is assigned a type,
@@ -672,6 +691,7 @@ Errors you are most likely to see, with a minimal trigger for each:
 | `ARGUMENT_TYPES_MUST_HAVE_SAME_TYPE` | `LIST(1; "a")`, `IF(TRUE; "x"; 0)`                             |
 | `NULL_NOT_ALLOWED`                   | passing `EMPTY()` to a non-nullable parameter                  |
 | `EXPECTED_STRING_LITERAL_REFERENCE`  | `FILTER(LIST(1;2); value; 1)`                                  |
+| `LITERAL_VALUE_NOT_ALLOWED`          | a literal outside a parameter's admitted values                |
 | `UNKNOWN_FUNCTION_REFERENCE`         | `FILTER(LIST(1;2); "NOPE"; 1)`                                 |
 | `PROPERTY_TARGET_NOT_OBJECT`         | `value.id` where `value` is a number                           |
 | `WILDCARD_TARGET_NOT_LIST`           | `value.*.id` where `value` is a number                         |

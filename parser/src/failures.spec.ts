@@ -178,4 +178,64 @@ describe('parseFormula failures', () => {
     const rule = parseFormula('EACH(LIST("a"); "LEN"; 1)', { registry });
     expect(rule.errors.some((e) => e.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD)).toBe(true);
   });
+
+  describe('enumerated literal values (literalValues)', () => {
+    function makeModeRegistry() {
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'SHOUT/v1',
+        name: 'SHOUT',
+        category: 'core',
+        description: 'Test function with an optional enumerated mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            optional: true,
+            literalOnly: true,
+            literalValues: ['upper', 'lower'],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      return registry;
+    }
+
+    it('compiles a listed literal and an omitted optional mode', () => {
+      const registry = makeModeRegistry();
+      expect(parseFormula('SHOUT("a"; "lower")', { registry }).errors).toStrictEqual([]);
+      expect(parseFormula('SHOUT("a")', { registry }).errors).toStrictEqual([]);
+    });
+
+    it('EXPECTED_STRING_LITERAL_REFERENCE (non-literal mode)', () => {
+      const rule = parseFormula('SHOUT("a"; value)', { registry: makeModeRegistry() });
+      expect(
+        rule.errors.some((e) => e.code === FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE),
+      ).toBe(true);
+      expect(rule.errors.some((e) => e.code === FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED)).toBe(
+        false,
+      );
+    });
+
+    it('LITERAL_VALUE_NOT_ALLOWED names the admitted values', () => {
+      const source = 'SHOUT("a"; "uper")';
+      const rule = parseFormula(source, { registry: makeModeRegistry() });
+      expect(rule.errors).toHaveLength(1);
+      const error = rule.errors[0];
+      expect(error?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
+      expect(error?.kind).toBe('type');
+      expect(error?.message).toBe(`Parameter 'mode' must be one of "upper", "lower"; got "uper"`);
+      expect(error?.path).toStrictEqual(['call', 'SHOUT/v1', 'arg', '1']);
+      expect(source.slice(error?.span?.start, error?.span?.end)).toBe('"uper"');
+    });
+
+    it('matches admitted values exactly (case-sensitive)', () => {
+      const rule = parseFormula('SHOUT("a"; "Upper")', { registry: makeModeRegistry() });
+      expect(rule.errors.map((e) => e.code)).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
+    });
+  });
 });

@@ -997,6 +997,21 @@ function bindTypesAndRequirements(
           continue;
         }
 
+        // Enumerated literals: the parameter names the only values it admits.
+        if (p.literalValues !== undefined && !p.literalValues.includes(arg.predictableValue)) {
+          const admitted = p.literalValues.map((v) => JSON.stringify(v)).join(', ');
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+              message: `Parameter '${p.name}' must be one of ${admitted}; got ${JSON.stringify(arg.predictableValue)}`,
+              span: arg.span,
+              path: ['call', def.signatureId, 'arg', String(i)],
+            }),
+          );
+          continue;
+        }
+
         const paramBase = stripNullability(p.type);
         if (paramBase.kind === 'callable') {
           const ref = arg.predictableValue;

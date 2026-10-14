@@ -147,4 +147,62 @@ describe('InMemoryFormulaRegistry', () => {
       }),
     ).toThrow(/ambiguous overload/i);
   });
+
+  it('registers a literal-only parameter with admitted values', () => {
+    const registry = createRegistry();
+    registry.registerFunction({
+      signatureId: 'MODE/v1',
+      name: 'MODE',
+      category: 'core',
+      description: 'Test function with an enumerated literal-only mode.',
+      params: [
+        {
+          name: 'mode',
+          type: FormulaTypes.text(false),
+          literalOnly: true,
+          literalValues: ['first', 'second'],
+        },
+      ],
+      returnType: FormulaTypes.text(false),
+      purity: 'pure',
+    });
+
+    expect(registry.getFunction('MODE/v1')?.params[0]?.literalValues).toStrictEqual([
+      'first',
+      'second',
+    ]);
+  });
+
+  it('rejects admitted literal values on a parameter that is not literal-only', () => {
+    const registry = createRegistry();
+    expect(() =>
+      registry.registerFunction({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'Admitted values without literalOnly (expected to throw).',
+        params: [{ name: 'mode', type: FormulaTypes.text(false), literalValues: ['first'] }],
+        returnType: FormulaTypes.text(false),
+        purity: 'pure',
+      }),
+    ).toThrow(/declares literalValues but is not literalOnly/);
+    expect(registry.getFunction('MODE/v1')).toBeUndefined();
+  });
+
+  it('rejects an empty admitted-value list', () => {
+    const registry = createRegistry();
+    expect(() =>
+      registry.registerFunction({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'An empty admitted-value list (expected to throw).',
+        params: [
+          { name: 'mode', type: FormulaTypes.text(false), literalOnly: true, literalValues: [] },
+        ],
+        returnType: FormulaTypes.text(false),
+        purity: 'pure',
+      }),
+    ).toThrow(/empty literalValues list/);
+  });
 });

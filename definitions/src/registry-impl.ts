@@ -36,6 +36,22 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
       throw new Error(`Function already registered: ${def.signatureId}`);
     }
 
+    // An admitted-value list only takes effect on a literal-only parameter, and an empty
+    // list would refuse every call; both are definition mistakes, so they fail here.
+    for (const param of def.params) {
+      if (param.literalValues === undefined) continue;
+      if (param.literalOnly !== true) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues but is not literalOnly`,
+        );
+      }
+      if (param.literalValues.length === 0) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares an empty literalValues list`,
+        );
+      }
+    }
+
     // Legacy definitions are retired from authoring: they never enter the name index or
     // the cast map, and they are skipped by the ambiguity checks (ambiguity is a
     // resolution concern and legacy definitions are not resolvable by name/cast).

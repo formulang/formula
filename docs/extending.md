@@ -44,19 +44,44 @@ registry.registerOperator({
 
 An operator is nothing more than a token bound to a function signature id — register one and the parser picks it up automatically. The core precedence ladder: comparisons (`=`, `<>`, `>`, `>=`, `<`, `<=`) at 10, additive (`+`, `-`, `&`) at 20, multiplicative (`*`, `/`) at 30, `^` at 40 (right-associative).
 
-Registration is strict and fails fast, at startup rather than mid-evaluation: invalid signature ids, duplicate ids/tokens/variable names, ambiguous overload sets, and duplicate or counter-directional `casts` all throw.
+Registration is strict and fails fast, at startup rather than mid-evaluation: invalid signature ids, duplicate ids/tokens/variable names, ambiguous overload sets, duplicate or counter-directional `casts`, and a `literalValues` list that is empty or sits on a parameter without `literalOnly` all throw.
 
 ### 2.1 Parameters
 
 Each `FunctionParamDefinition` supports:
 
-| Field         | Effect                                                                                                                                                                 |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`        | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null. |
-| `optional`    | May be omitted at the call site.                                                                                                                                       |
-| `variadic`    | The last parameter may repeat (`AND(values...)`).                                                                                                                      |
-| `literalOnly` | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                      |
-| `reference`   | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                   |
+| Field           | Effect                                                                                                                                                                 |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`          | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null. |
+| `optional`      | May be omitted at the call site.                                                                                                                                       |
+| `variadic`      | The last parameter may repeat (`AND(values...)`).                                                                                                                      |
+| `literalOnly`   | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                      |
+| `literalValues` | With `literalOnly`: the only literals the parameter admits. Any other literal is a parse-time `LITERAL_VALUE_NOT_ALLOWED` error whose message names the list.          |
+| `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                   |
+
+A mode switch is the typical use of `literalValues`: the parser refuses a misspelt mode at compile time, and editors read the list from the definition to offer completions. An implementation still validates the value it receives, because a higher-order call such as `EACH(list; "MY_FN"; "mode")` passes its extra arguments without parse-time checks against `MY_FN`'s parameters:
+
+```ts
+registry.registerFunction({
+  signatureId: 'SHOUT/v1',
+  name: 'SHOUT',
+  description: 'Changes the case of a text.',
+  params: [
+    { name: 'text', type: FormulaTypes.text(true) },
+    {
+      name: 'mode',
+      type: FormulaTypes.text(false),
+      optional: true,
+      literalOnly: true,
+      literalValues: ['upper', 'lower'],
+    },
+  ],
+  returnType: FormulaTypes.text(true),
+  purity: 'pure',
+});
+// SHOUT(name; "uper") -> LITERAL_VALUE_NOT_ALLOWED:
+//   Parameter 'mode' must be one of "upper", "lower"; got "uper"
+```
 
 Overloads are supported: register multiple definitions under the same `name` with different signature ids (see `COUNT/v1` vs `COUNT_VALUES/v1`, or the two `STARTS_WITH` variants). The registry rejects overload pairs that could resolve non-deterministically. `aliases` lets one definition answer to several names.
 

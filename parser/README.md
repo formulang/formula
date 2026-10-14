@@ -206,7 +206,7 @@ Each `FormulaError` has a `kind`, a stable `code`, a human-readable `message`, a
 | Kind       | Examples                                                                                                                                       |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `parse`    | `UNEXPECTED_TOKEN`, `EXPECTED_RPAREN`, `INVALID_VARIABLE_NAME` (variables/properties must be `lower_snake_case`, functions `UPPER_SNAKE_CASE`) |
-| `type`     | `UNKNOWN_VARIABLE`, `UNKNOWN_FUNCTION`, `NO_MATCHING_OVERLOAD`, `ARGUMENT_TYPE_MISMATCH`, `NULL_NOT_ALLOWED`                                   |
+| `type`     | `UNKNOWN_VARIABLE`, `UNKNOWN_FUNCTION`, `NO_MATCHING_OVERLOAD`, `ARGUMENT_TYPE_MISMATCH`, `NULL_NOT_ALLOWED`, `LITERAL_VALUE_NOT_ALLOWED`      |
 | `security` | `DENYLISTED_PROPERTY`, `PROPERTY_NOT_ALLOWLISTED`, `SOURCE_TOO_LONG`, `TOO_MANY_TOKENS`, `PARENS_TOO_DEEP`, `TOO_MANY_AST_NODES`               |
 | `config`   | `INVALID_SYNTAX_CONFIG`                                                                                                                        |
 
