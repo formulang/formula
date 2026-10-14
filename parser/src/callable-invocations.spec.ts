@@ -1,4 +1,4 @@
-import type { FormulaType } from '@formulang/definitions';
+import type { FormulaType, FunctionDefinition } from '@formulang/definitions';
 import {
   FormulaTypes,
   createRegistry,
@@ -7,11 +7,7 @@ import {
 } from '@formulang/definitions';
 import { describe, expect, it } from 'vitest';
 import baseline from '../../scripts/compat/baseline-1.0.0.json';
-import {
-  INVOCATIONS_BY_NAME,
-  INVOCATIONS_BY_SIGNATURE_ID,
-  invocationOf,
-} from './callable-invocations';
+import { INVOCATIONS_BY_NAME, invocationOf, invokedArguments } from './callable-invocations';
 
 /** The function names 1.0.0 had, from the compatibility baseline generated from 1.0.0. */
 const NAMES_IN_1_0_0: readonly string[] = baseline.functionNames;
@@ -29,43 +25,50 @@ function inOneZeroZero(def: { name: string }): boolean {
 }
 
 describe('callable invocations', () => {
-  it('declares the invocation of every core function with a callable parameter, and only those', () => {
+  it('knows the invocation of every core function with a callable parameter, from one source', () => {
     const higherOrder = coreHigherOrderFunctions();
     const byName = [
       ...new Set(higherOrder.filter(inOneZeroZero).map((def) => def.name.toUpperCase())),
     ].sort();
-    const bySignatureId = higherOrder
-      .filter((def) => !inOneZeroZero(def))
-      .map((def) => def.signatureId)
-      .sort();
     // Not vacuous: EACH, FILTER, FILTER_PROPERTY and REDUCE from 1.0.0, and FILTER_BY since.
     expect(byName.length).toBeGreaterThanOrEqual(4);
-    expect(bySignatureId.length).toBeGreaterThanOrEqual(1);
     expect([...INVOCATIONS_BY_NAME.keys()].sort()).toStrictEqual(byName);
-    expect([...INVOCATIONS_BY_SIGNATURE_ID.keys()].sort()).toStrictEqual(bySignatureId);
+    const declaring = higherOrder.filter((def) => def.callableInvocation !== undefined);
+    expect(declaring.length).toBeGreaterThanOrEqual(1);
+    // The functions 1.0.0 had are keyed by name and declare nothing; every one added since
+    // declares its invocation.
+    expect(declaring.filter(inOneZeroZero)).toStrictEqual([]);
+    expect(declaring.map((def) => def.signatureId).sort()).toStrictEqual(
+      higherOrder
+        .filter((def) => !inOneZeroZero(def))
+        .map((def) => def.signatureId)
+        .sort(),
+    );
   });
 
-  it('keys the functions 1.0.0 had by name and the ones added since by signature id', () => {
+  it('keeps the invocation for a copy under another signature id, never for a host function', () => {
     let byName = 0;
-    let bySignatureId = 0;
+    let declared = 0;
     for (const def of coreHigherOrderFunctions()) {
       expect(invocationOf(def), def.signatureId).toBeDefined();
-      const reversioned = { ...def, signatureId: `${def.name}/v9` };
-      const hosts = { ...def, signatureId: `HOST_${def.name}/v1` };
+      // The documented way to change a function: the same definition under the next version.
+      const reversioned: FunctionDefinition = { ...def, signatureId: `${def.name}/v9` };
+      expect(invocationOf(reversioned), def.signatureId).toBe(invocationOf(def));
+      // A function a host registered under the name, which declares no invocation.
+      const { callableInvocation, ...hosts } = { ...def, signatureId: `HOST_${def.name}/v1` };
+      void callableInvocation;
       if (inOneZeroZero(def)) {
-        // A definition re-registered under a new id keeps the validation 1.0.0 gave the name.
-        expect(invocationOf(reversioned), def.signatureId).toBe(invocationOf(def));
+        // 1.0.0 gave the name its invocation, whatever the definition.
+        expect(invocationOf(hosts), def.signatureId).toBe(invocationOf(def));
         byName++;
       } else {
-        // A function a host registered under the name on 1.0.0 keeps its own validation.
         expect(invocationOf(hosts), def.signatureId).toBeUndefined();
-        expect(invocationOf(reversioned), def.signatureId).toBeUndefined();
-        bySignatureId++;
+        declared++;
       }
     }
     expect(byName).toBeGreaterThan(0);
-    expect(bySignatureId).toBeGreaterThan(0);
-    expect(invocationOf({ name: 'LEN', signatureId: 'LEN/v1' })).toBeUndefined();
+    expect(declared).toBeGreaterThan(0);
+    expect(invocationOf({ name: 'LEN' })).toBeUndefined();
   });
 
   it('reaches every callable parameter through the literal-only check', () => {
@@ -85,7 +88,10 @@ describe('callable invocations', () => {
     const core = coreHigherOrderFunctions();
     const invoke = (name: string, argTypes: FormulaType[]) => {
       const def = core.find((candidate) => candidate.name === name);
-      return def && invocationOf(def)?.(argTypes).map((arg) => arg.forwards ?? null);
+      const invocation = def && invocationOf(def);
+      return (
+        invocation && invokedArguments(invocation, argTypes).map((arg) => arg.forwards ?? null)
+      );
     };
 
     expect(invoke('EACH', [texts, text, number, text])).toStrictEqual([null, 2, 3]);
@@ -103,9 +109,10 @@ describe('callable invocations', () => {
       const callableAt = def.params.findIndex(
         (param) => stripNullability(param.type).kind === 'callable',
       );
+      const invocation = invocationOf(def) ?? [];
       for (let count = def.params.length - 1; count <= def.params.length + 3; count++) {
         const argTypes = Array.from({ length: count }, () => FormulaTypes.any(true));
-        const forwards = (invocationOf(def)?.(argTypes) ?? [])
+        const forwards = invokedArguments(invocation, argTypes)
           .map((arg) => arg.forwards)
           .filter((index): index is number => index !== undefined);
         let previous = callableAt;

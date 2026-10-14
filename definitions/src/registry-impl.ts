@@ -52,6 +52,8 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
       }
     }
 
+    if (def.callableInvocation !== undefined) checkCallableInvocation(def);
+
     // Legacy definitions are retired from authoring: they never enter the name index or
     // the cast map, and they are skipped by the ambiguity checks (ambiguity is a
     // resolution concern and legacy definitions are not resolvable by name/cast).
@@ -193,6 +195,54 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
 
   listVariables(): VariableDefinition[] {
     return [...this.variablesByName.values()];
+  }
+}
+
+/**
+ * Refuses a `callableInvocation` the parser could not apply: the definition must have one callable
+ * parameter, `literalOnly` (the parser checks a callable only when its name is a literal), and every
+ * index must name another parameter. An argument passed on unchanged must come after the callable,
+ * so a callable it names in turn is written further right.
+ */
+function checkCallableInvocation(def: FunctionDefinition): void {
+  const refuse = (reason: string): never => {
+    throw new Error(`callableInvocation of ${def.signatureId} ${reason}`);
+  };
+  const callables = def.params
+    .map((param, index) => ({ param, index }))
+    .filter(({ param }) => stripNullability(param.type).kind === 'callable');
+  if (callables.length !== 1) refuse('needs exactly one callable parameter');
+  const [callable] = callables;
+  if (callable === undefined || callable.param.literalOnly !== true) {
+    return refuse('needs its callable parameter to be literalOnly');
+  }
+  const parameterAt = (index: number | undefined, field: string) => {
+    const param = index === undefined ? undefined : def.params[index];
+    if (param === undefined || !Number.isInteger(index) || index === callable.index) {
+      return refuse(`names no parameter other than the callable at ${field}`);
+    }
+    return param;
+  };
+  for (const source of def.callableInvocation ?? []) {
+    switch (source.kind) {
+      case 'item':
+        if (stripNullability(parameterAt(source.of, 'of').type).kind !== 'list') {
+          refuse(`takes items from parameter ${source.of}, which is not a list`);
+        }
+        break;
+      case 'argument':
+      case 'arguments': {
+        const index = source.kind === 'argument' ? source.at : source.from;
+        parameterAt(index, source.kind === 'argument' ? 'at' : 'from');
+        if (index <= callable.index) refuse(`passes on argument ${index}, before the callable`);
+        break;
+      }
+      case 'value':
+        if (source.typeOf !== undefined) parameterAt(source.typeOf, 'typeOf');
+        break;
+      default:
+        refuse(`declares an unknown argument kind`);
+    }
   }
 }
 

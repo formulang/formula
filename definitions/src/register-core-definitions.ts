@@ -1106,6 +1106,11 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
       },
       { name: 'operatorValue', type: FormulaTypes.any(true), optional: true },
     ],
+    // operator(key[; operatorValue]), the key taken from `keys` at the item's position.
+    callableInvocation: [
+      { kind: 'item', of: 1 },
+      { kind: 'argument', at: 3 },
+    ],
     returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
     purity: 'pure',
   });

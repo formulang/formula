@@ -17,66 +17,157 @@ import {
 } from '@formulang/definitions';
 import { parseFormula } from '@formulang/parser';
 import { describe, expect, it } from 'vitest';
-import baseline from '../../scripts/compat/baseline-1.0.0.json';
+import {
+  INVOCATIONS_BY_NAME,
+  invocationOf,
+  invokedArguments,
+} from '../../parser/src/callable-invocations';
 import { evaluateRuleOutputAsync } from './index';
 
 /**
- * The enumerated-literal rule through `parseFormula` and evaluation, on a generated matrix: where
- * the literal sits × the overload set of the name it reaches × the item that chooses among the
- * overloads × every value an overload lists, and one none lists. The core higher-order functions
- * run the first definition of a name that has an implementation, which the parser cannot see, so
- * every formula that compiles also runs under registries that implement only some overloads, in
- * both registration orders, and every overload that runs must receive a value from its own list.
+ * The enumerated-literal rule through `parseFormula` and evaluation, on a generated matrix: the
+ * higher-order function that passes the literal on (every one whose invocation the parser knows,
+ * from its tables) × the position the literal reaches (every position the invocation passes on) ×
+ * where the call sits × the overload set of the name it reaches × the item that chooses among the
+ * overloads × every value an overload lists, and one none lists. The higher-order functions run
+ * the first definition of a name that has an implementation, which the parser cannot see, so every
+ * formula that compiles also runs under registries that implement only some overloads, in both
+ * registration orders, and every overload that runs must receive a value from its own list.
  */
 
 const text = FormulaTypes.text(true);
 const number = FormulaTypes.number(true);
+const anything = FormulaTypes.any(true);
 
-/** The higher-order function that passes the literal to the overload set. */
-type Vehicle = 'EACH' | 'FILTER' | 'FILTER_BY';
-const VEHICLES: readonly Vehicle[] = ['EACH', 'FILTER', 'FILTER_BY'];
+const coreHigherOrder = createCoreFormulaRuntime()
+  .registry.listFunctions()
+  .filter((def) => def.params.some((p) => stripNullability(p.type).kind === 'callable'));
 
-type Placement =
-  | { kind: 'direct' }
-  | { kind: 'forwarded'; vehicle: Vehicle }
-  | { kind: 'nested'; vehicle: Vehicle; depth: number };
+/** The higher-order functions whose invocation the parser knows: its name table, its declarations. */
+const VEHICLES: readonly string[] = [
+  ...INVOCATIONS_BY_NAME.keys(),
+  ...coreHigherOrder
+    .filter((def) => def.callableInvocation !== undefined)
+    .map((def) => def.name.toUpperCase()),
+].sort();
 
-function placementsFor(vehicles: readonly Vehicle[]): Placement[] {
-  return [
-    { kind: 'direct' },
-    ...vehicles.map((vehicle): Placement => ({ kind: 'forwarded', vehicle })),
-    ...[1, 2, 3, 4].flatMap((depth) =>
-      vehicles.map((vehicle): Placement => ({ kind: 'nested', vehicle, depth })),
-    ),
-  ];
+/** An item of an overload set: how the formula writes it, its value, the overload its type selects. */
+type Item = { item: string; value: unknown; selects: string | null };
+
+/**
+ * How a call of each vehicle writes the arguments its invocation does not describe, so the item
+ * reaches the callable at position 0: FILTER_BY's list beside the keys, and FILTER_PROPERTY's
+ * target, whose property `p` holds the item (`rows`), and the property's name. A vehicle without an
+ * entry here, or an entry for no vehicle, fails the first test.
+ */
+const UNDESCRIBED: Record<string, Record<number, string>> = {
+  EACH: {},
+  FILTER: {},
+  FILTER_PROPERTY: { 0: 'rows', 1: '"p"' },
+  FILTER_BY: { 0: 'LIST(0)' },
+  REDUCE: {},
+};
+
+/** Where the literal sits in the vehicle's invocation, and what the call passes there. */
+type Reach = {
+  vehicle: string;
+  /** The invoked position the mode parameter is at. */
+  position: number;
+  /** The call argument passed on to that position; undefined: the vehicle supplies a value. */
+  forwardedFrom: number | undefined;
+  /** Whether the item reaching position 0 is typed by the item written in the formula. */
+  typedItem: boolean;
+  /** The call's arguments, the item, the name and the literal as placeholders. */
+  args: string[];
+};
+
+const ITEM = '\u0000item';
+const NAME = '\u0000name';
+const LITERAL = '\u0000literal';
+
+/** The positions each vehicle's invocation passes something to after position 0, at most three. */
+function reachesOf(vehicle: string): Reach[] {
+  const def = coreHigherOrder.find((candidate) => candidate.name.toUpperCase() === vehicle);
+  const invocation = def && invocationOf(def);
+  if (def === undefined || invocation === undefined) throw new Error(`no invocation: ${vehicle}`);
+  const callableAt = def.params.findIndex((p) => stripNullability(p.type).kind === 'callable');
+  const variadic = def.params[def.params.length - 1]?.variadic === true;
+  // Three arguments past the last parameter reach every position a variadic invocation forwards.
+  const count = def.params.length + (variadic ? 2 : 0);
+  const invoked = invokedArguments(
+    invocation,
+    Array.from({ length: count }, () => anything),
+  );
+  const reaches: Reach[] = [];
+  for (let position = 1; position < Math.min(invoked.length, 4); position++) {
+    const forwardedFrom = invoked[position]?.forwards;
+    const args: string[] = [];
+    // Pass on arguments up to the one at `position`, and no further.
+    const last = forwardedFrom ?? Math.max(callableAt, ...invocation.map(argumentIndexOf));
+    for (let index = 0; index <= last; index++) {
+      const undescribed = UNDESCRIBED[vehicle]?.[index];
+      const source = invocation.find((s) => argumentIndexOf(s) === index);
+      if (index === callableAt) args.push(NAME);
+      else if (undescribed !== undefined) args.push(undescribed);
+      else if (index === forwardedFrom) args.push(LITERAL);
+      else if (source?.kind === 'item' && invokedFrom(invocation, index) === 0)
+        args.push(`LIST(${ITEM})`);
+      else if (source?.kind === 'item') args.push(`LIST(${LITERAL})`);
+      else if (source?.kind === 'value') args.push(ITEM);
+      else args.push('0');
+    }
+    reaches.push({
+      vehicle,
+      position,
+      forwardedFrom,
+      typedItem: invocation[0]?.kind !== 'value' || invocation[0].typeOf !== undefined,
+      args,
+    });
+  }
+  return reaches;
 }
 
-/** One overload of a set: what it takes first, and the values it lists for the second argument. */
+function argumentIndexOf(source: { kind: string } & Record<string, unknown>): number {
+  const index = source.of ?? source.at ?? source.from ?? source.typeOf;
+  return typeof index === 'number' ? index : -1;
+}
+
+/** The invoked position a source fills: the first for an item of list `index`. */
+function invokedFrom(invocation: readonly { kind: string }[], index: number): number {
+  return invocation.findIndex(
+    (source) => argumentIndexOf(source as { kind: string } & Record<string, unknown>) === index,
+  );
+}
+
+type Placement =
+  { kind: 'direct'; position: number } | { kind: 'passed'; reach: Reach; depth: number };
+
+/** One overload of a set: what it takes first, and the values it lists for the mode. */
 type Overload = {
   signatureId: string;
   subject: FormulaType;
   values?: string[];
-  /** A third required parameter, which no invocation here passes. */
+  /** A further required parameter, which no invocation here passes. */
   extra?: FormulaType;
   /** A core definition: registered by the core runtime, not by the spec. */
   core?: true;
 };
 
-/** An overload set and the items whose types select each overload (null: none). */
 type OverloadSet = {
   name: string;
   overloads: Overload[];
-  items: Array<{ item: string; selects: string | null }>;
-  /** The vehicles that take the set's result: FILTER and FILTER_BY need a boolean. */
-  vehicles: readonly Vehicle[];
+  items: Item[];
+  /** The positions its mode can sit at; a set holding a core definition keeps the core's. */
+  positions?: readonly number[];
+  /** The vehicles that take its result. */
+  vehicles?: readonly string[];
 };
 
 const SETS: OverloadSet[] = [
   {
     name: 'ONE',
     overloads: [{ signatureId: 'ONE/v1', subject: text, values: ['a', 'b'] }],
-    items: [{ item: '"x"', selects: 'ONE/v1' }],
-    vehicles: VEHICLES,
+    items: [{ item: '"x"', value: 'x', selects: 'ONE/v1' }],
   },
   {
     name: 'TWO',
@@ -85,11 +176,10 @@ const SETS: OverloadSet[] = [
       { signatureId: 'TWO_NUMBER/v1', subject: number, values: ['a', 'c'] },
     ],
     items: [
-      { item: '"x"', selects: 'TWO/v1' },
-      { item: '1', selects: 'TWO_NUMBER/v1' },
-      { item: 'TRUE', selects: null },
+      { item: '"x"', value: 'x', selects: 'TWO/v1' },
+      { item: '1', value: 1, selects: 'TWO_NUMBER/v1' },
+      { item: 'TRUE', value: true, selects: null },
     ],
-    vehicles: VEHICLES,
   },
   {
     name: 'THREE',
@@ -97,9 +187,8 @@ const SETS: OverloadSet[] = [
       { signatureId: 'THREE/v1', subject: text, values: ['a', 'b'], extra: text },
       { signatureId: 'THREE_NUMBER/v1', subject: number, values: ['a', 'b'], extra: number },
     ],
-    // Two arguments, where both overloads take three.
-    items: [{ item: '"x"', selects: null }],
-    vehicles: VEHICLES,
+    // One argument short of what both overloads take.
+    items: [{ item: '"x"', value: 'x', selects: null }],
   },
   {
     name: 'SOME',
@@ -109,12 +198,11 @@ const SETS: OverloadSet[] = [
       { signatureId: 'SOME_NUMBER/v1', subject: number, values: ['c'] },
     ],
     items: [
-      { item: '"x"', selects: 'SOME/v1' },
-      { item: 'LIST("x")', selects: 'SOME_LIST/v1' },
-      { item: '1', selects: 'SOME_NUMBER/v1' },
-      { item: 'TRUE', selects: null },
+      { item: '"x"', value: 'x', selects: 'SOME/v1' },
+      { item: 'LIST("x")', value: ['x'], selects: 'SOME_LIST/v1' },
+      { item: '1', value: 1, selects: 'SOME_NUMBER/v1' },
+      { item: 'TRUE', value: true, selects: null },
     ],
-    vehicles: VEHICLES,
   },
   {
     // A host overload next to a core function with a mode.
@@ -133,9 +221,11 @@ const SETS: OverloadSet[] = [
       },
     ],
     items: [
-      { item: '"a b"', selects: BuiltinSignatureIds.WORD_COUNT },
-      { item: 'LIST("a b"; "c")', selects: 'WORD_COUNT_LIST/v1' },
+      { item: '"a b"', value: 'a b', selects: BuiltinSignatureIds.WORD_COUNT },
+      { item: 'LIST("a b"; "c")', value: ['a b', 'c'], selects: 'WORD_COUNT_LIST/v1' },
     ],
+    positions: [1],
+    // It answers a number, which neither a filter nor REDUCE's text accumulator takes.
     vehicles: ['EACH'],
   },
 ];
@@ -152,23 +242,34 @@ function literalsOf(set: OverloadSet): string[] {
 function expectedCodes(
   set: OverloadSet,
   placement: Placement,
-  selects: string | null,
+  { selects }: Item,
   literal: string,
 ): string[] {
-  // The call written in the formula, and the callable a higher-order function names directly,
-  // must take the types they are given (1.0.0); a nested callable's types are not checked.
-  if (selects === null && placement.kind !== 'nested') {
-    return [FormulaErrorCodes.NO_MATCHING_OVERLOAD];
-  }
-  const refused = [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED];
+  const listing = set.overloads.filter((overload) => overload.values !== undefined);
   if (placement.kind === 'direct') {
     // Written directly, the call binds the overload its types select.
+    if (selects === null) return [FormulaErrorCodes.NO_MATCHING_OVERLOAD];
     const bound = set.overloads.find((overload) => overload.signatureId === selects);
-    return bound?.values !== undefined && !bound.values.includes(literal) ? refused : [];
+    return bound?.values !== undefined && !bound.values.includes(literal)
+      ? [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]
+      : [];
   }
+  const { reach, depth } = placement;
+  // The callable the call written in the formula names must take the types it is given (1.0.0);
+  // an item the vehicle reads at run time (a property value) is of any type, which any overload
+  // with the arity takes. A nested callable's types are not checked.
+  const takes = reach.typedItem
+    ? selects !== null
+    : set.overloads.some((overload) => overload.extra === undefined);
+  if (depth === 0 && !takes) return [FormulaErrorCodes.NO_MATCHING_OVERLOAD];
+  if (listing.length === 0) return [];
+  // A value the vehicle supplies when it runs can be no listed literal.
+  if (reach.forwardedFrom === undefined)
+    return [FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE];
   // Passed on, any overload may run: every overload that lists values must list the literal.
-  const listing = set.overloads.filter((overload) => overload.values !== undefined);
-  return listing.every((overload) => overload.values?.includes(literal)) ? [] : refused;
+  return listing.every((overload) => overload.values?.includes(literal))
+    ? []
+    : [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED];
 }
 
 function nestIn(levels: number, inner: string): string {
@@ -177,41 +278,49 @@ function nestIn(levels: number, inner: string): string {
   return out;
 }
 
-function formulaFor(set: OverloadSet, placement: Placement, item: string, literal: string): string {
+function formulaFor(set: OverloadSet, placement: Placement, item: string, literal: string) {
   const lit = JSON.stringify(literal);
-  const name = set.name;
-  if (placement.kind === 'direct') return `${name}(${item}; ${lit})`;
-  const depth = placement.kind === 'nested' ? placement.depth : 0;
-  // `depth` levels of EACH below the written call, the innermost of them the vehicle itself or
-  // naming it.
-  const outer = '"EACH"; '.repeat(Math.max(depth - 1, 0));
-  switch (placement.vehicle) {
-    case 'EACH':
-      return depth === 0
-        ? `EACH(${nestIn(1, item)}; "${name}"; ${lit})`
-        : `EACH(${nestIn(depth + 1, item)}; ${outer}"EACH"; "${name}"; ${lit})`;
-    case 'FILTER':
-      return depth === 0
-        ? `FILTER(${nestIn(1, item)}; "${name}"; ${lit})`
-        : `EACH(${nestIn(depth + 1, item)}; ${outer}"FILTER"; "${name}"; ${lit})`;
-    case 'FILTER_BY':
-      return depth === 0
-        ? `FILTER_BY(LIST(0); ${nestIn(1, item)}; "${name}"; ${lit})`
-        : `EACH(${nestIn(depth + 1, '0')}; ${outer}"FILTER_BY"; ${nestIn(1, item)}; "${name}"; ${lit})`;
+  if (placement.kind === 'direct') {
+    const fillers = Array.from({ length: placement.position - 1 }, () => '0');
+    return `${set.name}(${[item, ...fillers, lit].join('; ')})`;
   }
+  const { reach, depth } = placement;
+  const args = reach.args.map((arg) =>
+    arg.replace(ITEM, item).replace(NAME, JSON.stringify(set.name)).replace(LITERAL, lit),
+  );
+  if (depth === 0) return `${reach.vehicle}(${args.join('; ')})`;
+  // `depth` levels of EACH below the written call, the innermost naming the vehicle, which EACH
+  // calls with the item first and every argument after it.
+  const [first = '', ...rest] = args;
+  const outer = '"EACH"; '.repeat(depth - 1);
+  return `EACH(${nestIn(depth, first)}; ${outer}"${reach.vehicle}"; ${rest.join('; ')})`;
 }
 
-function modeParam(values?: string[]): FunctionParamDefinition {
-  return values === undefined
-    ? { name: 'key', type: text }
-    : { name: 'mode', type: FormulaTypes.text(false), literalOnly: true, literalValues: values };
+function paramsOf(overload: Overload, position: number): FunctionParamDefinition[] {
+  const params: FunctionParamDefinition[] = [{ name: 'subject', type: overload.subject }];
+  for (let index = 1; index < position; index++) {
+    params.push({ name: `filler${index}`, type: anything });
+  }
+  params.push(
+    overload.values === undefined
+      ? { name: 'key', type: text }
+      : {
+          name: 'mode',
+          type: FormulaTypes.text(false),
+          literalOnly: true,
+          literalValues: overload.values,
+        },
+  );
+  if (overload.extra) params.push({ name: 'extra', type: overload.extra });
+  return params;
 }
 
 type Invocation = { signatureId: string; mode: unknown };
 
-/** An implementation that records the mode it receives, then answers through `answer`. */
+/** An implementation that records the mode it receives at `position`, then answers. */
 function recording(
   signatureId: string,
+  position: number,
   invocations: Invocation[],
   answer?: FunctionImplementation,
 ): FunctionImplementation {
@@ -219,7 +328,7 @@ function recording(
     estimateCostsInSeconds: () => 0.0001,
     evaluateMultiple: async (calls, ctx) => {
       for (const call of calls) {
-        invocations.push({ signatureId, mode: await call.args[1]?.value() });
+        invocations.push({ signatureId, mode: await call.args[position]?.value() });
       }
       if (answer) return answer.evaluateMultiple(calls, ctx);
       return calls.map((): FormulaNodeOutput => makeOkBoolean(signatureId, true));
@@ -230,25 +339,25 @@ function recording(
 type RegistryShape = 'core' | 'reversioned';
 
 /**
- * A runtime with `set` registered in `order` and only the overloads in `implemented` resolvable
- * (all when undefined), every overload recording what it receives.
+ * A runtime with `set` registered in `order`, its mode at `position`, only the overloads in
+ * `implemented` resolvable (all when undefined), every overload recording what it receives.
  */
 function runtimeFor(
   registryShape: RegistryShape,
   set: OverloadSet,
   order: 'listed' | 'reversed',
   invocations: Invocation[],
+  position = 1,
   implemented?: ReadonlySet<string>,
 ) {
   const { registry, implementations } = createCoreFormulaRuntime();
+  registry.registerVariable({ name: 'rows', description: 'Rows of `p`.', type: anything });
   if (registryShape === 'reversioned') {
-    // The documented way to change a function: retire its id and register the next version. Only
-    // the higher-order functions 1.0.0 had are keyed by name.
+    // The documented way to change a function: retire its id and register the next version.
     const higherOrder = registry
       .listFunctions()
-      .filter((def) => def.params.some((p) => stripNullability(p.type).kind === 'callable'))
-      .filter((def) => baseline.functionNames.includes(def.name.toUpperCase()));
-    expect(higherOrder.length).toBeGreaterThanOrEqual(4);
+      .filter((def) => def.params.some((p) => stripNullability(p.type).kind === 'callable'));
+    expect(higherOrder.length).toBe(VEHICLES.length);
     for (const def of higherOrder) {
       const next = `${def.name}/v2`;
       const implementation = implementations.get(def.signatureId);
@@ -259,28 +368,27 @@ function runtimeFor(
   }
   const hosts = set.overloads.filter((overload) => overload.core !== true);
   for (const overload of order === 'listed' ? hosts : [...hosts].reverse()) {
-    const params: FunctionParamDefinition[] = [
-      { name: 'subject', type: overload.subject },
-      modeParam(overload.values),
-    ];
-    if (overload.extra) params.push({ name: 'extra', type: overload.extra });
     const def: FunctionDefinition = {
       signatureId: overload.signatureId,
       name: set.name,
       category: 'custom',
       description: 'Host overload of the enumerated-literal matrix.',
-      params,
-      returnType: FormulaTypes.boolean(true),
+      params: paramsOf(overload, position),
+      // Any result, so every vehicle takes it: a filter's check, REDUCE's accumulator.
+      returnType: anything,
       purity: 'pure',
     };
     registry.registerFunction(def);
-    implementations.register(overload.signatureId, recording(overload.signatureId, invocations));
+    implementations.register(
+      overload.signatureId,
+      recording(overload.signatureId, position, invocations),
+    );
   }
   for (const overload of set.overloads.filter((o) => o.core === true)) {
     const original = implementations.get(overload.signatureId);
     implementations.register(
       overload.signatureId,
-      recording(overload.signatureId, invocations, original),
+      recording(overload.signatureId, position, invocations, original),
     );
   }
   const resolver: FunctionImplementationResolver = {
@@ -298,29 +406,66 @@ function implementedSets(set: OverloadSet): Array<ReadonlySet<string> | undefine
   return [undefined, ...set.overloads.map((overload) => new Set([overload.signatureId]))];
 }
 
-const cells = SETS.flatMap((set) =>
-  placementsFor(set.vehicles).flatMap((placement) =>
-    set.items.flatMap(({ item, selects }) =>
+const REACHES = VEHICLES.flatMap(reachesOf);
+
+const cells = SETS.flatMap((set) => {
+  const positions = set.positions ?? [1, 2, 3];
+  const placements: Placement[] = [
+    ...positions.map((position): Placement => ({ kind: 'direct', position })),
+    ...REACHES.filter(
+      (reach) =>
+        positions.includes(reach.position) &&
+        (set.vehicles === undefined || set.vehicles.includes(reach.vehicle)),
+    ).flatMap((reach) =>
+      [0, 1, 2, 3, 4].map((depth): Placement => ({ kind: 'passed', reach, depth })),
+    ),
+  ];
+  return placements.flatMap((placement) =>
+    set.items.flatMap((item) =>
       literalsOf(set).map((literal) => ({
         set,
         placement,
-        selects,
+        item,
         literal,
-        source: formulaFor(set, placement, item, literal),
-        want: expectedCodes(set, placement, selects, literal),
+        position: placement.kind === 'direct' ? placement.position : placement.reach.position,
+        vehicle: placement.kind === 'direct' ? null : placement.reach.vehicle,
+        source: formulaFor(set, placement, item.item, literal),
+        want: expectedCodes(set, placement, item, literal),
       })),
     ),
-  ),
-);
+  );
+});
 
 describe('the enumerated-literal rule, generated', () => {
+  it('takes every vehicle from the parser’s invocations, and every position they pass on', () => {
+    // Both ways: every vehicle has its undescribed arguments, and every entry names a vehicle.
+    expect(Object.keys(UNDESCRIBED).sort()).toStrictEqual([...VEHICLES]);
+    // Not vacuous: 1.0.0's four by name, and FILTER_BY by declaration.
+    expect(VEHICLES.length).toBeGreaterThanOrEqual(5);
+    for (const vehicle of VEHICLES) {
+      expect(
+        cells.some((cell) => cell.vehicle === vehicle),
+        vehicle,
+      ).toBe(true);
+    }
+    // EACH passes on every argument after its callable: the mode sits at three positions.
+    expect(
+      REACHES.filter((reach) => reach.vehicle === 'EACH').map((r) => r.position),
+    ).toStrictEqual([1, 2, 3]);
+    // A value the vehicle supplies itself also reaches the mode (REDUCE's item).
+    expect(REACHES.some((reach) => reach.forwardedFrom === undefined)).toBe(true);
+  });
+
   it('covers every placement, overload set, item and listed value, with every outcome', () => {
-    expect(new Set(cells.map((cell) => cell.source)).size).toBe(cells.length);
-    expect(cells.length).toBeGreaterThan(500);
+    // FILTER_PROPERTY reads its item from `rows`, so the item is part of what makes a cell.
+    const cases = cells.map((cell) => `${cell.source} ${JSON.stringify(cell.item.value)}`);
+    expect(new Set(cases).size).toBe(cells.length);
+    expect(cells.length).toBeGreaterThan(1000);
     const outcomes = new Set(cells.map((cell) => cell.want.join() || 'compiles'));
     expect([...outcomes].sort()).toStrictEqual(
       [
         'compiles',
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
         FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
         FormulaErrorCodes.NO_MATCHING_OVERLOAD,
       ].sort(),
@@ -336,12 +481,13 @@ describe('the enumerated-literal rule, generated', () => {
       const unlisted: unknown[] = [];
       // A parse outcome other than the rule's, or a run that failed or invoked nothing.
       const mismatches: unknown[] = [];
+      const ranThrough = new Set<string>();
       let compiledCells = 0;
       let runs = 0;
       let divergent = 0;
-      for (const { set, placement, selects, source, want } of cells) {
+      for (const { set, placement, item, position, vehicle, source, want } of cells) {
         for (const order of ['listed', 'reversed'] as const) {
-          const parsedUnder = runtimeFor(registryShape, set, order, []);
+          const parsedUnder = runtimeFor(registryShape, set, order, [], position);
           const parsed = parseFormula(source, { registry: parsedUnder.registry });
           const got = parsed.errors.map((e) => e.code);
           if (JSON.stringify(got) !== JSON.stringify(want)) {
@@ -360,22 +506,24 @@ describe('the enumerated-literal rule, generated', () => {
               set,
               order,
               invocations,
+              position,
               implemented,
             );
             const compiled = optimizeRule(parseFormula(source, { registry }), { registry });
             const out = await evaluateRuleOutputAsync(compiled, {
               registry,
               resolver,
-              variables: {},
+              variables: { rows: [{ p: item.value }] },
             });
             runs++;
             if (out.errors.length > 0) mismatches.push({ source, order, runErrors: out.errors });
             if (implemented === undefined && invocations.length === 0) {
               mismatches.push({ source, order, invoked: 'nothing' });
             }
+            if (vehicle !== null && invocations.length > 0) ranThrough.add(vehicle);
             for (const { signatureId, mode } of invocations) {
               const overload = set.overloads.find((o) => o.signatureId === signatureId);
-              if (selects !== null && signatureId !== selects) divergent++;
+              if (item.selects !== null && signatureId !== item.selects) divergent++;
               if (overload?.values !== undefined && !overload.values.includes(String(mode))) {
                 const only = implemented === undefined ? 'all' : [...implemented].join();
                 unlisted.push({ source, order, implemented: only, signatureId, received: mode });
@@ -387,13 +535,35 @@ describe('the enumerated-literal rule, generated', () => {
       expect(unlisted, 'overloads that ran with a value they do not list').toStrictEqual([]);
       expect(mismatches).toStrictEqual([]);
       // Not vacuous: many cells compile, each higher-order one runs under several implementation
-      // sets, and overloads other than the one the types select do run.
-      expect(compiledCells).toBeGreaterThan(100);
+      // sets, overloads other than the one the types select do run, and an overload runs through
+      // every vehicle that passes a literal on.
+      expect(compiledCells).toBeGreaterThan(300);
       expect(runs).toBeGreaterThan(2 * compiledCells);
       expect(divergent).toBeGreaterThan(0);
+      const passingOn = VEHICLES.filter((vehicle) =>
+        REACHES.some((reach) => reach.vehicle === vehicle && reach.forwardedFrom !== undefined),
+      );
+      expect([...ranThrough].sort()).toStrictEqual(passingOn);
     },
-    120_000,
+    300_000,
   );
+
+  it('keeps FILTER_BY’s checks when it is registered again under another signature id', () => {
+    const check = runtimeFor('reversioned', SETS[0] as OverloadSet, 'listed', []);
+    expect(check.registry.getFunction('FILTER_BY/v2')).toBeDefined();
+    const codes = (source: string) =>
+      parseFormula(source, { registry: check.registry }).errors.map((e) => e.code);
+    expect(codes('FILTER_BY(LIST("k"); LIST("x"); "ONE"; "zzz")')).toStrictEqual([
+      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+    ]);
+    expect(codes('FILTER_BY(LIST("k"); LIST("x"); "WORD_COUNT"; "whitespce")')).toStrictEqual([
+      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
+    ]);
+    expect(codes('FILTER_BY(LIST("k"); LIST(1); "LEN")')).toStrictEqual([
+      FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+    ]);
+  });
 
   it('names the overloads that do not list a refused value', () => {
     const { registry } = runtimeFor('core', SETS[1] as OverloadSet, 'listed', []);
@@ -423,6 +593,7 @@ describe('the enumerated-literal rule, generated', () => {
       'EACH(LIST(1); "TWO"; "c")',
       'FILTER(LIST(1); "TWO"; "c")',
       'FILTER_BY(LIST(0); LIST(1); "TWO"; "c")',
+      'FILTER_PROPERTY(rows; "p"; "TWO"; "c")',
       'EACH(LIST(LIST(1)); "EACH"; "TWO"; "c")',
       'EACH(LIST(LIST(TRUE)); "EACH"; "TWO"; "c")',
       'EACH(LIST(1); "TWO"; "b")',
@@ -460,11 +631,18 @@ describe('the enumerated-literal rule, generated', () => {
       returnType: text,
       purity: 'pure',
     });
+    const mode = (values?: string[]): FunctionParamDefinition =>
+      values === undefined
+        ? { name: 'key', type: text }
+        : {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            literalValues: values,
+          };
+    registry.registerFunction(pick('PICK/v1', [{ name: 'text', type: text }, mode(['a', 'b'])]));
     registry.registerFunction(
-      pick('PICK/v1', [{ name: 'text', type: text }, modeParam(['a', 'b'])]),
-    );
-    registry.registerFunction(
-      pick('PICK_LIST/v1', [{ name: 'list', type: FormulaTypes.list(text, true) }, modeParam()]),
+      pick('PICK_LIST/v1', [{ name: 'list', type: FormulaTypes.list(text, true) }, mode()]),
     );
     const errorsOf = (source: string) => parseFormula(source, { registry }).errors;
     const codes = (source: string) => errorsOf(source).map((e) => e.code);

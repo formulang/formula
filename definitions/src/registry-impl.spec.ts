@@ -1,3 +1,8 @@
+import type {
+  FunctionDefinition,
+  FunctionParamDefinition,
+  InvokedArgumentDeclaration,
+} from './registry';
 import { createRegistry } from './registry-impl';
 import { FormulaTypes } from './types';
 
@@ -204,5 +209,77 @@ describe('InMemoryFormulaRegistry', () => {
         purity: 'pure',
       }),
     ).toThrow(/empty literalValues list/);
+  });
+
+  it('registers a declared callable invocation, and refuses one the parser could not apply', () => {
+    const higherOrder = (
+      callableInvocation: InvokedArgumentDeclaration[],
+      params: FunctionParamDefinition[] = [
+        { name: 'list', type: FormulaTypes.list(FormulaTypes.any(true), true) },
+        { name: 'keys', type: FormulaTypes.list(FormulaTypes.any(true), true) },
+        {
+          name: 'operator',
+          type: FormulaTypes.callable('function_or_operator', { minArity: 1 }),
+          literalOnly: true,
+        },
+        { name: 'value', type: FormulaTypes.any(true), optional: true },
+      ],
+    ): FunctionDefinition => ({
+      signatureId: 'KEYED/v1',
+      name: 'KEYED',
+      category: 'custom',
+      description: 'A higher-order function that declares its invocation.',
+      params,
+      callableInvocation,
+      returnType: FormulaTypes.list(FormulaTypes.any(true), true),
+      purity: 'pure',
+    });
+    const register = (def: FunctionDefinition) => () => createRegistry().registerFunction(def);
+
+    const keyed = higherOrder([
+      { kind: 'item', of: 1 },
+      { kind: 'argument', at: 3 },
+    ]);
+    const registry = createRegistry();
+    registry.registerFunction(keyed);
+    expect(registry.getFunction('KEYED/v1')?.callableInvocation).toStrictEqual(
+      keyed.callableInvocation,
+    );
+    expect(
+      register(
+        higherOrder([
+          { kind: 'value', typeOf: 0 },
+          { kind: 'arguments', from: 3 },
+        ]),
+      ),
+    ).not.toThrow();
+
+    for (const [invocation, message] of [
+      [[{ kind: 'item', of: 4 }], /names no parameter other than the callable at of/],
+      [[{ kind: 'item', of: 2 }], /names no parameter other than the callable at of/],
+      [[{ kind: 'item', of: 3 }], /takes items from parameter 3, which is not a list/],
+      [[{ kind: 'argument', at: 1 }], /passes on argument 1, before the callable/],
+      [[{ kind: 'arguments', from: 0 }], /passes on argument 0, before the callable/],
+      [[{ kind: 'value', typeOf: 9 }], /names no parameter other than the callable at typeOf/],
+      [[{ kind: 'element', of: 0 }], /declares an unknown argument kind/],
+    ] as const) {
+      expect(
+        register(higherOrder(invocation as unknown as InvokedArgumentDeclaration[])),
+        JSON.stringify(invocation),
+      ).toThrow(message);
+    }
+    const withoutCallable = higherOrder(
+      [{ kind: 'item', of: 0 }],
+      [{ name: 'list', type: FormulaTypes.list(FormulaTypes.any(true), true) }],
+    );
+    expect(register(withoutCallable)).toThrow(/needs exactly one callable parameter/);
+    const notLiteralOnly = higherOrder(
+      [{ kind: 'item', of: 0 }],
+      [
+        { name: 'list', type: FormulaTypes.list(FormulaTypes.any(true), true) },
+        { name: 'operator', type: FormulaTypes.callable('function_or_operator', {}) },
+      ],
+    );
+    expect(register(notLiteralOnly)).toThrow(/needs its callable parameter to be literalOnly/);
   });
 });

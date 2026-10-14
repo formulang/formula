@@ -25,6 +25,21 @@ export interface FunctionParamDefinition {
   variadic?: boolean;
 }
 
+/**
+ * One argument a higher-order function passes to the function its callable parameter names, by
+ * where the value comes from. Every index is a parameter position of the higher-order function.
+ * - `item`: an item of the list the call passes at `of`.
+ * - `argument`: the call's argument at `at`, passed on unchanged; nothing when the call omits it.
+ * - `arguments`: every call argument from `from` on, each passed on unchanged.
+ * - `value`: a value the function supplies when it runs, typed as the call's argument at `typeOf`,
+ *   or of any type without it.
+ */
+export type InvokedArgumentDeclaration =
+  | { kind: 'item'; of: number }
+  | { kind: 'argument'; at: number }
+  | { kind: 'arguments'; from: number }
+  | { kind: 'value'; typeOf?: number };
+
 export interface TemplateParamDefinition {
   /** Template/type-variable name (e.g. "T"). */
   name: string;
@@ -81,6 +96,16 @@ export interface FunctionDefinition {
 
   /** If true, the function controls evaluation of arguments (lazy short-circuit). */
   controlFlow?: boolean;
+
+  /**
+   * For a higher-order function: the arguments it passes, in order, to the function its callable
+   * parameter names. With it, the parser checks that function against them as it does for the
+   * core higher-order functions — arity, overload, result type, and the literal rules of the
+   * parameters they reach — and a copy registered under another signature id keeps the checks.
+   * Registration requires one callable parameter, `literalOnly`, and every index to name another
+   * parameter; an argument passed on unchanged must come after the callable.
+   */
+  callableInvocation?: InvokedArgumentDeclaration[];
 
   /**
    * Optional explicit cast declarations provided by this function.

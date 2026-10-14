@@ -24,7 +24,7 @@ import {
   resolveFormulaLimits,
   stripNullability,
 } from '@formulang/definitions';
-import { invocationOf, type CallableInvocation } from './callable-invocations';
+import { invocationOf, invokedArguments, type CallableInvocation } from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
 import { assignStableNodeIds } from './node-id';
 import { TokenStream } from './pratt';
@@ -1017,13 +1017,14 @@ function bindTypesAndRequirements(
             continue;
           }
 
-          // Strict callable validation for the core higher-order functions, whose invocations
-          // `invocationOf` declares: arity, overload, return type, and the referenced function's
-          // literal-only rules for every argument the invocation passes it.
+          // Strict callable validation for the higher-order functions whose invocation the parser
+          // knows (`invocationOf`: by name for 1.0.0's, declared on the definition otherwise):
+          // arity, overload, return type, and the referenced function's literal-only rules for
+          // every argument the invocation passes it.
           const outerBindings = inferGenericBindingsForCall(def, argTypes);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
           const invocation = invocationOf(def);
-          const invoked = invocation === undefined ? null : invocation(argTypes);
+          const invoked = invocation === undefined ? null : invokedArguments(invocation, argTypes);
 
           if (invoked) {
             const invokedArgTypes = invoked.map((invokedArg) => invokedArg.type);
@@ -1191,10 +1192,7 @@ function bindTypesAndRequirements(
         }
       } else if (
         def.name.toUpperCase() === 'FILTER' ||
-        def.name.toUpperCase() === 'FILTER_PROPERTY' ||
-        // Added since 1.0.0, so keyed by signature id: a function a host registered under this
-        // name keeps the result type its definition declares.
-        def.signatureId === BuiltinSignatureIds.FILTER_BY
+        def.name.toUpperCase() === 'FILTER_PROPERTY'
       ) {
         const targetType = argTypes[0];
         const stripped = stripNullability(targetType);
@@ -1500,8 +1498,9 @@ function reportOnce(errors: FormulaError[], error: FormulaError): void {
 type PassedArgument = { type: FormulaType; source: number | undefined };
 
 /**
- * Holds the arguments a core higher-order function passes to the callable it names to the
- * callable's enumerated-literal rule (`enumeratedTarget`): an argument reaching a parameter that
+ * Holds the arguments a higher-order function whose invocation the parser knows passes to the
+ * callable it names to the callable's enumerated-literal rule (`enumeratedTarget`): an argument
+ * reaching a parameter that
  * lists admitted `literalValues` must be a string literal naming a value every definition of the
  * name lists there. A literal that names a callable in turn is followed into the invocation that
  * callable makes, for every definition of the name, so the rule holds at any depth of higher-order
@@ -1559,11 +1558,11 @@ function checkPassedArguments(
       return;
     }
     // Exit, never taken for the core definitions: every invocation passes on only arguments after
-    // the callable (the table spec checks it), so each nested callable is named by a formula
-    // argument to the right of the one naming the callable before it, and a call with n arguments
-    // nests fewer than n levels. A host definition reusing a name the table keys by name, with
-    // another parameter layout, gets the core invocation, and for it this bound keeps the walk
-    // finite.
+    // the callable (the table spec checks it, and registration refuses a declared invocation that
+    // does not), so each nested callable is named by a formula argument to the right of the one
+    // naming the callable before it, and a call with n arguments nests fewer than n levels. A host
+    // definition reusing a name the table keys by name, with another parameter layout, gets the
+    // core invocation, and for it this bound keeps the walk finite.
     if (at.depth >= at.call.args.length) return;
     const followed = new Map<CallableInvocation, Set<string>>();
     for (const def of at.candidates) {
@@ -1571,16 +1570,19 @@ function checkPassedArguments(
       const targetBase = target === undefined ? undefined : stripNullability(target.type);
       const invocation = invocationOf(def);
       // Skipped: this definition does not invoke the literal as a callable in a way the parser
-      // knows. It takes no argument at this position, takes a plain value there, or is a host's
-      // higher-order function, whose invocation the parser does not know; the function it calls
-      // refuses, when it runs, a mode it does not list.
+      // knows. It takes no argument at this position, takes a plain value there, or is a
+      // higher-order function that declares no invocation; the function it calls refuses, when
+      // it runs, a mode it does not list.
       if (targetBase?.kind !== 'callable' || invocation === undefined) continue;
       // Skipped: an invocation already followed with this reference kind reaches the same
       // callables.
       const kinds = followed.get(invocation) ?? new Set<string>();
       if (kinds.has(targetBase.reference)) continue;
       followed.set(invocation, kinds.add(targetBase.reference));
-      const invoked = invocation(at.passed.map((p) => p.type));
+      const invoked = invokedArguments(
+        invocation,
+        at.passed.map((p) => p.type),
+      );
       const candidates = callableCandidates(registry, targetBase.reference, arg.predictableValue);
       checkPassedArguments(registry, errors, {
         call: at.call,
