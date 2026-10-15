@@ -11,6 +11,7 @@ import type {
 } from '@formulang/definitions';
 import {
   argumentFits,
+  argumentSelects,
   BuiltinSignatureIds,
   emptyRequirements,
   formatType,
@@ -1526,10 +1527,9 @@ function chooseOverload(
         ok = false;
         break;
       }
-      // Null overlap rule: allow nullable arg even if param isn't nullable.
-      const argNoNull = stripNullability(arg);
-      const paramNoNull = stripNullability(param.type);
-      if (!isAssignable(argNoNull, paramNoNull) && param.type.kind !== 'any') {
+      // Nullability aside, a template's constraint included (`argumentSelects`, which registration
+      // reads for a string literal at a parameter that lists admitted values).
+      if (!argumentSelects(arg, param.type)) {
         ok = false;
         break;
       }

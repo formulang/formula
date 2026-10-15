@@ -6,7 +6,13 @@ import type {
   OperatorDefinition,
   VariableDefinition,
 } from './registry';
-import { argumentFits, formatType, isAssignable, stripNullability } from './type-utils';
+import {
+  argumentFits,
+  argumentSelects,
+  formatType,
+  isAssignable,
+  stripNullability,
+} from './type-utils';
 import type { FormulaType } from './types';
 import { FormulaTypes } from './types';
 
@@ -41,10 +47,12 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     }
 
     // An admitted-value list takes effect only where the parser checks a literal (`literalCheckAt`,
-    // which the parser reads too) and a string literal passes the parser's check of the
-    // parameter's type (`argumentFits`); it is a list of texts (the literals a formula writes), and
-    // an empty list would refuse every call, as a list on a parameter no string literal fits would.
-    // Anything else is a definition mistake, so it fails here.
+    // which the parser reads too) and a string literal passes both of the parser's checks of the
+    // parameter's type: choosing among the overloads (`argumentSelects`) and checking the call once
+    // it binds the definition (`argumentFits`); where it fails either, the parser refuses the
+    // literal in some calls before it reads the list. The list holds texts (the literals a formula
+    // writes), and an empty list would refuse every call, as a list on a parameter no string
+    // literal fits would. Anything else is a definition mistake, so it fails here.
     def.params.forEach((param, position) => {
       if (param.literalValues === undefined) return;
       if (literalCheckAt(def.params, position, admittedValues)?.param !== param) {
@@ -52,9 +60,10 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
           `Parameter '${param.name}' of ${def.signatureId} declares literalValues but is not literalOnly`,
         );
       }
-      if (!argumentFits(FormulaTypes.text(false), param.type)) {
+      const literal = FormulaTypes.text(false);
+      if (!argumentSelects(literal, param.type) || !argumentFits(literal, param.type)) {
         throw new Error(
-          `Parameter '${param.name}' of ${def.signatureId} declares literalValues but takes no string literal (its type is ${formatType(param.type)})`,
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues but takes no string literal (its type is ${describeType(param.type)})`,
         );
       }
       if (admittedValues(param) === undefined) {
@@ -231,6 +240,14 @@ function withoutNullLiteralValues(def: FunctionDefinition): FunctionDefinition {
       return stored;
     }),
   };
+}
+
+/** `t` as a registration error names it: a template with its constraint. */
+function describeType(t: FormulaType): string {
+  if (t.kind === 'template' && t.constraint !== undefined) {
+    return `${formatType(t)}, constrained to ${formatType(t.constraint)}`;
+  }
+  return formatType(t);
 }
 
 function typeKey(t: FormulaType): string {

@@ -5,8 +5,10 @@ import type { FunctionParamDefinition } from './registry';
  * written in the formula at the parameters `literalCheckAt` answers; it follows a callable that a
  * higher-order call passes on, and checks what that callable receives, at the same parameters; and
  * registration takes a `literalValues` list only on a parameter `literalCheckAt` answers, whose
- * type a string literal fits by the parser's own check of an argument's type (`argumentFits`).
- * All three read this one rule, so a literal checked in one place is checked in the others.
+ * type a string literal fits by both of the parser's checks of an argument's type: choosing among
+ * the overloads (`argumentSelects`) and checking the call once it binds (`argumentFits`). All
+ * three read this one rule, so a literal checked in one place is checked in the others, and a
+ * string literal's own type never keeps the parser from reading the list.
  */
 
 /** A literal check: the parameter the argument binds, and what it admits. */

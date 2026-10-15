@@ -192,10 +192,10 @@ describe('InMemoryFormulaRegistry', () => {
   });
 
   it('rejects admitted values on a parameter no string literal fits, and takes them where one does', () => {
-    // A literal-only parameter takes a string literal; one whose type no text fits, by the parser's
-    // check of an argument's type (`argumentFits`), refuses every call, whatever it lists, as an
-    // empty list would. A template fits any argument there, whatever its constraint: the parser
-    // binds a template from the call's arguments instead of checking them against it.
+    // A literal-only parameter takes a string literal; one whose type no text fits, by both of the
+    // parser's checks of an argument's type, refuses calls before its list is read: choosing
+    // among the overloads (`argumentSelects`), where a template's constraint counts, and checking
+    // the call once it binds the definition (`argumentFits`), where any template fits.
     const register = (type: FormulaType) => {
       const registry = createRegistry();
       registry.registerFunction({
@@ -209,23 +209,30 @@ describe('InMemoryFormulaRegistry', () => {
       });
       return registry;
     };
-    const refused = [
-      FormulaTypes.number(false),
-      FormulaTypes.boolean(true),
-      FormulaTypes.list(FormulaTypes.text(false)),
-      FormulaTypes.object('date'),
-      FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.boolean(false)]),
+    const refused: Array<[FormulaType, string]> = [
+      [FormulaTypes.number(false), 'number'],
+      [FormulaTypes.boolean(true), 'boolean?'],
+      [FormulaTypes.list(FormulaTypes.text(false)), 'List<text>'],
+      [FormulaTypes.object('date'), 'Object(date)'],
+      [
+        FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.boolean(false)]),
+        '(number | boolean)',
+      ],
+      [
+        FormulaTypes.template('T', { constraint: FormulaTypes.number(false) }),
+        'T, constrained to number',
+      ],
     ];
-    for (const type of refused) {
-      expect(() => register(type), formatType(type)).toThrow(
-        `Parameter 'mode' of MODE/v1 declares literalValues but takes no string literal (its type is ${formatType(type)})`,
+    for (const [type, named] of refused) {
+      expect(() => register(type), named).toThrow(
+        `Parameter 'mode' of MODE/v1 declares literalValues but takes no string literal (its type is ${named})`,
       );
     }
     const taken = [
       FormulaTypes.text(true),
       FormulaTypes.any(true),
       FormulaTypes.template('T'),
-      FormulaTypes.template('T', { constraint: FormulaTypes.number(false) }),
+      FormulaTypes.template('T', { constraint: FormulaTypes.text(false) }),
       FormulaTypes.callable('function'),
       FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.text(false)]),
     ];
