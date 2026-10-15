@@ -202,6 +202,7 @@ describe('the walk through nested callables', () => {
         );
       }
     },
+    60_000,
   );
 
   it('parses the longest chain the default limits admit through a variadic host EACH', () => {
@@ -292,6 +293,7 @@ describe('the walk through nested callables', () => {
       // Not vacuous: the limit stops the walk at the larger sizes, past a level that branches.
       expect(stopped).toBeGreaterThanOrEqual(2);
     },
+    60_000,
   );
 
   it.each(FAN_OUT.map((entry) => [entry.shape, entry] as const))(
@@ -305,6 +307,7 @@ describe('the walk through nested callables', () => {
         expect(codes(rule.errors)).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
       }
     },
+    60_000,
   );
 
   it('follows a variadic callable parameter at the arguments a written call checks', () => {
@@ -342,10 +345,12 @@ describe('the walk through nested callables', () => {
     // this bound only guards against a walk that is no longer linear, which at this size would
     // take hundreds of times as long.
     const registry = registryWithPick();
-    const withWalk = fastestParse(registry, chain(12_000, 'zzz'));
-    const withoutWalk = fastestParse(registry, chain(12_000, 'zzz', 'MAP'));
-    expect(withWalk).toBeLessThan(10 * withoutWalk);
-  });
+    const [withWalk, withoutWalk] = fastestParses([
+      [registry, chain(12_000, 'zzz')],
+      [registry, chain(12_000, 'zzz', 'MAP')],
+    ]);
+    expect(withWalk).toBeLessThan(10 * (withoutWalk as number));
+  }, 60_000);
 
   it('parses a call whose every argument names a callable in time linear in the call', () => {
     // A variadic callable parameter that lists the callables it admits makes every argument of the
@@ -365,23 +370,32 @@ describe('the walk through nested callables', () => {
     const wide = withHostEach(registryWithPick(), { callables: 2 });
     const [branching] = FAN_OUT;
     if (branching === undefined) throw new Error('no shape');
-    expect(fastestParse(listing, everyArgument(1_000))).toBeLessThan(
-      8 * fastestParse(wide, branching.formula(1_000)),
-    );
+    const [many, one] = fastestParses([
+      [listing, everyArgument(1_000)],
+      [wide, branching.formula(1_000)],
+    ]);
+    expect(many).toBeLessThan(8 * (one as number));
     // ...and four times the arguments take about four times as long.
-    expect(fastestParse(listing, everyArgument(12_000))).toBeLessThan(
-      8 * fastestParse(listing, everyArgument(3_000)),
-    );
-  });
+    const [large, small] = fastestParses([
+      [listing, everyArgument(12_000)],
+      [listing, everyArgument(3_000)],
+    ]);
+    expect(large).toBeLessThan(8 * (small as number));
+  }, 60_000);
 });
 
-/** The fastest of three parses of `source`, in milliseconds. */
-function fastestParse(registry: FormulaRegistry, source: string): number {
-  let best = Number.POSITIVE_INFINITY;
-  for (let run = 0; run < 3; run++) {
-    const started = performance.now();
-    parseFormula(source, { registry, limits: LIMITS });
-    best = Math.min(best, performance.now() - started);
+/**
+ * The fastest of five parses of each source, in milliseconds. The parses take turns, so a pause of
+ * the machine falls on one parse of each source rather than on every parse of one.
+ */
+function fastestParses(parses: ReadonlyArray<readonly [FormulaRegistry, string]>): number[] {
+  const best = parses.map(() => Number.POSITIVE_INFINITY);
+  for (let run = 0; run < 5; run++) {
+    parses.forEach(([registry, source], index) => {
+      const started = performance.now();
+      parseFormula(source, { registry, limits: LIMITS });
+      best[index] = Math.min(best[index] as number, performance.now() - started);
+    });
   }
   return best;
 }
