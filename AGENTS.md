@@ -40,7 +40,7 @@ Run from the repo root.
 
 ## Critical facts (non-obvious — read before working)
 
-- **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 72 spec files / 504 tests). Run `pnpm run test` freely and often.
+- **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 72 spec files / 512 tests). Run `pnpm run test` freely and often.
 - **Lint DOES need a build.** `lint` is `tsc --noEmit` per package, and cross-package imports resolve through the published entrypoints (`dist/`). Run `pnpm run build` before `pnpm run lint` — and before anything else that resolves `dist/` instead of the vitest aliases.
 - Test files are `*.spec.ts`, co-located with the source they test.
 - TypeScript 6 with `module`/`moduleResolution` set to `nodenext` (modern Node module semantics, matching `engines >=22`), CJS emit. Mind Node-style module resolution rules when adding imports.
