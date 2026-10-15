@@ -625,8 +625,10 @@ parameter:
   string literal names as its callable, and on through every further such
   function a string literal names, level by level.
 
-The parser follows those levels breadth first and visits at most 16 argument
-positions per argument of the call written in the formula. A level visits no
+The parser follows those levels breadth first, across every callable the call
+names, and visits at most 16 × (n + 1) argument positions for a call of n
+arguments written in the formula, so where it stops, every level shallower
+than the one it stopped in has been checked. A level visits no
 more positions than the widest definition of the function it names has
 parameters, five for the built-in functions, so with the built-in definitions
 the walk never reaches that bound; a host's overload with a long parameter
@@ -820,10 +822,10 @@ Evaluation is additionally bounded by step, cost, and wall-time budgets
 (`EVAL_LIMIT_EXCEEDED`, `COST_LIMIT_EXCEEDED`, `WALL_TIME_LIMIT_EXCEEDED`);
 a formula that stays within the sizes above will not normally meet them.
 
-The parser's check of modes passed on through callables visits at most 16
-argument positions per argument of each call and then stops following, with
-no error: it is no limit a formula can exceed, and a mode it leaves is
-refused when the call runs (see [When a mode is refused](#when-a-mode-is-refused)).
+The parser's check of modes passed on through callables visits at most
+16 × (n + 1) argument positions for a call of n arguments and then stops
+following, with no error: it is no limit a formula can exceed, and a mode it
+leaves is refused when the call runs (see [When a mode is refused](#when-a-mode-is-refused)).
 
 ## Cheat sheet
 

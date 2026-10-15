@@ -29,7 +29,8 @@ import {
   paramAt,
   readLiteralArgument,
   referenceExists,
-  walkCallable,
+  runWalk,
+  seedCallable,
   type CallWalk,
 } from './enumerated-literals';
 import { assignStableNodeIds } from './node-id';
@@ -990,8 +991,9 @@ function bindTypesAndRequirements(
       // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)) at each parameter's own
       // position. The extra arguments a variadic literal-only parameter takes are validated only
       // when it lists its admitted values; without that list it keeps 1.0.0 behaviour, where only
-      // the first argument it takes was checked. One walk through the callables the call names
-      // serves every callable parameter of the call.
+      // the first argument it takes was checked. Every callable parameter of the call seeds one
+      // walk through the callables it names, which runs once, after the loop, breadth first across
+      // all of them.
       let walk: CallWalk | undefined;
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
         const p = paramAt(def.params, i);
@@ -1088,7 +1090,7 @@ function bindTypesAndRequirements(
                 signatureId: def.signatureId,
                 args: node.args,
               });
-              walkCallable(walk, {
+              seedCallable(walk, {
                 host: def,
                 reference: paramBase.reference,
                 name: ref,
@@ -1161,6 +1163,8 @@ function bindTypesAndRequirements(
           );
         }
       }
+
+      if (walk !== undefined) runWalk(walk);
 
       // Result types refined by name, as 1.0.0 refines them; the higher-order functions' rules and
       // what their callables receive come from the invocation table.

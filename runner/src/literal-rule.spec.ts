@@ -710,9 +710,11 @@ describe('the enumerated-literal rule, generated', () => {
     expect(codes('FILTER_BY(LIST("k"); LIST("x"); "ONE"; "zzz")')).toStrictEqual([
       FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
     ]);
+    // The call's own checks come first (WORD_COUNT returns no boolean), then the walk through the
+    // callables the call names, which runs once every callable parameter of the call is seeded.
     expect(codes('FILTER_BY(LIST("k"); LIST("x"); "WORD_COUNT"; "whitespce")')).toStrictEqual([
-      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
       FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
+      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
     ]);
     expect(codes('FILTER_BY(LIST("k"); LIST(1); "LEN")')).toStrictEqual([
       FormulaErrorCodes.NO_MATCHING_OVERLOAD,

@@ -202,17 +202,23 @@ function enumeratedTarget(
   return { param: { ...first.param, literalValues: admitted }, owner: first.owner, listings };
 }
 
-/** Argument positions the walk may visit per argument of the call written in the formula. */
+/**
+ * Argument positions the walk may visit for each argument of the call written in the formula: a
+ * call of n arguments may visit `WALK_STEPS_PER_ARGUMENT` × (n + 1) positions.
+ */
 export const WALK_STEPS_PER_ARGUMENT = 16;
 
 /**
  * The walk through the callables that one call written in the formula names, by string literals,
- * to higher-order functions whose invocation the parser knows: the states it has checked, the
- * diagnostics it has reported, and the steps it has taken, one per argument position it visits, of
- * the `limit` it may take, `WALK_STEPS_PER_ARGUMENT` per argument of the call. Its work is linear in
- * the size of the formula however the registry's definitions nest. At the limit the walk stops
- * following: it never throws and never refuses a formula for its cost, and every argument it has
- * not checked is checked by the function that receives it, when the call runs.
+ * to higher-order functions whose invocation the parser knows. Every callable parameter of the call
+ * is seeded into one breadth-first queue (`seedCallable`) before the walk runs (`runWalk`), so the
+ * walk visits every state of one level, across all of them, before any state of the next. It holds
+ * the states it has queued, the diagnostics it has reported, and the steps it has taken, one per
+ * argument position it visits, of the `limit` it may take: `WALK_STEPS_PER_ARGUMENT` × (n + 1) for
+ * a call of n arguments, so its work is linear in the size of the formula however the registry's
+ * definitions nest. At the limit the walk stops following: it never throws and never refuses a
+ * formula for its cost. Every level shallower than the one it stopped in has been checked; a mode
+ * it leaves reaches the function when the call runs.
  */
 export type CallWalk = {
   readonly registry: FormulaRegistry;
@@ -221,9 +227,16 @@ export type CallWalk = {
   readonly call: { signatureId: string; args: readonly RuleNode[] };
   readonly walked: Set<string>;
   readonly reported: Set<string>;
+  /** The states to visit, in breadth-first order. */
+  readonly queue: WalkState[];
   steps: number;
   readonly limit: number;
+  /** When given, receives every step the walk takes, in order. */
+  readonly trace?: WalkStep[];
 };
+
+/** One step of the walk: the position it visited, of a state at `depth` (0 for a callable parameter). */
+export type WalkStep = { depth: number; state: string; position: number };
 
 /** A walk for `call`, a call written in the formula, that reports into `errors`. */
 export function callWalk(
@@ -237,6 +250,7 @@ export function callWalk(
     call,
     walked: new Set(),
     reported: new Set(),
+    queue: [],
     steps: 0,
     limit: WALK_STEPS_PER_ARGUMENT * (call.args.length + 1),
   };
@@ -256,25 +270,16 @@ type WalkState = {
   sources: PassedSources;
   /** The formula argument that names the callable. */
   named: { index: number; span: SourceSpan | undefined };
+  /** How many callables lie between this one and the call written in the formula. */
+  depth: number;
 };
 
 /**
- * Holds what the higher-order function `host` passes the callable that argument `index` of the call
- * written in the formula names (`name`, a reference of kind `reference`) to the callable's
- * enumerated-literal rule (`enumeratedTarget`): an argument reaching a parameter that lists
- * admitted `literalValues` must be a string literal naming a value every definition of the name
- * lists there. A literal that names a callable in turn, at a callable parameter of a definition's
- * own list, is followed into the invocation that callable makes, for every definition of the name,
- * so the rule holds at any depth of higher-order calls whose callables are written as string
- * literals, as far as the walk's limit reaches. A name passed on is resolved when the call runs, so
- * one the registry does not know is no error here. Each exit below states why it lets no literal
- * reach a parameter that lists admitted values unchecked, or what checks it instead.
- *
- * The walk is iterative and breadth first: every state of one level of callables before any of the
- * next, so where the limit stops it, every level above has been checked. Each state is visited
- * once, so overloads that follow the same callable along several reference kinds check it once.
+ * Seeds the walk with the callable that argument `index` of the call written in the formula names
+ * (`name`, a reference of kind `reference`) to the higher-order function `host`, at depth 0. A host
+ * whose invocation the parser does not know seeds nothing.
  */
-export function walkCallable(
+export function seedCallable(
   walk: CallWalk,
   at: {
     host: FunctionDefinition;
@@ -286,25 +291,53 @@ export function walkCallable(
 ): void {
   const invocation = invocationOf(at.host);
   if (invocation === undefined) return;
-  const queue: WalkState[] = [];
-  enqueue(walk, queue, {
+  enqueue(walk, {
     host: at.host,
     candidates: callableCandidates(walk.registry, at.reference, at.name),
     sources: passedSources(invocation, writtenArguments(walk.call.args.length)),
     named: { index: at.index, span: at.span },
+    depth: 0,
   });
-  for (let next = 0; next < queue.length; next++) {
-    const state = queue[next] as WalkState;
+}
+
+/**
+ * Holds what each seeded higher-order function passes its callable to the callable's
+ * enumerated-literal rule (`enumeratedTarget`): an argument reaching a parameter that lists
+ * admitted `literalValues` must be a string literal naming a value every definition of the name
+ * lists there. A literal that names a callable in turn, at an argument a definition invokes as a
+ * callable (`visit`), is followed into the invocation that callable makes, for every definition of
+ * the name, so the rule holds at any depth of higher-order calls whose callables are written as
+ * string literals, as far as the walk's limit reaches. A name passed on is resolved when the call
+ * runs, so one the registry does not know is no error here. Each exit below states why it lets no
+ * literal reach a parameter that lists admitted values unchecked, or what happens to it instead.
+ *
+ * The walk takes the queue in order, so it visits the states breadth first, and each state once:
+ * overloads that follow the same callable along several reference kinds check it once.
+ */
+export function runWalk(walk: CallWalk): void {
+  for (let next = 0; next < walk.queue.length; next++) {
+    const state = walk.queue[next] as WalkState;
     const end = positionsToVisit(state);
     for (let position = 0; position < end; position++) {
       // Exit: the limit is reached, so the walk stops following. Every argument it has not
-      // checked reaches a function when the call runs, and the function refuses a mode it does not
-      // list.
+      // checked reaches its function when the call runs (docs/language.md, When a mode is
+      // refused, says what the formula then answers).
       if (walk.steps >= walk.limit) return;
       walk.steps++;
-      for (const follow of visit(walk, state, position)) enqueue(walk, queue, follow);
+      walk.trace?.push({ depth: state.depth, state: stateKey(state), position });
+      for (const follow of visit(walk, state, position)) enqueue(walk, follow);
     }
   }
+}
+
+/** The key of `state` in the walk: what it checks and what it follows depend on nothing else. */
+function stateKey(state: WalkState): string {
+  return walkStateKey({
+    named: state.named.index,
+    host: state.host.name,
+    candidates: state.candidates.map((def) => def.signatureId),
+    sources: state.sources,
+  });
 }
 
 /**
@@ -313,16 +346,11 @@ export function walkCallable(
  * same formula argument or a supplied value at each position, so every check it would make is
  * made.
  */
-function enqueue(walk: CallWalk, queue: WalkState[], state: WalkState): void {
-  const key = walkStateKey({
-    named: state.named.index,
-    host: state.host.name,
-    candidates: state.candidates.map((def) => def.signatureId),
-    sources: state.sources,
-  });
+function enqueue(walk: CallWalk, state: WalkState): void {
+  const key = stateKey(state);
   if (walk.walked.has(key)) return;
   walk.walked.add(key);
-  queue.push(state);
+  walk.queue.push(state);
 }
 
 /**
@@ -368,8 +396,7 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
   // parameter that lists admitted values was refused above.
   if (source === undefined) return [];
   // Exit: the rule follows a callable where a string literal names it. One named by a value or an
-  // expression is resolved when the call runs, and the function it calls refuses, when it runs, a
-  // mode it does not list.
+  // expression is resolved when the call runs, and the mode it receives reaches its function then.
   if (arg === undefined || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
     return [];
   }
@@ -395,6 +422,7 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
       candidates: callableCandidates(walk.registry, target.reference, arg.predictableValue),
       sources: passedSources(invocation, state.sources),
       named: { index: source, span: arg.span },
+      depth: state.depth + 1,
     });
   }
   return follows;
