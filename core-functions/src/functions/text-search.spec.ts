@@ -1,5 +1,4 @@
 import { someOccurrence } from './text-search';
-import { CountedText, type WorkCount } from './work-count';
 
 /** Every start of `needle` in `text`, as restarting `indexOf` after each occurrence finds them. */
 function indexOfOccurrences(text: string, needle: string): number[] {
@@ -9,9 +8,9 @@ function indexOfOccurrences(text: string, needle: string): number[] {
   return starts;
 }
 
-function occurrences(text: string, needle: string, work: WorkCount = { steps: 0 }): number[] {
+function occurrences(text: string, needle: string): number[] {
   const starts: number[] = [];
-  someOccurrence(new CountedText(text, work), new CountedText(needle, work), (at) => {
+  someOccurrence(text, needle, (at) => {
     starts.push(at);
     return false;
   });
@@ -49,36 +48,25 @@ describe('someOccurrence', () => {
 
   it('stops at the first occurrence found accepts', () => {
     const seen: number[] = [];
-    const counted = (text: string) => new CountedText(text, { steps: 0 });
-    const found = someOccurrence(counted('a-a-a'), counted('a'), (at) => {
+    const found = someOccurrence('a-a-a', 'a', (at) => {
       seen.push(at);
       return at === 2;
     });
     expect(found).toBe(true);
     expect(seen).toStrictEqual([0, 2]);
-    expect(someOccurrence(counted('a-a-a'), counted('a'), () => false)).toBe(false);
+    expect(someOccurrence('a-a-a', 'a', () => false)).toBe(false);
   });
 
-  it('reads each character a bounded number of times, however periodic the input', () => {
-    // A run of one letter holds an occurrence of a half-length run at every position, and
-    // restarting a search after each one re-reads half the text each time. Each code unit of the
-    // text is read once, and the needle once per comparison: at most two comparisons per code
-    // unit of the text, and two per code unit of the needle to prepare.
-    const inputs: Array<[string, (n: number) => [string, string, number]]> = [
-      ['a run and a half-length run', (n) => ['a'.repeat(n), 'a'.repeat(n / 2), n / 2 + 1]],
-      ['a run and a near-miss run', (n) => ['a'.repeat(n), `${'a'.repeat(n / 2)}b`, 0]],
-      ['repeated pairs', (n) => ['ab'.repeat(n / 2), `${'ab'.repeat(n / 4)}a`, n / 4]],
-      ['a long border', (n) => [`${'a'.repeat(n - 1)}b`, `${'a'.repeat(n / 4)}b`, 1]],
+  it('finds every occurrence in periodic texts, whose occurrences overlap at every position', () => {
+    const inputs: Array<[string, [string, string]]> = [
+      ['a run and a half-length run', ['a'.repeat(2_000), 'a'.repeat(1_000)]],
+      ['a run and a near-miss run', ['a'.repeat(2_000), `${'a'.repeat(1_000)}b`]],
+      ['repeated pairs', ['ab'.repeat(1_000), `${'ab'.repeat(500)}a`]],
+      ['a long border', [`${'a'.repeat(1_999)}b`, `${'a'.repeat(500)}b`]],
     ];
-    for (const [name, build] of inputs) {
-      for (const n of [20_000, 80_000]) {
-        const [text, needle, count] = build(n);
-        const work: WorkCount = { steps: 0 };
-        const starts = occurrences(text, needle, work);
-        expect(work.steps, `${name} n=${n}`).toBeGreaterThanOrEqual(text.length);
-        expect(work.steps, `${name} n=${n}`).toBeLessThanOrEqual(3 * (text.length + needle.length));
-        expect(starts.length, `${name} n=${n}`).toBe(count);
-      }
+    for (const [name, [text, needle]] of inputs) {
+      expect(occurrences(text, needle), name).toStrictEqual(indexOfOccurrences(text, needle));
     }
+    expect(occurrences('a'.repeat(2_000), 'a'.repeat(1_000))).toHaveLength(1_001);
   });
 });

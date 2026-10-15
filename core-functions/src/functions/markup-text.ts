@@ -1,9 +1,13 @@
-import type { FormulaExecutionContext, FormulaNodeOutput } from '@formulang/definitions';
+import type {
+  BaseFunctionConfig,
+  FormulaExecutionContext,
+  FormulaNodeOutput,
+} from '@formulang/definitions';
 import { makeOkList, makeOkText } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { boundedListResult, readRequiredMode, readText, textCost } from './argument-readers';
+import { characterAt, characterBefore } from './helpers';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
-import { CountedText, workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** The markup `PLAIN_TEXT` reads. */
 export type MarkupFormat = 'html' | 'markdown';
@@ -69,6 +73,16 @@ const HEAD_HIDDEN_CONTENT_ELEMENTS: ReadonlySet<string> = new Set([
   'noframes',
   'noscript',
   'template',
+]);
+
+/** The end tag that closes each element whose content is dropped. */
+const HIDDEN_CONTENT_END_TAGS: ReadonlyMap<string, RegExp> = new Map([
+  ['script', /<\/script(?=[\t\n\f\r />])/gi],
+  ['style', /<\/style(?=[\t\n\f\r />])/gi],
+  ['title', /<\/title(?=[\t\n\f\r />])/gi],
+  ['noframes', /<\/noframes(?=[\t\n\f\r />])/gi],
+  ['noscript', /<\/noscript(?=[\t\n\f\r />])/gi],
+  ['template', /<\/template(?=[\t\n\f\r />])/gi],
 ]);
 
 /** The elements that live in `head`; any other start tag, and any text, starts the body. */
@@ -195,10 +209,10 @@ function decodeCharacterReferences(text: string): string {
  * hold `>`, and a quote anywhere else is an ordinary character. -1 when the markup ends inside
  * the tag.
  */
-function endOfTag(markup: CountedText, from: number): number {
+function endOfTag(markup: string, from: number): number {
   let state: TagState = 'before-attribute-name';
   for (let index = from; index < markup.length; index += 1) {
-    const char = markup.char(index);
+    const char = markup.charAt(index);
     switch (state) {
       case 'double-quoted-value':
         if (char === '"') state = 'after-quoted-value';
@@ -235,10 +249,10 @@ function endOfTag(markup: CountedText, from: number): number {
 }
 
 /** Reads the tag whose name starts at `nameStart`: the name runs to whitespace, `/` or `>`. */
-function readTag(markup: CountedText, nameStart: number, closing: boolean): HtmlTag {
+function readTag(markup: string, nameStart: number, closing: boolean): HtmlTag {
   let nameEnd = nameStart;
   while (nameEnd < markup.length) {
-    const char = markup.char(nameEnd);
+    const char = markup.charAt(nameEnd);
     if (char === '>' || char === '/' || isHtmlSpace(char)) break;
     nameEnd += 1;
   }
@@ -252,12 +266,18 @@ function readTag(markup: CountedText, nameStart: number, closing: boolean): Html
  * The index after the comment whose text starts at `from` (after `<!--`): after the first `-->`
  * or `--!>`, at once for `<!-->` and `<!--->`, and at the end of the markup when none follows.
  */
-function endOfComment(markup: CountedText, from: number): number {
-  if (markup.startsWith('>', from)) return from + 1;
-  if (markup.startsWith('->', from)) return from + 2;
+function endOfComment(markup: string, from: number): number {
+  if (markup.startsWith('>', from)) {
+    return from + 1;
+  }
+  if (markup.startsWith('->', from)) {
+    return from + 2;
+  }
   for (let search = from; ;) {
     const dashes = markup.indexOf('--', search);
-    if (dashes < 0) return markup.length;
+    if (dashes < 0) {
+      return markup.length;
+    }
     if (markup.startsWith('>', dashes + 2)) return dashes + 3;
     if (markup.startsWith('!>', dashes + 2)) return dashes + 4;
     search = dashes + 1;
@@ -268,9 +288,10 @@ function endOfComment(markup: CountedText, from: number): number {
  * The index after the `>` that ends a declaration (`<!DOCTYPE html>`), a processing instruction
  * (`<?xml ...?>`) or another bogus comment; the end of the markup when no `>` follows.
  */
-function endOfBogusComment(markup: CountedText, from: number): number {
+function endOfBogusComment(markup: string, from: number): number {
   const close = markup.indexOf('>', from);
-  return close < 0 ? markup.length : close + 1;
+  const end = close < 0 ? markup.length : close + 1;
+  return end;
 }
 
 /**
@@ -285,33 +306,21 @@ function headStateAfterTag(state: HeadState, tag: HtmlTag): HeadState {
   return tag.name === 'head' || HEAD_ELEMENTS.has(tag.name) ? 'in' : 'after';
 }
 
-/** The code unit `code` with the ASCII capitals lower-cased. */
-function asciiLower(code: number): number {
-  return code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
-}
-
 /**
  * The index after the end tag that closes the dropped element `name` whose content starts at
- * `from`: the first `</` followed by the name, in any ASCII case, and by whitespace, `/` or `>`;
- * the end of the markup when no end tag follows.
+ * `from`; the end of the markup when no end tag follows.
  */
-function endOfHiddenContent(markup: CountedText, name: string, from: number): number {
-  for (let at = markup.indexOf('</', from); at >= 0; at = markup.indexOf('</', at + 1)) {
-    let offset = 0;
-    while (
-      offset < name.length &&
-      asciiLower(markup.code(at + 2 + offset)) === name.charCodeAt(offset)
-    ) {
-      offset += 1;
-    }
-    if (offset < name.length) continue;
-    const nameEnd = at + 2 + name.length;
-    const after = markup.char(nameEnd);
-    if (!isHtmlSpace(after) && after !== '/' && after !== '>') continue;
-    const end = endOfTag(markup, nameEnd);
-    return end < 0 ? markup.length : end;
+function endOfHiddenContent(markup: string, name: string, from: number): number {
+  const endTag = HIDDEN_CONTENT_END_TAGS.get(name);
+  if (endTag === undefined) return from;
+  endTag.lastIndex = from;
+  const found = endTag.exec(markup);
+  if (found === null) {
+    return markup.length;
   }
-  return markup.length;
+  const nameEnd = found.index + found[0].length;
+  const end = endOfTag(markup, nameEnd);
+  return end < 0 ? markup.length : end;
 }
 
 /**
@@ -323,7 +332,7 @@ function endOfHiddenContent(markup: CountedText, name: string, from: number): nu
  * tag, comment or dropped element that the markup ends inside is dropped with the rest of the
  * markup, as an HTML parser drops it.
  */
-function htmlToPlainText(markup: CountedText): string {
+function htmlToPlainText(markup: string): string {
   const out: string[] = [];
   let inPre = false;
   let head: HeadState = 'before';
@@ -344,7 +353,7 @@ function htmlToPlainText(markup: CountedText): string {
     const textEnd = lt < 0 ? markup.length : lt;
     appendText(markup.slice(index, textEnd));
     if (lt < 0) break;
-    const next = markup.char(lt + 1);
+    const next = markup.charAt(lt + 1);
     if (markup.startsWith('!--', lt + 1)) {
       index = endOfComment(markup, lt + 4);
       continue;
@@ -355,7 +364,7 @@ function htmlToPlainText(markup: CountedText): string {
     }
     let tag: HtmlTag;
     if (next === '/') {
-      const afterSlash = markup.char(lt + 2);
+      const afterSlash = markup.charAt(lt + 2);
       if (afterSlash === '>') {
         // `</>` is dropped.
         index = lt + 3;
@@ -413,10 +422,12 @@ type OpenFence = {
 };
 
 // A line holds no CR or LF; `[\s\S]*` takes the rest of it, U+2028 and U+2029 included.
+const MARKDOWN_LINE_BREAK = /\r\n|\r|\n/;
 const QUOTE_MARKER = / {0,3}> ?/y;
 const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+([\s\S]*))?$/;
 const FENCE_OPEN = /^([ \t]*)(`{3,}|~{3,})([\s\S]*)/;
 const FENCE_CLOSE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/;
+const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 /** A list marker: a bullet, or the start number of an ordered item (group 1); the text in group 2. */
 const LIST_ITEM = /^[ \t]*(?:[-*+]|([0-9]{1,9})[.)])(?:[ \t]+([\s\S]*))?$/;
 const TABLE_DELIMITER_CELL = /^:?-+:?$/;
@@ -424,12 +435,14 @@ const TABLE_DELIMITER_CELL = /^:?-+:?$/;
 const ASCII_PUNCTUATION = /^[!-\/:-@[-`{-~]$/;
 const UNICODE_WHITESPACE = /^\s$/u;
 const UNICODE_PUNCTUATION = /^[\p{P}\p{S}]$/u;
+/** `[text](destination)` or `![alt](destination)`; one level of nested brackets and parentheses. */
+const INLINE_LINK =
+  /!?\[((?:[^[\]\n]|\[[^[\]\n]{0,500}\]){0,1000})\]\((?:[^()\n]|\([^()\n]{0,500}\)){0,2000}\)/y;
 /** `<scheme:...>` or `<name@host>`. */
 const AUTOLINK =
   /<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]{0,2000}|[^\s<>@]{1,256}@[^\s<>@]{1,256})>/y;
 
-/** The fields of an emphasis delimiter run. */
-type DelimiterFields = {
+type DelimiterRun = {
   marker: '*' | '_';
   length: number;
   canOpen: boolean;
@@ -439,88 +452,37 @@ type DelimiterFields = {
   order: number;
 };
 
-/**
- * An emphasis delimiter run, whose every field read is charged one step, as a character read is:
- * the pairing of runs cannot walk them without its count growing.
- */
-class DelimiterRun {
-  constructor(
-    private readonly fields: DelimiterFields,
-    private readonly work: WorkCount,
-  ) {}
-
-  private read<K extends keyof DelimiterFields>(key: K): DelimiterFields[K] {
-    this.work.steps += 1;
-    return this.fields[key];
-  }
-
-  get marker(): '*' | '_' {
-    return this.read('marker');
-  }
-
-  get length(): number {
-    return this.read('length');
-  }
-
-  get canOpen(): boolean {
-    return this.read('canOpen');
-  }
-
-  get canClose(): boolean {
-    return this.read('canClose');
-  }
-
-  get order(): number {
-    return this.read('order');
-  }
-
-  get matched(): boolean {
-    return this.read('matched');
-  }
-
-  set matched(value: boolean) {
-    this.fields.matched = value;
-  }
-}
-
-/** The index after the run of the code unit at `start`. */
-function endOfRun(source: CountedText, start: number): number {
-  const marker = source.code(start);
-  let end = start + 1;
-  while (source.code(end) === marker) end += 1;
+function endOfRun(source: string, start: number): number {
+  const marker = source.charCodeAt(start);
+  let end = start;
+  while (source.charCodeAt(end) === marker) end += 1;
   return end;
 }
 
 /** The emphasis delimiter run `[start, end)`, classified by the CommonMark flanking rules. */
 function delimiterRun(
-  source: CountedText,
+  source: string,
   start: number,
   end: number,
   marker: '*' | '_',
   order: number,
-  work: WorkCount,
 ): DelimiterRun {
-  const before = source.characterBefore(start);
-  const after = source.characterAt(end);
+  const before = characterBefore(source, start);
+  const after = characterAt(source, end);
   const spaceBefore = before === null || UNICODE_WHITESPACE.test(before);
   const spaceAfter = after === null || UNICODE_WHITESPACE.test(after);
   const punctuationBefore = before !== null && UNICODE_PUNCTUATION.test(before);
   const punctuationAfter = after !== null && UNICODE_PUNCTUATION.test(after);
   const leftFlanking = !spaceAfter && (!punctuationAfter || spaceBefore || punctuationBefore);
   const rightFlanking = !spaceBefore && (!punctuationBefore || spaceAfter || punctuationAfter);
-  return new DelimiterRun(
-    {
-      marker,
-      length: end - start,
-      canOpen:
-        marker === '*' ? leftFlanking : leftFlanking && (!rightFlanking || punctuationBefore),
-      canClose:
-        marker === '*' ? rightFlanking : rightFlanking && (!leftFlanking || punctuationAfter),
-      matched: false,
-      order,
-    },
-    work,
-  );
+  return {
+    marker,
+    length: end - start,
+    canOpen: marker === '*' ? leftFlanking : leftFlanking && (!rightFlanking || punctuationBefore),
+    canClose: marker === '*' ? rightFlanking : rightFlanking && (!leftFlanking || punctuationAfter),
+    matched: false,
+    order,
+  };
 }
 
 /**
@@ -529,7 +491,7 @@ function delimiterRun(
  * is pushed and popped at most once.
  */
 function pairDelimiterRuns(runs: readonly DelimiterRun[]): void {
-  const open: Record<'*' | '_', DelimiterRun[]> = { '*': [], _: [] };
+  const open: Record<DelimiterRun['marker'], DelimiterRun[]> = { '*': [], _: [] };
   for (const run of runs) {
     const own = open[run.marker];
     const opener = run.canClose ? own.pop() : undefined;
@@ -540,7 +502,7 @@ function pairDelimiterRuns(runs: readonly DelimiterRun[]): void {
     opener.matched = true;
     run.matched = true;
     const other = open[run.marker === '*' ? '_' : '*'];
-    while (other.length > 0 && (other[other.length - 1] as DelimiterRun).order > opener.order) {
+    while (other.length > 0 && other[other.length - 1].order > opener.order) {
       other.pop();
     }
   }
@@ -549,17 +511,15 @@ function pairDelimiterRuns(runs: readonly DelimiterRun[]): void {
 /**
  * The maximal backtick runs of a text by length, for finding the run that closes a code span:
  * one pass builds it, and one forward cursor per length answers, as the inline scan only moves
- * forward. Every start the cursors read is charged one step.
+ * forward.
  */
 class BacktickRuns {
   private readonly starts = new Map<number, number[]>();
   private readonly cursors = new Map<number, number>();
 
-  constructor(
-    source: CountedText,
-    private readonly work: WorkCount,
-  ) {
-    for (let at = source.indexOf('`'); at >= 0;) {
+  constructor(source: string) {
+    let at = source.indexOf('`');
+    while (at >= 0) {
       const end = endOfRun(source, at);
       const starts = this.starts.get(end - at);
       if (starts === undefined) this.starts.set(end - at, [at]);
@@ -573,14 +533,11 @@ class BacktickRuns {
     const starts = this.starts.get(length);
     if (starts === undefined) return -1;
     let cursor = this.cursors.get(length) ?? 0;
-    while (cursor < starts.length && this.startAt(starts, cursor) < from) cursor += 1;
+    while (cursor < starts.length && starts[cursor] < from) {
+      cursor += 1;
+    }
     this.cursors.set(length, cursor);
-    return cursor < starts.length ? this.startAt(starts, cursor) : -1;
-  }
-
-  private startAt(starts: readonly number[], cursor: number): number {
-    this.work.steps += 1;
-    return starts[cursor] as number;
+    return cursor < starts.length ? starts[cursor] : -1;
   }
 }
 
@@ -591,69 +548,18 @@ function codeSpanContent(content: string): string {
 }
 
 /**
- * The end of a bracketed stretch that starts at `from` (after the opening bracket): at most
- * `items` items, each a code unit other than `open`, `close` or a line feed, or a nested
- * `open ... close` of at most 500 such code units; the index where the items stop.
- */
-function endOfBracketed(
-  source: CountedText,
-  from: number,
-  open: number,
-  close: number,
-  items: number,
-): number {
-  let at = from;
-  for (let item = 0; item < items; item += 1) {
-    const code = source.code(at);
-    if (code === open) {
-      let inner = at + 1;
-      for (let count = 0; count < 500; count += 1) {
-        const unit = source.code(inner);
-        if (unit === open || unit === close || unit === 0x0a || Number.isNaN(unit)) break;
-        inner += 1;
-      }
-      if (source.code(inner) !== close) break;
-      at = inner + 1;
-    } else if (code === close || code === 0x0a || Number.isNaN(code)) {
-      break;
-    } else {
-      at += 1;
-    }
-  }
-  return at;
-}
-
-/**
- * The link or image that starts at `index`, `[text](destination)` or `![alt](destination)`, with
- * one level of nested brackets in the text (at most 1,000 items, a nested pair holding at most 500
- * code units) and of parentheses in the destination (at most 2,000 items): the index after its
- * `)` and its text; null when none starts there.
- */
-function inlineLink(source: CountedText, index: number): { end: number; text: string } | null {
-  let at = index;
-  if (source.code(at) === 0x21) at += 1;
-  if (source.code(at) !== 0x5b) return null;
-  const textStart = at + 1;
-  const textEnd = endOfBracketed(source, textStart, 0x5b, 0x5d, 1_000);
-  if (source.code(textEnd) !== 0x5d || source.code(textEnd + 1) !== 0x28) return null;
-  const destinationEnd = endOfBracketed(source, textEnd + 2, 0x28, 0x29, 2_000);
-  if (source.code(destinationEnd) !== 0x29) return null;
-  return { end: destinationEnd + 1, text: source.slice(textStart, textEnd) };
-}
-
-/**
  * Removes inline markdown: emphasis (`*`, `_`, `**`, `__`), code-span backticks, backslash
  * escapes, links and images (`[t](u)` to `t`, `![a](u)` to `a`) and autolinks (`<u>` to `u`).
  */
-function stripInlineMarkdown(source: CountedText, work: WorkCount): string {
+function stripInlineMarkdown(source: string): string {
   const pieces: Array<string | DelimiterRun> = [];
   const runs: DelimiterRun[] = [];
   let backtickRuns: BacktickRuns | null = null;
   let text = '';
   let index = 0;
   while (index < source.length) {
-    const char = source.char(index);
-    const next = source.char(index + 1);
+    const char = source.charAt(index);
+    const next = source.charAt(index + 1);
     if (char === '\\' && next.length > 0 && ASCII_PUNCTUATION.test(next)) {
       text += next;
       index += 2;
@@ -662,7 +568,7 @@ function stripInlineMarkdown(source: CountedText, work: WorkCount): string {
     if (char === '`') {
       const runEnd = endOfRun(source, index);
       const length = runEnd - index;
-      if (backtickRuns === null) backtickRuns = new BacktickRuns(source, work);
+      if (backtickRuns === null) backtickRuns = new BacktickRuns(source);
       const close = backtickRuns.next(length, runEnd);
       if (close < 0) {
         text += source.slice(index, runEnd);
@@ -674,15 +580,17 @@ function stripInlineMarkdown(source: CountedText, work: WorkCount): string {
       continue;
     }
     if (char === '[' || (char === '!' && next === '[')) {
-      const link = inlineLink(source, index);
+      INLINE_LINK.lastIndex = index;
+      const link = INLINE_LINK.exec(source);
       if (link !== null) {
-        index = link.end;
-        text += stripInlineMarkdown(new CountedText(link.text, work), work);
+        index += link[0].length;
+        text += stripInlineMarkdown(link[1] ?? '');
         continue;
       }
     }
     if (char === '<') {
-      const autolink = source.stickyMatch(AUTOLINK, index);
+      AUTOLINK.lastIndex = index;
+      const autolink = AUTOLINK.exec(source);
       if (autolink !== null) {
         index += autolink[0].length;
         text += autolink[1] ?? '';
@@ -693,7 +601,7 @@ function stripInlineMarkdown(source: CountedText, work: WorkCount): string {
       const runEnd = endOfRun(source, index);
       if (text.length > 0) pieces.push(text);
       text = '';
-      const run = delimiterRun(source, index, runEnd, char, runs.length, work);
+      const run = delimiterRun(source, index, runEnd, char, runs.length);
       pieces.push(run);
       runs.push(run);
       index = runEnd;
@@ -728,44 +636,38 @@ function stripQuoteMarkers(
   return { depth, content: line.slice(start) };
 }
 
-/** Whether the code unit `code` is a space or a tab. */
-function isSpaceOrTab(code: number): boolean {
-  return code === 0x20 || code === 0x09;
-}
-
 /**
  * Heading content without its closing sequence: a final run of `#` that follows a space, a tab
  * or nothing, together with the spaces and tabs before it.
  */
-function withoutClosingHashes(content: string, work: WorkCount): string {
-  const trimmed = new CountedText(content.trimEnd(), work);
+function withoutClosingHashes(content: string): string {
+  const trimmed = content.trimEnd();
   let hashes = trimmed.length;
-  while (hashes > 0 && trimmed.code(hashes - 1) === 0x23) hashes -= 1;
-  if (hashes === trimmed.length) return trimmed.slice(0);
+  while (hashes > 0 && trimmed.charAt(hashes - 1) === '#') hashes -= 1;
+  if (hashes === trimmed.length) return trimmed;
   let end = hashes;
-  while (end > 0 && isSpaceOrTab(trimmed.code(end - 1))) end -= 1;
-  return trimmed.slice(0, end === hashes && hashes > 0 ? trimmed.length : end);
+  while (end > 0 && (trimmed.charAt(end - 1) === ' ' || trimmed.charAt(end - 1) === '\t')) {
+    end -= 1;
+  }
+  return end === hashes && hashes > 0 ? trimmed : trimmed.slice(0, end);
 }
 
-/** `line` without up to `indent` leading spaces. */
-function stripIndent(line: string, indent: number, work: WorkCount): string {
-  const text = new CountedText(line, work);
+function stripIndent(line: string, indent: number): string {
   let start = 0;
-  while (start < indent && start < text.length && text.code(start) === 0x20) start += 1;
-  return text.slice(start);
+  while (start < indent && start < line.length && line.charAt(start) === ' ') start += 1;
+  return line.slice(start);
 }
 
 /** The cells of a table row, trimmed; `\|` is a literal pipe inside a cell. */
-function splitTableCells(line: string, work: WorkCount): string[] {
+function splitTableCells(line: string): string[] {
   let row = line.trim();
   if (row.startsWith('|')) row = row.slice(1);
   if (row.endsWith('|') && !row.endsWith('\\|')) row = row.slice(0, -1);
-  const text = new CountedText(row, work);
   const cells: string[] = [];
   let cell = '';
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text.char(index);
-    if (char === '\\' && text.char(index + 1) === '|') {
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row.charAt(index);
+    if (char === '\\' && row.charAt(index + 1) === '|') {
       cell += '|';
       index += 1;
     } else if (char === '|') {
@@ -789,52 +691,11 @@ function joinLines(lines: readonly string[]): string {
     .join(' ');
 }
 
-/**
- * Whether `line` is a thematic break: up to three spaces, then three or more of one of `-`, `*`
- * and `_`, with nothing but spaces and tabs between and after them.
- */
-function isThematicBreak(line: string, work: WorkCount): boolean {
-  const text = new CountedText(line, work);
-  let at = 0;
-  while (at < 3 && text.code(at) === 0x20) at += 1;
-  const marker = text.code(at);
-  if (marker !== 0x2d && marker !== 0x2a && marker !== 0x5f) return false;
-  let markers = 0;
-  for (; at < text.length; at += 1) {
-    const code = text.code(at);
-    if (code === marker) markers += 1;
-    else if (!isSpaceOrTab(code)) return false;
-  }
-  return markers >= 3;
-}
-
-/**
- * The lines of a markdown source, split at `\r\n`, `\r` and `\n`: every code unit is read once and
- * copied once.
- */
-function markdownLines(source: CountedText): string[] {
-  const lines: string[] = [];
-  let start = 0;
-  for (let index = 0; index < source.length; index += 1) {
-    const code = source.code(index);
-    if (code !== 0x0a && code !== 0x0d) continue;
-    lines.push(source.slice(start, index));
-    if (code === 0x0d && index + 1 < source.length && source.code(index + 1) === 0x0a) {
-      index += 1;
-    }
-    start = index + 1;
-  }
-  lines.push(source.slice(start));
-  return lines;
-}
-
 class MarkdownBlockReader {
   readonly blocks: MarkdownBlock[] = [];
   private paragraph: string[] = [];
   private listItem: string[] | null = null;
   private tableColumns = 0;
-
-  constructor(private readonly work: WorkCount) {}
 
   closeOpenBlocks(): void {
     if (this.paragraph.length > 0) {
@@ -860,7 +721,7 @@ class MarkdownBlockReader {
 
   addHeading(level: number, content: string): void {
     this.closeOpenBlocks();
-    const text = this.inlineText(withoutClosingHashes(content, this.work));
+    const text = this.inlineText(withoutClosingHashes(content));
     this.blocks.push({ kind: 'heading', level, text });
   }
 
@@ -879,7 +740,7 @@ class MarkdownBlockReader {
   }
 
   addTableRow(line: string): void {
-    const cells = splitTableCells(line, this.work).slice(0, this.tableColumns);
+    const cells = splitTableCells(line).slice(0, this.tableColumns);
     const text = cells
       .map((cell) => this.inlineText(cell))
       .filter((cell) => cell.length > 0)
@@ -889,10 +750,9 @@ class MarkdownBlockReader {
 
   /** Opens a table when `line` is a header row and `next` its delimiter row. */
   startsTable(line: string, next: string): boolean {
-    if (new CountedText(line, this.work).indexOf('|') < 0) return false;
-    if (new CountedText(next, this.work).indexOf('|') < 0) return false;
-    const header = splitTableCells(line, this.work);
-    const delimiter = splitTableCells(next, this.work);
+    if (!line.includes('|') || !next.includes('|')) return false;
+    const header = splitTableCells(line);
+    const delimiter = splitTableCells(next);
     if (delimiter.length !== header.length) return false;
     if (!delimiter.every((cell) => TABLE_DELIMITER_CELL.test(cell))) return false;
     this.closeOpenBlocks();
@@ -907,7 +767,7 @@ class MarkdownBlockReader {
   }
 
   private inlineText(source: string): string {
-    return collapseWhitespace(stripInlineMarkdown(new CountedText(source, this.work), this.work));
+    return collapseWhitespace(stripInlineMarkdown(source));
   }
 }
 
@@ -916,12 +776,12 @@ class MarkdownBlockReader {
  * list items (nested items each count), GFM tables, paragraphs and fenced code. Blockquote
  * markers are transparent.
  */
-function parseMarkdownBlocks(source: CountedText, work: WorkCount): MarkdownBlock[] {
-  const lines = markdownLines(source);
-  const reader = new MarkdownBlockReader(work);
+function parseMarkdownBlocks(source: string): MarkdownBlock[] {
+  const lines = source.split(MARKDOWN_LINE_BREAK);
+  const reader = new MarkdownBlockReader();
   let fence: OpenFence | null = null;
   for (let index = 0; index < lines.length; index += 1) {
-    const raw = lines[index] as string;
+    const raw = lines[index];
     if (fence !== null) {
       const content = stripQuoteMarkers(raw, fence.quoteDepth).content;
       const close = FENCE_CLOSE.exec(content);
@@ -929,7 +789,7 @@ function parseMarkdownBlocks(source: CountedText, work: WorkCount): MarkdownBloc
         reader.addCode(fence.lines);
         fence = null;
       } else {
-        fence.lines.push(stripIndent(content, fence.indent, work));
+        fence.lines.push(stripIndent(content, fence.indent));
       }
       continue;
     }
@@ -950,7 +810,7 @@ function parseMarkdownBlocks(source: CountedText, work: WorkCount): MarkdownBloc
       };
       continue;
     }
-    if (isThematicBreak(line, work)) {
+    if (THEMATIC_BREAK.test(line)) {
       reader.closeOpenBlocks();
       continue;
     }
@@ -974,8 +834,7 @@ function parseMarkdownBlocks(source: CountedText, work: WorkCount): MarkdownBloc
       reader.addTableRow(line);
       continue;
     }
-    const next =
-      index + 1 < lines.length ? stripQuoteMarkers(lines[index + 1] as string).content : '';
+    const next = index + 1 < lines.length ? stripQuoteMarkers(lines[index + 1]).content : '';
     if (reader.startsTable(line, next)) {
       index += 1;
       continue;
@@ -987,9 +846,9 @@ function parseMarkdownBlocks(source: CountedText, work: WorkCount): MarkdownBloc
   return reader.blocks;
 }
 
-function markdownToPlainText(source: CountedText, work: WorkCount): string {
+function markdownToPlainText(source: string): string {
   return plainLines(
-    parseMarkdownBlocks(source, work).flatMap((block) =>
+    parseMarkdownBlocks(source).flatMap((block) =>
       block.kind === 'code' ? block.text.split('\n') : [block.text],
     ),
   );
@@ -1013,8 +872,8 @@ function selectBlocks(blocks: readonly MarkdownBlock[], kind: MarkdownBlockKind)
     .map((block) => block.text);
 }
 
-export class PlainTextImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
-  constructor(config: WorkCountingConfig) {
+export class PlainTextImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
     super(config);
   }
 
@@ -1027,15 +886,13 @@ export class PlainTextImplementation extends AbstractEagerBatchImplementation<Wo
     if (typeof markup !== 'string') return markup;
     const format = readRequiredMode('PLAIN_TEXT', 'format', args[1], MARKUP_FORMATS);
     if (typeof format !== 'string') return format;
-    const work = workOf(this.config);
-    const counted = new CountedText(markup, work);
-    const text = format === 'html' ? htmlToPlainText(counted) : markdownToPlainText(counted, work);
+    const text = format === 'html' ? htmlToPlainText(markup) : markdownToPlainText(markup);
     return makeOkText('PLAIN_TEXT', text);
   }
 }
 
-export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
-  constructor(config: WorkCountingConfig) {
+export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
     super(config);
   }
 
@@ -1048,8 +905,7 @@ export class MarkdownBlocksImplementation extends AbstractEagerBatchImplementati
     if (typeof text !== 'string') return text;
     const kind = readRequiredMode('MARKDOWN_BLOCKS', 'kind', args[1], MARKDOWN_BLOCK_KINDS);
     if (typeof kind !== 'string') return kind;
-    const work = workOf(this.config);
-    const blocks = selectBlocks(parseMarkdownBlocks(new CountedText(text, work), work), kind);
+    const blocks = selectBlocks(parseMarkdownBlocks(text), kind);
     return makeOkList('MARKDOWN_BLOCKS', boundedListResult(blocks, ctx.limits));
   }
 }

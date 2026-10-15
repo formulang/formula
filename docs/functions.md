@@ -626,33 +626,37 @@ Embedders that count outside a formula import the same tokenisers from
 longer than `maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security
 error, as `FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count
 past that bound. List arguments (`keep`, `phrases`, `items`) longer than
-`maxListLength` (1,000) raise `LIST_TOO_LARGE`. Each `keep` token, phrase and
-item is found in time linear in the lengths of the text and of the token,
-phrase or item, however often their occurrences overlap.
+`maxListLength` (1,000) raise `LIST_TOO_LARGE`. Each `keep` token, and each
+phrase in `"word"` mode, is found with one Knuth-Morris-Pratt search, in time
+linear in the lengths of the text and of the token or phrase however often
+their occurrences overlap.
 
-**Work.** `FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`, `SENTENCES`,
-`PLAIN_TEXT` and `MARKDOWN_BLOCKS` read their text through a step count: one
-step for each UTF-16 code unit a scan or search reads or copies out of the
-text, and one for each field of an emphasis run and each start of a backtick
-run that the markdown reading looks up. The specs call these functions as an
-embedder does, on inputs built against each scan (runs of one letter and
-other periodic texts, to 160,000 characters; 25 markup shapes, to about two
-million characters), and hold the steps between the length of the text and a
-fixed multiple of the length of everything the call reads: 3 for the
-searches, 4 for `SENTENCES` with `keep`, and for the markup 16, plus 1,000
-steps.
-The count does not see what a regular expression reads: every expression in
-the modules of these functions is listed, with why it reads in linear time,
-in `core-functions/src/functions/regex-roster.spec.ts`, which reconciles the
-list with the expressions written in those modules, both ways. Nor does it
-see a string method that makes one pass over a text (`trim`, `toLowerCase`,
-a `replace` with a listed expression), over a piece the count copied or,
-before a search, over the whole text and each phrase or item (`ignoreCase`,
-the `normalise` modes). `WORDS`, `WORD_COUNT`, `LEADING_WORDS`, `LINES` and
-`LINE_COUNT` count nothing: they run listed expressions, except in two modes
-of the tokeniser: `"locale"` runs `Intl.Segmenter`, whose work is the
-runtime's, and `"pattern"` runs the formula's own expression, which the
-[MATCH_EXPRESSION](#match_expression) safety rules bound.
+**Work.** What each text function does with its input, read from its code,
+and what bounds the input:
+
+| Function                                       | Work                                                                                                                                                                               | Bounded by                                                                                                  |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one listed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                      | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules, the text at most `maxRegexTextLength` (8,000) |
+| `SENTENCES`                                    | one listed expression over the text, and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                                          | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                |
+| `LINES`, `LINE_COUNT`                          | one split at a listed expression                                                                                                                                                   | `LINES`: the result at most `maxWildcardOutputLength`                                                       |
+| `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, one native substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`): the text's length times the number of phrases in the worst case | `phrases` at most `maxListLength`                                                                           |
+| `MISSING_FROM`                                 | the text normalised once, then per item one native substring search: the text's length times the number of items in the worst case                                                 | `items` at most `maxListLength`                                                                             |
+| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and listed expressions on each piece of text                                                         | the length of `markup`                                                                                      |
+| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, listed expressions on each, then one scan of each block's inline text                                                                                     | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                     |
+
+This is read from the code; no spec measures the time or the work of these
+functions. What a spec checks is the list of regular expressions, where the
+super-linear risk of text code lies: every one that `@formulang/core-functions`
+compiles is listed, with how it reads its input, in
+`core-functions/src/functions/regex-roster.spec.ts`. The spec finds them with the
+TypeScript type checker on every module — each literal, each `RegExp`
+construction, each string that `match`, `matchAll` or `search` compiles, and
+every pattern a call runs, followed to where it comes from — and fails on one
+the list leaves out, on a listed one that is gone, and on one it cannot follow.
+Two listed patterns of 1.0.0 functions read their input in more than linear
+time: the formula's own pattern of the regex functions and of the `"pattern"`
+mode, which the text length limit bounds, and `ISURL`'s check of a `mailto:`
+address, quadratic in the address after `@`.
 
 ### CONCAT
 
@@ -1087,8 +1091,8 @@ each line and blank lines dropped. `format` is a required literal:
   of a fenced code block stays a line. The document is read as
   [MARKDOWN_BLOCKS](#markdown_blocks) reads it.
 
-Both formats are read in time linear in the length of `markup`; **Work**
-under [Text](#text) states what that rests on.
+HTML is read in one forward scan and markdown line by line; **Work** under
+[Text](#text) gives what each costs.
 
 ```ts
 await evalOk('PLAIN_TEXT("<p>A&amp;B</p><p>C&nbsp;D</p><script>x</script>"; "html")'); // "A&B\nC D"
@@ -1119,8 +1123,8 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 The reading is a line-based subset of CommonMark with GFM tables: ATX
 headings only (no `===` or `---` underlines), fenced code only (no indented
 code blocks), list items recognised by their marker at any indentation, and
-`>` quote markers read through. The text is read in time linear in its length;
-**Work** under [Text](#text) states what that rests on.
+`>` quote markers read through. The text is read line by line; **Work** under
+[Text](#text) gives what it costs.
 
 ```ts
 // value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'

@@ -280,7 +280,7 @@ Set `maxTotalCostUnits` per surface (interactive vs batch) — it is the per-eva
 
 ### 4.4 Wall-time limits catch what estimates miss
 
-Estimates are predictions; wall time is enforcement. Both function calls and variable resolvers are checked against `maxFunctionWallTimeMs`, the whole run against `maxWallTimeMs`. Verified: a resolver that takes 50 ms under `limits: { maxFunctionWallTimeMs: 10 }` ends the run with a structured `WALL_TIME_LIMIT_EXCEEDED` (kind `security`) and `value: null` — no exception, no hung request.
+Estimates are predictions; wall time is enforcement. Both function calls and variable resolvers are checked against `maxFunctionWallTimeMs`, the whole run against `maxWallTimeMs`. Verified: a resolver that takes 50 ms under `limits: { maxFunctionWallTimeMs: 10 }` ends the run with a structured `WALL_TIME_LIMIT_EXCEEDED` (kind `security`) and `value: null` — no exception, no hung request. The limit is measured when a call returns, so it reports a slow synchronous call rather than interrupting it, and the text functions estimate their cost from the length of their text, capped at 0.05 units, so no cost limit refuses a long text before it runs: bound the texts a surface accepts, and see [functions.md](functions.md#text) (_Text_, **Work**) for what each text function does with its input.
 
 ### 4.5 Lazy variable resolvers skip work on untaken branches
 

@@ -176,6 +176,15 @@ the `locale` and `pattern` modes, an unsupported language tag, a refused
 pattern — they throw a `TypeError`; `pattern` mode applies the default
 safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
 
+### What the text functions cost
+
+[docs/functions.md](../docs/functions.md#text) (_Text_, **Work**) gives, for
+each text function, the work it does on its input, read from its code, and
+the limits that bound the input. Their super-linear risk is regular
+expressions: `src/functions/regex-roster.spec.ts` lists every one this package
+compiles, with how it reads its input, and fails when a module compiles one
+the list leaves out.
+
 ## Register your own handlers
 
 A custom function is the same two halves the built-ins use: a

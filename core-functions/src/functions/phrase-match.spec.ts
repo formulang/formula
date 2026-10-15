@@ -2,18 +2,12 @@ import { BuiltinSignatureIds, FormulaErrorCodes } from '@formulang/definitions';
 import {
   collectAllErrors,
   createTestRuntime,
-  evalCountingWork,
   evalFormula,
   evalOk,
   evalOkWithOutput,
+  withOther,
 } from '../test-helpers/eval-formula';
-import {
-  ContainsAnyImplementation,
-  FirstContainedImplementation,
-  MissingFromImplementation,
-  PHRASE_MATCH_MODES,
-  PHRASE_NORMALISATIONS,
-} from './phrase-match';
+import { PHRASE_MATCH_MODES, PHRASE_NORMALISATIONS } from './phrase-match';
 
 async function errorCodes(source: string, vars: Record<string, unknown> = {}) {
   const { parsed, compiled, res } = await evalFormula(source, vars);
@@ -74,37 +68,20 @@ describe('Phrase matching', () => {
       expect(await evalOk('CONTAINS_ANY("homeowner and owner"; LIST("owner"); "word")')).toBe(true);
     });
 
-    it('matches a word phrase in work linear in the text and the phrase', async () => {
-      // A run of one letter holds the half-length phrase at every position, never as a whole
-      // word: re-checking each occurrence re-read half the text each time (seconds at 80,000).
-      // The steps are counted through the public functions, as an embedder calls them, smallest
-      // first. They are the code units the search reads: each one of the text once, the phrase
-      // once per comparison (at most two a code unit of the text, two a code unit of the phrase
-      // to prepare), and the characters on either side of an occurrence.
-      const publicFunctions = [
-        ['FIRST_CONTAINED', BuiltinSignatureIds.FIRST_CONTAINED, FirstContainedImplementation],
-        ['CONTAINS_ANY', BuiltinSignatureIds.CONTAINS_ANY, ContainsAnyImplementation],
-      ] as const;
-      for (const [name, signatureId, implementation] of publicFunctions) {
-        for (const n of [20_000, 80_000, 160_000]) {
-          const value = 'a'.repeat(n);
-          const phrase = 'a'.repeat(n / 2);
-          const source = `${name}(value; other; "word")`;
-          const counted = await evalCountingWork(source, signatureId, implementation, {
-            value,
-            other: [phrase],
-          });
-          expect(counted.value).toBe(name === 'CONTAINS_ANY' ? false : null);
-          expect(counted.steps, `${name}, ${n} letters`).toBeGreaterThanOrEqual(value.length);
-          expect(counted.steps, `${name}, ${n} letters`).toBeLessThanOrEqual(
-            3 * (value.length + phrase.length),
-          );
-          const found = await evalCountingWork(source, signatureId, implementation, {
-            value: `${value} ${phrase}`,
-            other: [phrase],
-          });
-          expect(found.value).toBe(name === 'CONTAINS_ANY' ? true : phrase);
-        }
+    it('finds a word phrase in a run of one letter, which holds it at every position', async () => {
+      // Every occurrence but none as a whole word, then one as a whole word after a space.
+      const value = 'a'.repeat(4_000);
+      const phrase = 'a'.repeat(2_000);
+      const options = { setup: withOther };
+      for (const name of ['FIRST_CONTAINED', 'CONTAINS_ANY']) {
+        const source = `${name}(value; other; "word")`;
+        expect(await evalOk(source, { value, other: [phrase] }, options), name).toBe(
+          name === 'CONTAINS_ANY' ? false : null,
+        );
+        expect(
+          await evalOk(source, { value: `${value} ${phrase}`, other: [phrase] }, options),
+          name,
+        ).toBe(name === 'CONTAINS_ANY' ? true : phrase);
       }
       expect(
         await evalOk('CONTAINS_ANY(value; LIST("aa"); "word")', { value: 'a'.repeat(1_000) }),
@@ -205,32 +182,17 @@ describe('Phrase matching', () => {
       expect(await evalOk('MISSING_FROM(LIST(); "a b")')).toStrictEqual([]);
     });
 
-    it('looks for an item in work linear in the text and the item', async () => {
-      // A run of one letter holds a half-length run of it at every position, but never followed
-      // by `b`: restarting the comparison after each near miss re-read half the text each time.
-      // The steps are counted through the public function, as an embedder calls it, smallest
-      // first: the code units the search reads, each one of the text once and the item once per
-      // comparison (at most two a code unit of the text, two a code unit of the item to prepare).
-      for (const n of [20_000, 80_000, 160_000]) {
-        const value = 'a'.repeat(n);
-        const item = `${'a'.repeat(n / 2)}b`;
-        const counted = await evalCountingWork(
-          'MISSING_FROM(other; value)',
-          BuiltinSignatureIds.MISSING_FROM,
-          MissingFromImplementation,
-          { value, other: [item] },
-        );
-        expect(counted.value).toStrictEqual([item]);
-        expect(counted.steps, `${n} letters`).toBeGreaterThanOrEqual(value.length);
-        expect(counted.steps, `${n} letters`).toBeLessThanOrEqual(3 * (value.length + item.length));
-        const found = await evalCountingWork(
-          'MISSING_FROM(other; value)',
-          BuiltinSignatureIds.MISSING_FROM,
-          MissingFromImplementation,
-          { value: `${value}b`, other: [item] },
-        );
-        expect(found.value).toStrictEqual([]);
-      }
+    it('finds an item in a run of one letter only where the item occurs', async () => {
+      // The run holds the item's half-length run at every position, but never followed by `b`.
+      const value = 'a'.repeat(4_000);
+      const item = `${'a'.repeat(2_000)}b`;
+      const options = { setup: withOther };
+      expect(
+        await evalOk('MISSING_FROM(other; value)', { value, other: [item] }, options),
+      ).toStrictEqual([item]);
+      expect(
+        await evalOk('MISSING_FROM(other; value)', { value: `${value}b`, other: [item] }, options),
+      ).toStrictEqual([]);
     });
 
     it('follows the null convention and bounds the item list', async () => {

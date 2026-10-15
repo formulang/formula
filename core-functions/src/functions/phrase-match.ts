@@ -1,4 +1,8 @@
-import type { FormulaExecutionContext, FormulaNodeOutput } from '@formulang/definitions';
+import type {
+  BaseFunctionConfig,
+  FormulaExecutionContext,
+  FormulaNodeOutput,
+} from '@formulang/definitions';
 import { makeOkBoolean, makeOkList, makeOkNull, makeOkText } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import {
@@ -8,9 +12,8 @@ import {
   textCost,
   typeWarning,
 } from './argument-readers';
-import { isWordCharacter } from './helpers';
+import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { someOccurrence } from './text-search';
-import { CountedText, workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** How `FIRST_CONTAINED` and `CONTAINS_ANY` match a phrase. */
 export type PhraseMatchMode = 'substring' | 'word';
@@ -61,36 +64,32 @@ function normalise(value: string, mode: PhraseNormalisation): string {
 }
 
 /**
- * Whether `phrase` occurs in `text`, anywhere (`substring`) or with no letter, mark or number
- * directly on either side (`word`), in work linear in their lengths: both are read through their
- * counts, the characters on either side of an occurrence included.
+ * Whether `phrase` occurs in `text` with no letter, mark or number directly on either side: one
+ * Knuth-Morris-Pratt search, linear in their lengths however often the occurrences overlap.
  */
-function contains(text: CountedText, phrase: CountedText, match: PhraseMatchMode): boolean {
+function containsAsWord(text: string, phrase: string): boolean {
   return someOccurrence(
     text,
     phrase,
-    (at) =>
-      match === 'substring' ||
-      (!isWordCharacter(text.characterBefore(at)) &&
-        !isWordCharacter(text.characterAt(at + phrase.length))),
+    (at) => !isWordCharacterBefore(text, at) && !isWordCharacterAt(text, at + phrase.length),
   );
 }
 
 /**
- * The first phrase, in list order, that the text contains; `null` when none does. `work` counts
- * the characters the searches read.
+ * The first phrase, in list order, that the text contains; `null` when none does: one native
+ * substring search per phrase, or one `"word"` search per phrase.
  */
 function firstContained(
   text: string,
   phrases: readonly string[],
   match: PhraseMatchMode,
   ignoreCase: boolean,
-  work: WorkCount,
 ): string | null {
-  const haystack = new CountedText(ignoreCase ? text.toLowerCase() : text, work);
+  const haystack = ignoreCase ? text.toLowerCase() : text;
   for (const phrase of phrases) {
-    const needle = new CountedText(ignoreCase ? phrase.toLowerCase() : phrase, work);
-    if (contains(haystack, needle, match)) return phrase;
+    const needle = ignoreCase ? phrase.toLowerCase() : phrase;
+    const found = match === 'word' ? containsAsWord(haystack, needle) : haystack.includes(needle);
+    if (found) return phrase;
   }
   return null;
 }
@@ -122,8 +121,8 @@ function readPhraseCall(
   return { call: { text, phrases, match, ignoreCase: rawIgnoreCase === true } };
 }
 
-export class FirstContainedImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
-  constructor(config: WorkCountingConfig) {
+export class FirstContainedImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
     super(config);
   }
 
@@ -135,13 +134,13 @@ export class FirstContainedImplementation extends AbstractEagerBatchImplementati
     const read = readPhraseCall('FIRST_CONTAINED', args, ctx);
     if ('output' in read) return read.output;
     const { text, phrases, match, ignoreCase } = read.call;
-    const phrase = firstContained(text, phrases, match, ignoreCase, workOf(this.config));
+    const phrase = firstContained(text, phrases, match, ignoreCase);
     return phrase === null ? makeOkNull('FIRST_CONTAINED') : makeOkText('FIRST_CONTAINED', phrase);
   }
 }
 
-export class ContainsAnyImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
-  constructor(config: WorkCountingConfig) {
+export class ContainsAnyImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
     super(config);
   }
 
@@ -153,13 +152,13 @@ export class ContainsAnyImplementation extends AbstractEagerBatchImplementation<
     const read = readPhraseCall('CONTAINS_ANY', args, ctx);
     if ('output' in read) return read.output;
     const { text, phrases, match, ignoreCase } = read.call;
-    const phrase = firstContained(text, phrases, match, ignoreCase, workOf(this.config));
+    const phrase = firstContained(text, phrases, match, ignoreCase);
     return makeOkBoolean('CONTAINS_ANY', phrase !== null);
   }
 }
 
-export class MissingFromImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
-  constructor(config: WorkCountingConfig) {
+export class MissingFromImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
     super(config);
   }
 
@@ -176,11 +175,10 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation<
     const mode = readOptionalMode('MISSING_FROM', 'normalise', args[2], PHRASE_NORMALISATIONS);
     if (typeof mode !== 'string') return mode;
 
-    const work = workOf(this.config);
-    const haystack = new CountedText(normalise(text, mode), work);
+    const haystack = normalise(text, mode);
     const missing = items.filter((item) => {
-      const needle = new CountedText(normalise(item, mode), work);
-      return needle.length > 0 && !contains(haystack, needle, 'substring');
+      const needle = normalise(item, mode);
+      return needle.length > 0 && !haystack.includes(needle);
     });
     return makeOkList('MISSING_FROM', missing);
   }

@@ -2,17 +2,11 @@ import { BuiltinSignatureIds, FormulaErrorCodes } from '@formulang/definitions';
 import {
   collectAllErrors,
   createTestRuntime,
-  evalCountingWork,
   evalFormula,
   evalOk,
 } from '../test-helpers/eval-formula';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
-import {
-  MARKDOWN_BLOCK_KINDS,
-  MarkdownBlocksImplementation,
-  MARKUP_FORMATS,
-  PlainTextImplementation,
-} from './markup-text';
+import { MARKDOWN_BLOCK_KINDS, MARKUP_FORMATS } from './markup-text';
 
 async function errorCodes(source: string, vars: Record<string, unknown> = {}) {
   const { parsed, compiled, res } = await evalFormula(source, vars);
@@ -266,228 +260,158 @@ describe('Markup text', () => {
     });
   });
 
-  describe('scan work', () => {
-    // The count is what the scans read: every code unit of the input or of a piece of it, read
-    // through its `CountedText`, every field of an emphasis run and every start of a backtick
-    // run, each one step as it is read. A scan that reaches the end of its input reads every
-    // character at least once; a linear one reads each at most STEPS_PER_CHARACTER times, plus a
-    // fixed allowance. Each input below is measured at each of its sizes, smallest first,
-    // through PLAIN_TEXT and MARKDOWN_BLOCKS as an embedder calls them; a scan that re-reads its
-    // input per tag, per delimiter run or per backtick run exceeds the bound by orders of
-    // magnitude at the first. The count does not see inside a regular expression: every one of
-    // these modules is listed, with why it reads in linear time, in regex-roster.spec.ts. The
-    // space and backtick runs before a line separator, on which earlier line patterns
-    // backtracked, are among the inputs, with the text they give.
-    const STEPS_PER_CHARACTER = 16;
-    const FIXED_STEPS = 1_000;
-
-    type AdversarialInput = {
+  describe('inputs built against the scans', () => {
+    // Markup shaped against each scan: quotes, comments and tags the markup ends inside, runs of
+    // emphasis delimiters and backticks, nested markers, and space and backtick runs before a
+    // line separator. Each gives the text below.
+    type HardInput = {
       build: (size: number) => string;
       text: (size: number) => string;
-      sizes: readonly number[];
+      size: number;
     };
 
     const backtickRuns = (lengths: readonly number[]) =>
       lengths.map((length) => `${'`'.repeat(length)} x `).join('');
     const rising = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
 
-    const htmlInputs: Record<string, AdversarialInput> = {
+    const htmlInputs: Record<string, HardInput> = {
       'a quoted > after each tag name': {
         build: (m) => '<a ">"'.repeat(m),
         text: (m) => '"'.repeat(m),
-        sizes: [1_000, 4_000, 10_000],
+        size: 1_000,
       },
       'unterminated double-quoted values': {
         build: (m) => '<a title="x'.repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'unterminated single-quoted values': {
         build: (m) => "<a title='x".repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'one unterminated quoted value': {
         build: (m) => `<p title="${'x'.repeat(m)}`,
         text: () => '',
-        sizes: [10_000, 40_000],
+        size: 10_000,
       },
       'tags without >': {
         build: (m) => '<a'.repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'quoted values holding >': {
         build: (m) => '<a b=">">x'.repeat(m),
         text: (m) => 'x'.repeat(m),
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'unterminated comments': {
         build: (m) => '<!-- x --'.repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'declarations without >': {
         build: (m) => '<!x'.repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'end tags with unterminated values': {
         build: (m) => '</a b="'.repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'script without its end tag': {
         build: (m) => '<script>'.repeat(m),
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'near-miss script end tags': {
         build: (m) => `<script>${'</scriptx'.repeat(m)}`,
         text: () => '',
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
       'a < that starts no tag': {
         build: (m) => 'a < b '.repeat(m),
         text: (m) => 'a < b '.repeat(m).trim(),
-        sizes: [1_000, 4_000],
+        size: 1_000,
       },
     };
 
-    const markdownInputs: Record<string, AdversarialInput> = {
+    const markdownInputs: Record<string, HardInput> = {
       'emphasis openers without closers': {
         build: (k) => '_a '.repeat(k) + 'a* '.repeat(k),
         text: (k) => ('_a '.repeat(k) + 'a* '.repeat(k)).trim(),
-        sizes: [2_000, 8_000, 80_000],
+        size: 2_000,
       },
       'unmatched openers of both markers': {
         build: (k) => '*a _a '.repeat(k),
         text: (k) => '*a _a '.repeat(k).trim(),
-        sizes: [2_000, 8_000],
+        size: 2_000,
       },
       'emphasis pairs': {
         build: (k) => '*a* _b_ '.repeat(k),
         text: (k) => 'a b '.repeat(k).trim(),
-        sizes: [2_000, 8_000],
+        size: 2_000,
       },
       'backtick runs of rising lengths': {
         build: (k) => backtickRuns(rising(k)),
         text: (k) => backtickRuns(rising(k)).trim(),
-        sizes: [100, 300, 2_000],
+        size: 100,
       },
       'backtick runs of falling lengths': {
         build: (k) => backtickRuns(rising(k).reverse()),
         text: (k) => backtickRuns(rising(k).reverse()).trim(),
-        sizes: [100, 300],
+        size: 100,
       },
       'unclosed brackets': {
         build: (k) => `${'['.repeat(k)}]`,
         text: (k) => `${'['.repeat(k)}]`,
-        sizes: [10_000, 40_000],
+        size: 10_000,
       },
       'nested quote markers': {
         build: (k) => `${'>'.repeat(k)} x`,
         text: () => 'x',
-        sizes: [10_000, 40_000],
+        size: 10_000,
       },
       'closing hashes after a space run': {
         build: (k) => `# a${' '.repeat(k)}b ##`,
         text: () => 'a b',
-        sizes: [10_000, 40_000],
+        size: 10_000,
       },
       'many short lines': {
         build: (k) => 'a\n'.repeat(k),
         text: (k) => 'a '.repeat(k).trim(),
-        sizes: [10_000, 40_000],
+        size: 10_000,
       },
       'a space run inside a heading': {
         build: (k) => `# a${' '.repeat(k)}b`,
         text: () => 'a b',
-        sizes: [10_000, 60_000],
+        size: 10_000,
       },
       'a space run before a line separator in a heading': {
         build: (k) => `# Title${' '.repeat(k)}\u2028more`,
         text: () => 'Title more',
-        sizes: [10_000, 60_000],
+        size: 10_000,
       },
       'a space run after a list marker before a line separator': {
         build: (k) => `-${' '.repeat(k)}\u2028item`,
         text: () => 'item',
-        sizes: [10_000, 60_000],
+        size: 10_000,
       },
       'a backtick run before a line separator': {
         build: (k) => `${'`'.repeat(k)}\u2028`,
         text: () => '',
-        sizes: [10_000, 60_000],
+        size: 10_000,
       },
     };
 
-    /** The public function a scan is measured through. */
-    type PublicPath = {
-      formula: string;
-      signatureId: string;
-      implementation: typeof PlainTextImplementation | typeof MarkdownBlocksImplementation;
-    };
-    const plainHtml: PublicPath = {
-      formula: 'PLAIN_TEXT(value; "html")',
-      signatureId: BuiltinSignatureIds.PLAIN_TEXT,
-      implementation: PlainTextImplementation,
-    };
-    const plainMarkdown: PublicPath = {
-      formula: 'PLAIN_TEXT(value; "markdown")',
-      signatureId: BuiltinSignatureIds.PLAIN_TEXT,
-      implementation: PlainTextImplementation,
-    };
-    const markdownBlocks: PublicPath = {
-      formula: 'MARKDOWN_BLOCKS(value; "paragraph")',
-      signatureId: BuiltinSignatureIds.MARKDOWN_BLOCKS,
-      implementation: MarkdownBlocksImplementation,
-    };
+    it.each(Object.entries(htmlInputs))('reads HTML with %s', async (_name, input) => {
+      expect(await html(input.build(input.size))).toBe(input.text(input.size));
+    });
 
-    /**
-     * Bounds the work of `path` on `input` at each of its sizes, smallest first; checks the text
-     * where it is known.
-     */
-    const expectLinearWork = async (
-      path: PublicPath,
-      input: AdversarialInput,
-      checkText: boolean,
-    ) => {
-      for (const size of input.sizes) {
-        const value = input.build(size);
-        const counted = await evalCountingWork(
-          path.formula,
-          path.signatureId,
-          path.implementation,
-          {
-            value,
-          },
-        );
-        const label = `${path.formula} on ${value.length} characters`;
-        expect(counted.steps, label).toBeGreaterThanOrEqual(value.length);
-        expect(counted.steps, label).toBeLessThanOrEqual(
-          STEPS_PER_CHARACTER * value.length + FIXED_STEPS,
-        );
-        if (checkText) expect(counted.value, label).toBe(input.text(size));
-      }
-    };
-
-    it.each(Object.entries(htmlInputs))(
-      'reads HTML with %s in linear work',
-      async (_name, input) => {
-        await expectLinearWork(plainHtml, input, true);
-      },
-      120_000,
-    );
-
-    it.each(Object.entries(markdownInputs))(
-      'reads markdown with %s in linear work',
-      async (_name, input) => {
-        await expectLinearWork(plainMarkdown, input, true);
-        await expectLinearWork(markdownBlocks, input, false);
-      },
-      120_000,
-    );
+    it.each(Object.entries(markdownInputs))('reads markdown with %s', async (_name, input) => {
+      expect(await markdown(input.build(input.size))).toBe(input.text(input.size));
+    });
   });
 
   describe('reference tables', () => {

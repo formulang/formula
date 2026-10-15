@@ -35,8 +35,31 @@ export function isEmptyValue(value: unknown): boolean {
 /** A letter, mark or number: the characters a word is made of. */
 const WORD_CHARACTER = /^[\p{L}\p{M}\p{N}]$/u;
 
-/** Whether `character` (a whole code point; `null` for none) is a letter, mark or number. */
-export function isWordCharacter(character: string | null): boolean {
+/** The character (a whole code point) ending just before `index`; `null` at the start. */
+export function characterBefore(text: string, index: number): string | null {
+  if (index <= 0 || index > text.length) return null;
+  const last = text.charCodeAt(index - 1);
+  const first = index >= 2 ? text.charCodeAt(index - 2) : 0;
+  const isPair = last >= 0xdc00 && last <= 0xdfff && first >= 0xd800 && first <= 0xdbff;
+  return text.slice(isPair ? index - 2 : index - 1, index);
+}
+
+/** The character (a whole code point) starting at `index`; `null` at the end. */
+export function characterAt(text: string, index: number): string | null {
+  if (index < 0 || index >= text.length) return null;
+  const codePoint = text.codePointAt(index);
+  return codePoint === undefined ? null : String.fromCodePoint(codePoint);
+}
+
+/** Whether the character ending just before `index` is a letter, mark or number. */
+export function isWordCharacterBefore(text: string, index: number): boolean {
+  const character = characterBefore(text, index);
+  return character !== null && WORD_CHARACTER.test(character);
+}
+
+/** Whether the character starting at `index` is a letter, mark or number. */
+export function isWordCharacterAt(text: string, index: number): boolean {
+  const character = characterAt(text, index);
   return character !== null && WORD_CHARACTER.test(character);
 }
 

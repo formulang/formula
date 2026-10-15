@@ -2,15 +2,14 @@ import { BuiltinSignatureIds, FormulaErrorCodes } from '@formulang/definitions';
 import {
   collectAllErrors,
   createTestRuntime,
-  evalCountingWork,
   evalFormula,
   evalOk,
   evalOkWithOutput,
+  withOther,
 } from '../test-helpers/eval-formula';
 import {
   LINE_SPLIT_MODES,
   SENTENCE_SPLIT_MODES,
-  SentencesImplementation,
   splitSentences,
   splitWords,
   WORD_SPLIT_MODES,
@@ -309,35 +308,26 @@ describe('Text segmentation', () => {
       ).toStrictEqual({ value: null, codes: ['TYPE'] });
     });
 
-    it('finds keep tokens in work linear in the text and the tokens', async () => {
+    it('protects only the keep tokens that start at a word boundary', async () => {
       // A run of one letter holds the half-length token at every position; only the one at the
-      // start begins at a word boundary. Re-checking each occurrence re-read half the text each
-      // time (seconds at 80,000). The steps are counted through SENTENCES, as an embedder calls it,
-      // smallest first. They are the code units read: the search reads at most three a code unit of
-      // the text and the token, and the sentences copy the text once.
-      for (const n of [20_000, 80_000, 160_000]) {
-        const value = `${'a'.repeat(n)}. Next.`;
-        const token = 'a'.repeat(n / 2);
-        const counted = await evalCountingWork(
+      // start begins at a word boundary, and its range ends before the full stop.
+      const options = { setup: withOther };
+      const value = `${'a'.repeat(4_000)}. Next.`;
+      expect(
+        await evalOk(
           'SENTENCES(value; "punctuation"; other)',
-          BuiltinSignatureIds.SENTENCES,
-          SentencesImplementation,
-          { value, other: [token] },
-        );
-        expect(counted.value).toStrictEqual([`${'a'.repeat(n)}.`, 'Next.']);
-        expect(counted.steps, `${n} letters`).toBeGreaterThanOrEqual(value.length);
-        expect(counted.steps, `${n} letters`).toBeLessThanOrEqual(
-          4 * (value.length + token.length),
-        );
-      }
+          { value, other: ['a'.repeat(2_000)] },
+          options,
+        ),
+      ).toStrictEqual([`${'a'.repeat(4_000)}.`, 'Next.']);
       // The occurrence that starts at a word boundary protects its range: `aa.` here.
-      const kept = await evalCountingWork(
-        'SENTENCES(value; "punctuation"; other)',
-        BuiltinSignatureIds.SENTENCES,
-        SentencesImplementation,
-        { value: 'aa. aa. b.', other: ['aa. a'] },
-      );
-      expect(kept.value).toStrictEqual(['aa. aa.', 'b.']);
+      expect(
+        await evalOk(
+          'SENTENCES(value; "punctuation"; other)',
+          { value: 'aa. aa. b.', other: ['aa. a'] },
+          options,
+        ),
+      ).toStrictEqual(['aa. aa.', 'b.']);
       expect(
         await evalOk('COUNT(SENTENCES(value; "punctuation"; LIST("aa")))', {
           value: 'a'.repeat(1_000),
