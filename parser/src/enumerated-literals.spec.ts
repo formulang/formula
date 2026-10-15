@@ -539,7 +539,10 @@ describe('admitted lists', () => {
     );
   });
 
-  /** The core registry with PICK, whose variadic mode lists `first`, and lists `second` on an overload that takes a text subject. */
+  /**
+   * The core registry with PICK, whose variadic mode lists `first`, and lists `second` on an
+   * overload that takes a text subject.
+   */
   function registryWithVariadicPick(first: readonly string[], second: readonly string[]) {
     const registry = createRegistry();
     registerCoreFormulaDefinitions(registry);

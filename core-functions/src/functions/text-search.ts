@@ -7,9 +7,10 @@ import type { CountedText } from './work-count';
  *
  * Knuth-Morris-Pratt matching reads each code unit of `text` once and compares it with code units
  * of `needle`, each read for its comparison: at most `2 * text.length` comparisons, and
- * `2 * needle.length` to prepare, whatever they hold. Restarting `indexOf` after each occurrence instead re-reads up
- * to `needle.length` characters per occurrence, which is quadratic on a periodic text such as a
- * long run of one letter. Both texts are read through their counts, one step a code unit.
+ * `2 * needle.length` to prepare, whatever they hold. Restarting `indexOf` after each occurrence
+ * instead re-reads up to `needle.length` characters per occurrence, which is quadratic on a
+ * periodic text such as a long run of one letter. Both texts are read through their counts, one
+ * step a code unit.
  */
 export function someOccurrence(
   text: CountedText,

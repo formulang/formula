@@ -40,7 +40,7 @@ type Cells = { readonly listed: Levels; readonly unlisted: Levels; readonly valu
 
 const everywhere = (codes: readonly string[]): Levels => [codes, codes, codes];
 
-/** The list is read alike at every level: the unlisted literal is refused, a value is no literal. */
+/** The list is read alike at every level: the unlisted literal is refused, a value is not one. */
 const CHECKED: Cells = {
   listed: everywhere([]),
   unlisted: everywhere([L]),
@@ -54,7 +54,10 @@ const UNCHECKED: Cells = {
   value: everywhere([]),
 };
 
-/** A literal-only parameter without a list: a value is refused written, and reaches the function passed on, as on 1.0.0. */
+/**
+ * A literal-only parameter without a list: a value is refused where it is written, and passed on
+ * it reaches the function, as on 1.0.0.
+ */
 const WRITTEN_ONLY: Cells = {
   listed: everywhere([]),
   unlisted: everywhere([]),
@@ -304,7 +307,7 @@ function codes(registry: FormulaRegistry, source: string): string[] {
   return parseFormula(source, { registry }).errors.map((error) => error.code);
 }
 
-/** TARGET's arguments after its subject for each cell: the listed literal, the unlisted one, a value. */
+/** TARGET's arguments after its subject for each cell: the listed literal, the unlisted, a value. */
 function argumentsOf(kind: Kind): Array<[keyof Cells, string]> {
   const at = (argument: string) =>
     kind.position === 1 ? argument : `${JSON.stringify(kind.listed)}; ${argument}`;
