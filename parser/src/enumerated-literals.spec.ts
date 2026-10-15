@@ -1,28 +1,27 @@
 import type { FormulaRegistry } from '@formulang/definitions';
 import {
-  admittedValues,
   createRegistry,
   FormulaErrorCodes,
   FormulaTypes,
-  literalCheckAt,
   registerCoreFormulaDefinitions,
-  stripNullability,
 } from '@formulang/definitions';
 import { describe, expect, it } from 'vitest';
-import {
-  callWalk,
-  runWalk,
-  seedCallable,
-  type CallWalk,
-  type WalkStep,
-} from './enumerated-literals';
 import { parseFormula } from './index';
+import { observeWork, type WalkEvent, type WorkRecord } from './work-trace';
+
+/**
+ * The walk through the callables a call names, observed on the parser's own code paths: every
+ * parse here runs under `observeWork`, so the walk's queue and visits and the call checks' units of
+ * work are what `parseFormula` did, in order. No assertion reads a clock.
+ */
 
 /** Limits raised for calls of thousands of arguments, as an embedder may raise them. */
 const LIMITS = { maxTokens: 1_000_000, maxAstNodes: 1_000_000, maxSourceLength: 10_000_000 };
 
 /** The documented bound: 16 argument positions per argument of the call, and 16 more. */
 const documentedLimit = (args: number) => 16 * (args + 1);
+
+const LVNA = FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED;
 
 /**
  * The core registry with PICK(subject; mode), whose mode lists `a` and `b`; PICK3(subject; mode;
@@ -79,8 +78,8 @@ type Registry = ReturnType<typeof registryWithPick>;
  * callable parameter is variadic; one with `width` parameters in all; one with `callables`
  * callable parameters after a number target, forty parameters in all, the last of them variadic,
  * so a call written with a number binds it at any length and its callables fan out at every level;
- * or one whose variadic callable parameter after a number target lists the callables EACH and PICK
- * (`operators: 'listing'`) or lists none (`'unlisted'`).
+ * or one whose variadic callable parameter after a number target lists the callables `operators`
+ * names, or lists none.
  */
 function withHostEach(
   registry: Registry,
@@ -88,7 +87,7 @@ function withHostEach(
     | { variadic: true }
     | { width: number }
     | { callables: number }
-    | { operators: 'listing' | 'unlisted' },
+    | { operators: readonly string[] | 'unlisted' },
 ) {
   const [each] = registry.listFunctionsByName('EACH');
   if (each === undefined) throw new Error('no EACH');
@@ -111,7 +110,7 @@ function withHostEach(
           target,
           {
             ...callable('operators', true),
-            ...(shape.operators === 'listing' ? { literalValues: ['EACH', 'PICK'] } : {}),
+            ...(shape.operators === 'unlisted' ? {} : { literalValues: [...shape.operators] }),
           },
         ]
       : 'callables' in shape
@@ -136,45 +135,176 @@ function chain(count: number, mode: string, head = 'EACH'): string {
   return `${head}(LIST(LIST(1)); ${'"EACH"; '.repeat(count - 3)}"PICK"; "${mode}")`;
 }
 
-/**
- * Parses `source` and walks the callables its call names as the parser does: every callable
- * argument the call written in the formula checks seeds one walk, which then runs once. `limit`
- * replaces the walk's limit, and the walk records its steps in `trace`.
- */
-function walked(
-  registry: FormulaRegistry,
-  source: string,
-  options: { limits?: object; limit?: number } = {},
-) {
-  const rule = parseFormula(source, { registry, limits: options.limits ?? LIMITS });
-  const root = rule.root;
-  if (root.kind !== 'call' || root.signatureId === undefined) throw new Error(`${source}: unbound`);
-  const host = registry.getFunction(root.signatureId);
-  if (host === undefined) throw new Error(`${source}: no definition`);
-  const trace: WalkStep[] = [];
-  const base = callWalk(registry, [], { signatureId: root.signatureId, args: root.args });
-  const walk: CallWalk = { ...base, trace, limit: options.limit ?? base.limit };
-  for (let index = 0; index < Math.max(host.params.length, root.args.length); index++) {
-    const param = literalCheckAt(host.params, index, admittedValues)?.param;
-    if (param === undefined) continue;
-    const type = stripNullability(param.type);
-    const named = root.args[index];
-    if (type.kind !== 'callable' || typeof named?.predictableValue !== 'string') continue;
-    seedCallable(walk, {
-      host,
-      reference: type.reference,
-      name: named.predictableValue,
-      index,
-      span: named.span,
-    });
-  }
-  runWalk(walk);
-  return { rule, walk, trace, args: root.args.length };
+/** Parses `source` under `observeWork`: the rule, and the record of what the parse did. */
+function observed(registry: FormulaRegistry, source: string, limits: object = LIMITS) {
+  const { result: rule, work } = observeWork(() => parseFormula(source, { registry, limits }));
+  return { rule, work, codes: rule.errors.map((error) => error.code) };
 }
 
-const codes = (errors: readonly { code: string }[]) => errors.map((error) => error.code);
+type WalkStart = Extract<WalkEvent, { kind: 'walk' }>;
+type Queued = Extract<WalkEvent, { kind: 'queued' }>;
+type Visited = Extract<WalkEvent, { kind: 'visited' }>;
+type Walk = { start: WalkStart; events: WalkEvent[] };
+
+/** The walks of a record, each with its events in order. */
+function walksOf(work: WorkRecord): Walk[] {
+  const walks = new Map<number, Walk>();
+  for (const event of work.events) {
+    if (event.kind === 'walk') walks.set(event.walk, { start: event, events: [] });
+    else walks.get(event.walk)?.events.push(event);
+  }
+  return [...walks.values()];
+}
+
+/** The one walk of the call written at the start of the formula; fails if it has none or more. */
+function rootWalk(work: WorkRecord): Walk {
+  const walks = walksOf(work).filter((walk) => walk.start.start === 0);
+  expect(walks.length, 'walks of the call written at the start').toBe(1);
+  return walks[0] as Walk;
+}
+
+/**
+ * Holds a walk to its guarantee, from what the parser did: one queue, seeded with every callable
+ * the call names before the first visit; each state queued once and visited in the order queued,
+ * at its positions in order, in full but for the last one visited; depths that never decrease; every
+ * state queued at a depth shallower than the last visit visited in full; at most 16 × (n + 1)
+ * visits for a call of n arguments, and all of them where it leaves a queued state unvisited.
+ * Answers whether the walk stopped at its bound.
+ */
+function expectOneBreadthFirstQueue(walk: Walk, label: string): boolean {
+  const { start, events } = walk;
+  expect(start.limit, label).toBe(documentedLimit(start.args));
+  const visits = events.filter((event): event is Visited => event.kind === 'visited');
+  const queued = events.filter((event): event is Queued => event.kind === 'queued');
+  expect(visits.length, label).toBeLessThanOrEqual(start.limit);
+  const firstVisit = events.findIndex((event) => event.kind === 'visited');
+  const lateSeed = events.findIndex(
+    (event, index) =>
+      event.kind === 'queued' && event.depth === 0 && firstVisit >= 0 && index > firstVisit,
+  );
+  expect(lateSeed, `${label}: a callable the call names queued after the first visit`).toBe(-1);
+  expect(new Set(queued.map((event) => event.state)).size, label).toBe(queued.length);
+  const toVisit = queued.filter((event) => event.positions > 0);
+  const runs: Visited[][] = [];
+  for (const visit of visits) {
+    const run = runs[runs.length - 1];
+    if (run !== undefined && run[0]?.state === visit.state) run.push(visit);
+    else runs.push([visit]);
+  }
+  expect(
+    runs.map((run) => run[0]?.state),
+    `${label}: states visited in the order queued`,
+  ).toStrictEqual(toVisit.slice(0, runs.length).map((event) => event.state));
+  const outOfOrder = runs.findIndex((run, index) => {
+    const owed = index < runs.length - 1 ? (toVisit[index]?.positions ?? 0) : run.length;
+    return run.length !== owed || run.some((visit, position) => visit.position !== position);
+  });
+  expect(outOfOrder, `${label}: a state visited out of order, or in part before the last`).toBe(-1);
+  const shallower = visits.findIndex(
+    (visit, index) => index > 0 && visit.depth < (visits[index - 1]?.depth ?? 0),
+  );
+  expect(shallower, `${label}: a visit shallower than the one before it`).toBe(-1);
+  const visitedInFull = new Set(
+    runs
+      .filter((run, index) => run.length === toVisit[index]?.positions)
+      .map((run) => run[0]?.state),
+  );
+  const deepest = visits[visits.length - 1]?.depth ?? 0;
+  const skipped = toVisit.find((event) => event.depth < deepest && !visitedInFull.has(event.state));
+  expect(skipped, `${label}: a state shallower than the last visit left unvisited`).toBeUndefined();
+  const stopped = toVisit.some((event) => !visitedInFull.has(event.state));
+  if (stopped) expect(visits.length, `${label}: stopped short of its bound`).toBe(start.limit);
+  return stopped;
+}
+
+/**
+ * The shapes the walk takes: chains, levels with several callables, calls with several callable
+ * parameters, and the extra arguments of a variadic callable parameter that lists the callables it
+ * admits, each with the codes the formula gets and whether the bound must stop it at some size.
+ */
+const SHAPES = [
+  {
+    shape: 'a chain of EACH',
+    registry: () => registryWithPick(),
+    formula: (count: number) => chain(count, 'zzz'),
+    sizes: [6, 20, 100, 1_000, 12_000],
+    codes: [LVNA],
+    stops: false,
+  },
+  {
+    shape: 'a chain through a host EACH with a variadic callable',
+    registry: () => withHostEach(registryWithPick(), { variadic: true }),
+    formula: (count: number) => chain(count, 'zzz'),
+    sizes: [6, 20, 100, 1_000, 12_000],
+    codes: [LVNA],
+    stops: false,
+  },
+  {
+    shape: 'several callables at every level',
+    registry: () => withHostEach(registryWithPick(), { callables: 2 }),
+    formula: (count: number) =>
+      `EACH(LIST(LIST(1)); "EACH"; "PICK"; ${'"EACH"; '.repeat(count - 4)}"a")`,
+    sizes: [20, 60, 120, 240, 1_000],
+    codes: [LVNA],
+    stops: true,
+  },
+  {
+    shape: 'the literal under the second callable parameter of the call',
+    registry: () => withHostEach(registryWithPick(), { callables: 2 }),
+    formula: (count: number) => `EACH(1; "EACH"; "PICK3"; ${'"EACH"; '.repeat(count - 4)}"a")`,
+    sizes: [6, 10, 20, 40, 100, 1_000, 12_000],
+    codes: [LVNA],
+    stops: true,
+  },
+  {
+    shape: 'the literal under the first callable parameter of the call',
+    registry: () => withHostEach(registryWithPick(), { callables: 2 }),
+    formula: (count: number) => `EACH(1; "PICKN"; ${'"EACH"; '.repeat(count - 3)}"a")`,
+    sizes: [6, 10, 20, 40, 100, 1_000, 12_000],
+    codes: [LVNA],
+    stops: true,
+  },
+  {
+    shape: 'the literal under an extra argument of a variadic callable that lists its callables',
+    registry: () => withHostEach(registryWithPick(), { operators: ['EACH', 'PICK3'] }),
+    formula: (count: number) => `EACH(1; "EACH"; "PICK3"${'; "EACH"'.repeat(count - 3)})`,
+    sizes: [4, 10, 20, 40, 100, 1_000, 12_000],
+    codes: [LVNA],
+    stops: true,
+  },
+  {
+    shape: 'every argument a callable parameter',
+    registry: () => withHostEach(registryWithPick(), { operators: ['EACH', 'PICK'] }),
+    formula: (count: number) => `EACH(1; ${'"EACH"; '.repeat(count - 2)}"EACH")`,
+    sizes: [10, 100, 1_000, 12_000],
+    codes: [],
+    stops: true,
+  },
+];
 
 describe('the walk through nested callables', () => {
+  it.each(SHAPES.map((entry) => [entry.shape, entry] as const))(
+    'walks every callable the call names through one breadth-first queue, for %s',
+    (_, { registry: registryFor, formula, sizes, codes, stops }) => {
+      const registry = registryFor();
+      let stopped = 0;
+      for (const count of sizes) {
+        const source = formula(count);
+        const label = `${count} arguments`;
+        const parse = observed(registry, source);
+        // The formula's answer, as the walk leaves it: the shallow literal refused at every size.
+        expect(parse.codes, label).toStrictEqual(codes);
+        const walk = rootWalk(parse.work);
+        expect(walk.start.args, label).toBe(count);
+        if (expectOneBreadthFirstQueue(walk, label)) stopped++;
+      }
+      // Not vacuous: where the shape branches, the bound stops the walk at the larger sizes.
+      if (stops) expect(stopped).toBeGreaterThanOrEqual(2);
+      else expect(stopped).toBe(0);
+    },
+    60_000,
+  );
+
   it.each([
     ['the core EACH chain', () => registryWithPick()],
     [
@@ -186,30 +316,45 @@ describe('the walk through nested callables', () => {
     (_, registryFor) => {
       const registry = registryFor();
       for (const count of [100, 1_000, 3_000, 6_000, 12_000]) {
-        const { rule, walk } = walked(registry, chain(count, 'zzz'));
-        // One level per argument, three positions a level: the walk's own count, never near its
-        // limit, whichever overloads the name has.
-        expect(walk.steps, `${count} arguments`).toBeGreaterThanOrEqual(count);
-        expect(walk.steps, `${count} arguments`).toBeLessThanOrEqual(3 * count);
-        expect(walk.limit).toBe(documentedLimit(count));
-        // The literal at the end of the chain is refused, and the parser refuses it as written.
-        expect(codes(walk.errors)).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
-        expect(codes(rule.errors)).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
+        const { codes, work, rule } = observed(registry, chain(count, 'zzz'));
+        const visits = rootWalk(work).events.filter((event) => event.kind === 'visited');
+        // One level per argument, three positions a level, never near the bound.
+        expect(visits.length, `${count} arguments`).toBeGreaterThanOrEqual(count);
+        expect(visits.length, `${count} arguments`).toBeLessThanOrEqual(3 * count);
+        // The literal at the end of the chain is refused, where it is written.
+        expect(codes).toStrictEqual([LVNA]);
         expect(rule.errors[0]?.span?.start).toBe(chain(count, 'zzz').lastIndexOf('"zzz"'));
-        expect(parseFormula(chain(count, 'a'), { registry, limits: LIMITS }).errors).toStrictEqual(
-          [],
-        );
+        expect(observed(registry, chain(count, 'a')).codes).toStrictEqual([]);
       }
     },
     60_000,
   );
 
+  it('validates the callables a call names in work linear in the call', () => {
+    // A variadic callable parameter that lists the callables it admits makes every argument of
+    // the call a callable parameter, each validated and seeded into the walk. What the call passes
+    // its callables, the templates it binds and the overload a name chooses are worked out once
+    // per call, so the argument types the checks of the call read stay within a constant number
+    // per argument, however many callable parameters it has; work per callable parameter in
+    // proportion to the call would read a number in proportion to its square.
+    const registry = withHostEach(registryWithPick(), { operators: ['EACH', 'PICK'] });
+    for (const count of [10, 100, 1_000, 3_000]) {
+      const { work, codes } = observed(registry, `EACH(1; ${'"EACH"; '.repeat(count - 2)}"EACH")`);
+      expect(codes).toStrictEqual([]);
+      expect(work.units.arguments, `${count} arguments`).toBeGreaterThanOrEqual(count);
+      expect(work.units.arguments, `${count} arguments`).toBeLessThanOrEqual(16 * (count + 1));
+    }
+  });
+
   it('parses the longest chain the default limits admit through a variadic host EACH', () => {
     const registry = withHostEach(registryWithPick(), { variadic: true });
     const source = `EACH(LIST(LIST(1)); ${'"EACH"; '.repeat(238)}"ISNUMBER")`;
-    const { rule, walk } = walked(registry, source, { limits: {} });
-    expect(rule.errors).toStrictEqual([]);
-    expect(walk.steps).toBeLessThanOrEqual(3 * 241);
+    const { codes, work } = observed(registry, source, {});
+    expect(codes).toStrictEqual([]);
+    const walk = rootWalk(work);
+    expect(walk.events.filter((event) => event.kind === 'visited').length).toBeLessThanOrEqual(
+      3 * 241,
+    );
   });
 
   it('stops at its limit without throwing or refusing the formula', () => {
@@ -218,96 +363,12 @@ describe('the walk through nested callables', () => {
     // functions when the call runs.
     const count = 120;
     const misspelt = chain(count, 'zzz');
-    const wide = withHostEach(registryWithPick(), { width: 40 });
-    const { rule, walk } = walked(wide, misspelt);
-    expect(walk.steps).toBe(walk.limit);
-    expect(codes(walk.errors)).toStrictEqual([]);
-    expect(rule.errors).toStrictEqual([]);
+    const wide = observed(withHostEach(registryWithPick(), { width: 40 }), misspelt);
+    expect(wide.codes).toStrictEqual([]);
+    expect(expectOneBreadthFirstQueue(rootWalk(wide.work), 'forty parameters')).toBe(true);
     // Not vacuous: with the core definitions alone the walk reaches the end of the same chain.
-    expect(codes(walked(registryWithPick(), misspelt).rule.errors)).toStrictEqual([
-      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-    ]);
+    expect(observed(registryWithPick(), misspelt).codes).toStrictEqual([LVNA]);
   });
-
-  // Where the walk branches: several callables at every level (a host EACH overload with two
-  // callable parameters beside the core EACH), and several callable parameters in the call written
-  // in the formula (the same overload bound by a number), with the refused literal under the second
-  // of them, behind a chain the first names, or under the first. Each formula holds a literal a
-  // shallow state refuses and a chain deep enough to spend the limit at its larger sizes.
-  const FAN_OUT = [
-    {
-      shape: 'several callables at every level',
-      formula: (count: number) =>
-        `EACH(LIST(LIST(1)); "EACH"; "PICK"; ${'"EACH"; '.repeat(count - 4)}"a")`,
-      sizes: [20, 60, 120, 240],
-    },
-    {
-      shape: 'the literal under the second callable parameter of the call',
-      formula: (count: number) => `EACH(1; "EACH"; "PICK3"; ${'"EACH"; '.repeat(count - 4)}"a")`,
-      sizes: [6, 10, 20, 30, 40],
-    },
-    {
-      shape: 'the literal under the first callable parameter of the call',
-      formula: (count: number) => `EACH(1; "PICKN"; ${'"EACH"; '.repeat(count - 3)}"a")`,
-      sizes: [6, 10, 20, 30, 40],
-    },
-  ];
-
-  it.each(FAN_OUT.map((entry) => [entry.shape, entry] as const))(
-    'checks every level shallower than where it stops, with %s',
-    (_, { formula, sizes }) => {
-      const registry = withHostEach(registryWithPick(), { callables: 2 });
-      let stopped = 0;
-      for (const count of sizes) {
-        const source = formula(count);
-        // The shallow literal is refused at every size, by the parser as written.
-        const { rule, walk, trace, args } = walked(registry, source);
-        expect(codes(rule.errors), source).toStrictEqual([
-          FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-        ]);
-        expect(codes(walk.errors), source).toStrictEqual(codes(rule.errors));
-        expect(walk.limit, source).toBe(documentedLimit(args));
-        // The same walk without a limit visits every state.
-        const { trace: full } = walked(registry, source, { limit: Number.POSITIVE_INFINITY });
-        // Breadth first across every callable of the call: depths never decrease.
-        for (let step = 1; step < full.length; step++) {
-          expect(full[step]?.depth, `${source} step ${step}`).toBeGreaterThanOrEqual(
-            full[step - 1]?.depth ?? 0,
-          );
-        }
-        // The walk under its limit is the full walk cut at the limit, so every state shallower
-        // than the one it stopped in was visited at every position.
-        expect(trace).toStrictEqual(full.slice(0, trace.length));
-        expect(trace.length).toBe(Math.min(walk.limit, full.length));
-        const deepest = trace[trace.length - 1]?.depth ?? 0;
-        const positions = (steps: readonly WalkStep[], state: string) =>
-          steps.filter((step) => step.state === state).map((step) => step.position);
-        for (const state of new Set(
-          full.filter((step) => step.depth < deepest).map((s) => s.state),
-        )) {
-          expect(positions(trace, state), state).toStrictEqual(positions(full, state));
-        }
-        if (trace.length < full.length) stopped++;
-      }
-      // Not vacuous: the limit stops the walk at the larger sizes, past a level that branches.
-      expect(stopped).toBeGreaterThanOrEqual(2);
-    },
-    60_000,
-  );
-
-  it.each(FAN_OUT.map((entry) => [entry.shape, entry] as const))(
-    'spends at most its limit at every size, with %s',
-    (_, { formula }) => {
-      const registry = withHostEach(registryWithPick(), { callables: 2 });
-      for (const count of [100, 1_000, 3_000, 6_000, 12_000]) {
-        const { rule, walk } = walked(registry, formula(count));
-        expect(walk.steps, `${count} arguments`).toBe(walk.limit);
-        expect(walk.limit).toBe(documentedLimit(count));
-        expect(codes(rule.errors)).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
-      }
-    },
-    60_000,
-  );
 
   it('follows a variadic callable parameter at the arguments a written call checks', () => {
     // A variadic callable parameter that lists the callables it admits is checked at every
@@ -318,83 +379,28 @@ describe('the walk through nested callables', () => {
     // Nested: the core EACH calls EACH, whose overload's second callable is PICK, alike.
     const nested = 'EACH(LIST(1); "EACH"; "EACH"; "PICK")';
     // Whether the walk visits PICK at its mode, which only the second callable passes it.
-    const modeVisited = (trace: readonly WalkStep[]) =>
-      trace.some((step) => step.state.includes('PICK/v1') && step.position === 1);
+    const modeVisited = (work: WorkRecord) =>
+      work.events.some(
+        (event) =>
+          event.kind === 'visited' && event.state.includes('PICK/v1') && event.position === 1,
+      );
     for (const source of [written, nested]) {
-      const listing = walked(withHostEach(registryWithPick(), { operators: 'listing' }), source, {
-        limits: {},
-      });
-      expect(codes(listing.rule.errors), source).toStrictEqual([
-        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-      ]);
-      expect(modeVisited(listing.trace), source).toBe(true);
+      const listing = withHostEach(registryWithPick(), { operators: ['EACH', 'PICK'] });
+      const listed = observed(listing, source, {});
+      expect(listed.codes, source).toStrictEqual([LVNA]);
+      expect(modeVisited(listed.work), source).toBe(true);
       // Without a list, neither checks nor follows the second callable, though the walk runs.
-      const unlisted = walked(withHostEach(registryWithPick(), { operators: 'unlisted' }), source, {
-        limits: {},
-      });
-      expect(unlisted.rule.errors, source).toStrictEqual([]);
-      expect(unlisted.trace.length, source).toBeGreaterThan(0);
-      expect(modeVisited(unlisted.trace), source).toBe(false);
+      const unlisted = observed(
+        withHostEach(registryWithPick(), { operators: 'unlisted' }),
+        source,
+        {},
+      );
+      expect(unlisted.codes, source).toStrictEqual([]);
+      expect(
+        unlisted.work.events.some((event) => event.kind === 'visited'),
+        source,
+      ).toBe(true);
+      expect(modeVisited(unlisted.work), source).toBe(false);
     }
   });
-
-  it('parses a chain of 12,000 arguments in time comparable to the parse without the walk', () => {
-    // The parse of the same formula under MAP, a plain copy of EACH for which no walk starts, is
-    // the parse 1.0.0 makes of it, which has no walk. The step counts above are the invariant;
-    // this bound only guards against a walk that is no longer linear, which at this size would
-    // take hundreds of times as long.
-    const registry = registryWithPick();
-    const [withWalk, withoutWalk] = fastestParses([
-      [registry, chain(12_000, 'zzz')],
-      [registry, chain(12_000, 'zzz', 'MAP')],
-    ]);
-    expect(withWalk).toBeLessThan(10 * (withoutWalk as number));
-  }, 60_000);
-
-  it('parses a call whose every argument names a callable in time linear in the call', () => {
-    // A variadic callable parameter that lists the callables it admits makes every argument of the
-    // call a callable parameter, each validated and seeded into the walk. What the call passes its
-    // callables, and the overload a name chooses, are worked out once per call, and the walk spends
-    // one limit for all of them. A budget per callable parameter, or work per callable parameter
-    // in proportion to the call, would make the time grow with the square of the call.
-    const listing = withHostEach(registryWithPick(), { operators: 'listing' });
-    const everyArgument = (count: number) => `EACH(1; ${'"EACH"; '.repeat(count - 2)}"EACH")`;
-    const { rule, walk } = walked(listing, everyArgument(1_000));
-    expect(rule.errors).toStrictEqual([]);
-    // Not vacuous: every argument after the first is a callable parameter, and the walk spends
-    // its limit.
-    expect(walk.walked.size).toBeGreaterThanOrEqual(999);
-    expect(walk.steps).toBe(walk.limit);
-    // A thousand callable parameters cost about what one costs when both walks spend the limit...
-    const wide = withHostEach(registryWithPick(), { callables: 2 });
-    const [branching] = FAN_OUT;
-    if (branching === undefined) throw new Error('no shape');
-    const [many, one] = fastestParses([
-      [listing, everyArgument(1_000)],
-      [wide, branching.formula(1_000)],
-    ]);
-    expect(many).toBeLessThan(8 * (one as number));
-    // ...and four times the arguments take about four times as long.
-    const [large, small] = fastestParses([
-      [listing, everyArgument(12_000)],
-      [listing, everyArgument(3_000)],
-    ]);
-    expect(large).toBeLessThan(8 * (small as number));
-  }, 60_000);
 });
-
-/**
- * The fastest of five parses of each source, in milliseconds. The parses take turns, so a pause of
- * the machine falls on one parse of each source rather than on every parse of one.
- */
-function fastestParses(parses: ReadonlyArray<readonly [FormulaRegistry, string]>): number[] {
-  const best = parses.map(() => Number.POSITIVE_INFINITY);
-  for (let run = 0; run < 5; run++) {
-    parses.forEach(([registry, source], index) => {
-      const started = performance.now();
-      parseFormula(source, { registry, limits: LIMITS });
-      best[index] = Math.min(best[index] as number, performance.now() - started);
-    });
-  }
-  return best;
-}

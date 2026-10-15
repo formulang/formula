@@ -41,6 +41,7 @@ import type { FormulaSyntax } from './syntax';
 import { resolveFormulaSyntax } from './syntax';
 import { tokenize } from './tokenizer';
 import type { Token } from './tokens';
+import { chargeWork } from './work-trace';
 
 export { isDenylistedPropertyName } from './denylist';
 export { DEFAULT_FORMULA_SYNTAX, resolveFormulaSyntax } from './syntax';
@@ -954,6 +955,7 @@ function bindTypesAndRequirements(
       const params = def.params;
       const lastParam = params[params.length - 1];
       const variadic = lastParam?.variadic === true;
+      chargeWork('arguments', node.args.length);
       for (let i = 0; i < node.args.length; i++) {
         const param = i < params.length ? params[i] : variadic ? lastParam : undefined;
         if (!param) continue;
@@ -996,6 +998,7 @@ function bindTypesAndRequirements(
       // the callables it names, which runs once, after the loop, breadth first across all of them.
       let walk: CallWalk | undefined;
       let callables: CallCallables | undefined;
+      chargeWork('arguments', Math.max(def.params.length, node.args.length));
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
         const p = literalCheckAt(def.params, i, admittedValues)?.param;
         if (p === undefined) continue;
@@ -1035,13 +1038,13 @@ function bindTypesAndRequirements(
           callables ??= callCallables(def, argTypes);
           const outerBindings = new Map(callables.bindings);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
-          const invokedArgTypes = callables.invokedTypes;
+          const invokedCount = callables.invokedCount;
 
-          if (invokedArgTypes) {
+          if (invokedCount !== undefined) {
             if (
               expectedCallable.kind === 'callable' &&
               expectedCallable.minArity !== undefined &&
-              invokedArgTypes.length < expectedCallable.minArity
+              invokedCount < expectedCallable.minArity
             ) {
               errors.push(
                 makeFormulaError({
@@ -1055,7 +1058,7 @@ function bindTypesAndRequirements(
             if (
               expectedCallable.kind === 'callable' &&
               expectedCallable.maxArity !== undefined &&
-              invokedArgTypes.length > expectedCallable.maxArity
+              invokedCount > expectedCallable.maxArity
             ) {
               errors.push(
                 makeFormulaError({
@@ -1073,6 +1076,7 @@ function bindTypesAndRequirements(
             walk ??= callWalk(registry, errors, {
               signatureId: def.signatureId,
               args: node.args,
+              span: node.span,
             });
             seedCallable(walk, {
               host: def,
@@ -1351,6 +1355,7 @@ function inferGenericBindingsForCall(
     return p?.type ?? null;
   };
 
+  chargeWork('arguments', argTypes.length);
   for (let i = 0; i < argTypes.length; i++) {
     const p = paramAt(i);
     if (!p) continue;
@@ -1448,9 +1453,10 @@ function chooseOverload(
       returnType: FormulaType;
     } & any
   >,
-  argTypes: FormulaType[],
+  argTypes: readonly FormulaType[],
 ) {
   for (const def of candidates) {
+    chargeWork('arguments', argTypes.length);
     const requiredCount = def.params.filter((p: any) => !p.optional).length;
     if (argTypes.length < requiredCount) continue;
 
@@ -1483,26 +1489,33 @@ function chooseOverload(
 }
 
 /**
- * What the callable parameters of one call share while the parser validates them: the types of the
- * arguments the call passes its callables (null where the parser does not know its invocation), the
- * templates the call's own arguments bind, and the overload each name, of each reference kind,
- * chooses for those arguments. The first callable parameter of the call works them out and every
- * other one reads them, so validating all of them takes time linear in the call, however many
- * callable parameters it has.
+ * What the callable parameters of one call share while the parser validates them: how many
+ * arguments the call passes its callables (undefined where the parser does not know its
+ * invocation) and their types, which only `invoked` reads, charging every type it reads to the
+ * work record a spec observes; the templates the call's own arguments bind; and the overload each
+ * name, of each reference kind, chooses for those arguments. The first callable parameter of the
+ * call works them out and every other one reads them, so validating all of them takes work linear
+ * in the call, however many callable parameters it has.
  */
 type CallCallables = {
-  readonly invokedTypes: FormulaType[] | null;
+  readonly invokedCount: number | undefined;
+  readonly invoked: () => readonly FormulaType[];
   readonly bindings: ReadonlyMap<string, FormulaType>;
   readonly chosen: Map<string, ReturnType<typeof chooseOverload>>;
 };
 
 function callCallables(def: FunctionDefinition, argTypes: FormulaType[]): CallCallables {
   const invocation = invocationOf(def);
+  const types =
+    invocation === undefined
+      ? undefined
+      : invokedArguments(invocation, argTypes).map((invokedArg) => invokedArg.type);
   return {
-    invokedTypes:
-      invocation === undefined
-        ? null
-        : invokedArguments(invocation, argTypes).map((invokedArg) => invokedArg.type),
+    invokedCount: types?.length,
+    invoked: () => {
+      chargeWork('arguments', types?.length ?? 0);
+      return types ?? [];
+    },
     bindings: inferGenericBindingsForCall(def, argTypes),
     chosen: new Map(),
   };
@@ -1520,10 +1533,10 @@ function chosenCallable(
   if (known !== undefined) return known;
   const candidates = callableCandidates(registry, reference, name);
   const chosen =
-    candidates.length > 0 && callables.invokedTypes !== null
+    candidates.length > 0 && callables.invokedCount !== undefined
       ? chooseOverload(
           candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
-          callables.invokedTypes,
+          callables.invoked(),
         )
       : null;
   callables.chosen.set(key, chosen);

@@ -1,5 +1,6 @@
 import type { FormulaType } from '@formulang/definitions';
 import { FormulaTypes, stripNullability } from '@formulang/definitions';
+import { chargeWork } from './work-trace';
 
 /**
  * One argument a higher-order function passes to the callable it names: its type, and the index
@@ -47,7 +48,7 @@ export function invokedArguments(
   invocation: CallableInvocation,
   argTypes: readonly FormulaType[],
 ): InvokedArgument[] {
-  return invocation.flatMap((source): InvokedArgument[] => {
+  const invoked = invocation.flatMap((source): InvokedArgument[] => {
     switch (source.kind) {
       case 'item':
         return [{ type: itemOf(argTypes[source.of]) }];
@@ -61,6 +62,8 @@ export function invokedArguments(
       }
     }
   });
+  chargeWork('arguments', invoked.length);
+  return invoked;
 }
 
 /**

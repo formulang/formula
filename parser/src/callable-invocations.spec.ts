@@ -22,6 +22,7 @@ import {
   type PassedSources,
 } from './callable-invocations';
 import { parseFormula } from './index';
+import { observeWork } from './work-trace';
 
 /** The function names 1.0.0 had, from the compatibility baseline generated from 1.0.0. */
 const NAMES_IN_1_0_0: readonly string[] = baseline.functionNames;
@@ -355,10 +356,17 @@ describe('callable invocations', () => {
     });
     const levels = 24;
     const source = `EACH(LIST(LIST(1)); ${'"EACH"; '.repeat(levels - 1)}"PICK"; "zzz")`;
-    const started = performance.now();
-    const errors = parseFormula(source, { registry }).errors.map((e) => e.code);
-    expect(errors).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
-    expect(performance.now() - started).toBeLessThan(2000);
+    const { result: rule, work } = observeWork(() => parseFormula(source, { registry }));
+    expect(rule.errors.map((e) => e.code)).toStrictEqual([
+      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+    ]);
+    // The walk's own record: every state queued once, and a few positions per level, where a walk
+    // per path would spend its whole bound on the copies before the end of the chain.
+    const queued = work.events.filter((event) => event.kind === 'queued');
+    const visits = work.events.filter((event) => event.kind === 'visited');
+    expect(new Set(queued.map((event) => event.state)).size).toBe(queued.length);
+    expect(queued.length).toBeLessThanOrEqual(levels + 1);
+    expect(visits.length).toBeLessThanOrEqual(3 * levels);
   });
 
   it('keys each state of the walk apart from every other, whatever the size of the call', () => {

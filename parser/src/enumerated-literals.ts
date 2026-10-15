@@ -30,6 +30,7 @@ import {
   type CallableInvocation,
   type PassedSources,
 } from './callable-invocations';
+import { workRecord, type WorkRecord } from './work-trace';
 
 type LiteralArgument =
   { ok: true; value: string; span: SourceSpan | undefined } | { ok: false; error: FormulaError };
@@ -204,26 +205,38 @@ export type CallWalk = {
   readonly registry: FormulaRegistry;
   readonly errors: FormulaError[];
   /** The call written in the formula: every source indexes its arguments. */
-  readonly call: { signatureId: string; args: readonly RuleNode[] };
+  readonly call: { signatureId: string; args: readonly RuleNode[]; span?: SourceSpan };
   readonly walked: Set<string>;
   readonly reported: Set<string>;
   /** The states to visit, in breadth-first order. */
   readonly queue: WalkState[];
   steps: number;
   readonly limit: number;
-  /** When given, receives every step the walk takes, in order. */
-  readonly trace?: WalkStep[];
+  /**
+   * The record of the parse a spec observes (`observeWork`), which the walk feeds its queue and
+   * visits, and the walk's number there; undefined for every other parse, which records nothing.
+   */
+  readonly record: WorkRecord | undefined;
+  readonly id: number;
 };
-
-/** One step of the walk: the position it visited, of a state at `depth` (0 for a callable parameter). */
-export type WalkStep = { depth: number; state: string; position: number };
 
 /** A walk for `call`, a call written in the formula, that reports into `errors`. */
 export function callWalk(
   registry: FormulaRegistry,
   errors: FormulaError[],
-  call: { signatureId: string; args: readonly RuleNode[] },
+  call: { signatureId: string; args: readonly RuleNode[]; span?: SourceSpan },
 ): CallWalk {
+  const record = workRecord();
+  const id = record === undefined ? 0 : record.walks++;
+  const limit = WALK_STEPS_PER_ARGUMENT * (call.args.length + 1);
+  record?.events.push({
+    kind: 'walk',
+    walk: id,
+    signatureId: call.signatureId,
+    start: call.span?.start,
+    args: call.args.length,
+    limit,
+  });
   return {
     registry,
     errors,
@@ -232,7 +245,9 @@ export function callWalk(
     reported: new Set(),
     queue: [],
     steps: 0,
-    limit: WALK_STEPS_PER_ARGUMENT * (call.args.length + 1),
+    limit,
+    record,
+    id,
   };
 }
 
@@ -298,13 +313,21 @@ export function runWalk(walk: CallWalk): void {
   for (let next = 0; next < walk.queue.length; next++) {
     const state = walk.queue[next] as WalkState;
     const end = positionsToVisit(state);
+    const key = walk.record === undefined ? '' : stateKey(state);
     for (let position = 0; position < end; position++) {
       // Exit: the limit is reached, so the walk stops following. Every argument it has not
       // checked reaches its function when the call runs (docs/language.md, When a mode is
       // checked, says what the formula then answers).
       if (walk.steps >= walk.limit) return;
       walk.steps++;
-      walk.trace?.push({ depth: state.depth, state: stateKey(state), position });
+      walk.record?.events.push({
+        kind: 'visited',
+        walk: walk.id,
+        depth: state.depth,
+        state: key,
+        position,
+        positions: end,
+      });
       for (const follow of visit(walk, state, position)) enqueue(walk, follow);
     }
   }
@@ -331,6 +354,13 @@ function enqueue(walk: CallWalk, state: WalkState): void {
   if (walk.walked.has(key)) return;
   walk.walked.add(key);
   walk.queue.push(state);
+  walk.record?.events.push({
+    kind: 'queued',
+    walk: walk.id,
+    depth: state.depth,
+    state: key,
+    positions: positionsToVisit(state),
+  });
 }
 
 /**
