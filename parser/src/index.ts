@@ -153,9 +153,13 @@ export function parseFormula(source: string, options: ParseFormulaOptions): Type
     }
   }
 
-  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors, {
-    lists: admittedLists(),
-  });
+  const returnType = bindTypesAndRequirements(
+    root,
+    options.registry,
+    requirements,
+    errors,
+    parseScope(errors),
+  );
 
   // Requirements: variablesRead is based on full accessor paths, not just root variables.
   // NOTE: we compute this separately so property/wildcard chains can be collapsed into
@@ -269,9 +273,13 @@ export function parseVariableReference(
     }
   }
 
-  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors, {
-    lists: admittedLists(),
-  });
+  const returnType = bindTypesAndRequirements(
+    root,
+    options.registry,
+    requirements,
+    errors,
+    parseScope(errors),
+  );
   requirements.variablesRead = collectVariablesReadPaths(root);
   requirements.functionsUsed = uniqStable(requirements.functionsUsed);
   requirements.externalData = uniqExternalData(requirements.externalData);
@@ -724,9 +732,38 @@ function parsePrimary(
 
 /**
  * What one parse reads once and keeps while it binds the tree: the admitted values of the
- * parameters it checks literals against, each list read once (`AdmittedLists`).
+ * parameters it checks literals against, each list read once (`AdmittedLists`), and where the
+ * NO_MATCHING_OVERLOAD errors among its errors start, indexed as they are reported, each error
+ * once (`overloadMissAt`).
  */
-type ParseScope = { readonly lists: AdmittedLists };
+type ParseScope = {
+  readonly lists: AdmittedLists;
+  readonly errors: TypedRule['errors'];
+  readonly missStarts: Set<number | undefined>;
+  /** How many of `errors`, from the first, `missStarts` has indexed. */
+  indexed: number;
+};
+
+/** The scope of a parse that reports into `errors`. */
+function parseScope(errors: TypedRule['errors']): ParseScope {
+  return { lists: admittedLists(), errors, missStarts: new Set(), indexed: 0 };
+}
+
+/**
+ * Whether a NO_MATCHING_OVERLOAD error starting at `start` is among the parse's errors, as 1.0.0
+ * asked by reading every error: the errors reported since the last question are indexed first,
+ * so every error is read once, however many calls ask.
+ */
+function overloadMissAt(scope: ParseScope, start: number | undefined): boolean {
+  for (; scope.indexed < scope.errors.length; scope.indexed++) {
+    chargeWork('errors', 1);
+    const error = scope.errors[scope.indexed];
+    if (error?.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD) {
+      scope.missStarts.add(error.span?.start);
+    }
+  }
+  return scope.missStarts.has(start);
+}
 
 function bindTypesAndRequirements(
   node: RuleNode,
@@ -943,10 +980,7 @@ function bindTypesAndRequirements(
       if (!def) {
         // Distinguish truly unknown functions from known functions with bad argument types.
         // If NO_MATCHING_OVERLOAD was already reported, don't also report UNKNOWN_FUNCTION.
-        const alreadyReported = errors.some(
-          (e) =>
-            e.span?.start === node.span?.start && e.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD,
-        );
+        const alreadyReported = overloadMissAt(scope, node.span?.start);
         if (!alreadyReported) {
           errors.push(
             makeFormulaError({

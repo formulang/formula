@@ -36,9 +36,10 @@ export type WalkEvent =
  * overload, checking its arguments, binding its templates, building what it passes its callables,
  * choosing a callable's overload); `admitted`, one admitted value read (building a parameter's
  * list or the values several overloads list in common, testing a literal against a list, printing
- * a list in a refusal).
+ * a list in a refusal); `errors`, one error the parse has reported read to answer whether a call
+ * that binds no definition was reported as matching no overload.
  */
-export type WorkKind = 'arguments' | 'admitted';
+export type WorkKind = 'arguments' | 'admitted' | 'errors';
 
 /** What an observed parse did. */
 export type WorkRecord = {
@@ -52,7 +53,11 @@ let observed: WorkRecord | undefined;
 /** Runs `run`, recording the work of every parse it makes. */
 export function observeWork<T>(run: () => T): { result: T; work: WorkRecord } {
   const outer = observed;
-  const work: WorkRecord = { events: [], units: { arguments: 0, admitted: 0 }, walks: 0 };
+  const work: WorkRecord = {
+    events: [],
+    units: { arguments: 0, admitted: 0, errors: 0 },
+    walks: 0,
+  };
   observed = work;
   try {
     return { result: run(), work };

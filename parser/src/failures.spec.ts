@@ -6,6 +6,7 @@ import {
 } from '@formulang/definitions';
 import { describe, expect, it } from 'vitest';
 import { parseFormula } from './index';
+import { observeWork } from './work-trace';
 
 describe('parseFormula failures', () => {
   function makeRegistry() {
@@ -90,6 +91,32 @@ describe('parseFormula failures', () => {
     const registry = makeRegistry();
     const rule = parseFormula('NOPE(1)', { registry });
     expect(rule.errors.some((e) => e.code === FormulaErrorCodes.UNKNOWN_FUNCTION)).toBe(true);
+  });
+
+  it('reads each error once to tell UNKNOWN_FUNCTION from NO_MATCHING_OVERLOAD', () => {
+    // A call that binds no definition is UNKNOWN_FUNCTION unless NO_MATCHING_OVERLOAD was
+    // reported where it starts, as on 1.0.0. The parse indexes its errors as they come, so m such
+    // calls read each error once, where reading every error for each call reads m(m - 1) / 2.
+    // Smallest first: reading them again fails at the first size.
+    const registry = makeRegistry();
+    const limits = { maxTokens: 1_000_000, maxAstNodes: 1_000_000, maxSourceLength: 10_000_000 };
+    const calls = (m: number, call: string) =>
+      `LIST(${Array.from({ length: m }, () => call).join('; ')})`;
+    const codes = (m: number, code: string) => Array.from({ length: m }, () => code);
+    for (const m of [10, 100, 1_000, 8_000]) {
+      const unknown = observeWork(() => parseFormula(calls(m, 'NOPE()'), { registry, limits }));
+      expect(unknown.result.errors.map((e) => e.code)).toStrictEqual(
+        codes(m, FormulaErrorCodes.UNKNOWN_FUNCTION),
+      );
+      // Each call reads the errors the calls before it reported, one each.
+      expect(unknown.work.units.errors, `${m} unknown calls`).toBe(m - 1);
+      // LEN's two definitions take no number: NO_MATCHING_OVERLOAD, and no UNKNOWN_FUNCTION.
+      const unmatched = observeWork(() => parseFormula(calls(m, 'LEN(1)'), { registry, limits }));
+      expect(unmatched.result.errors.map((e) => e.code)).toStrictEqual(
+        codes(m, FormulaErrorCodes.NO_MATCHING_OVERLOAD),
+      );
+      expect(unmatched.work.units.errors, `${m} calls matching no overload`).toBe(m);
+    }
   });
 
   it('WILDCARD_TARGET_NOT_LIST', () => {
