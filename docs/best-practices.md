@@ -172,9 +172,9 @@ Operators are aliases for function signature ids. `1 + 2` compiles to a `call` n
 
 ## 3. Validating before you save or run
 
-### 3.1 `parseFormula` never throws — gate on `errors.length`
+### 3.1 `parseFormula` reports errors instead of throwing — gate on `errors.length`
 
-Feed it anything — `IF((((`, `#@!`, calls to unknown functions, unknown variables — and you get a `TypedRule` back, never an exception. All problems are collected as structured `FormulaError`s with stable codes: `UNEXPECTED_TOKEN` and `PARSER_CRASH` for mangled input, `UNKNOWN_FUNCTION`, `UNKNOWN_VARIABLE`, `NO_MATCHING_OVERLOAD` (e.g. `LEN(1)` — `LEN` exists, but not for numbers). The contract for saving:
+Feed it anything — `IF((((`, `#@!`, calls to unknown functions, unknown variables — and you get a `TypedRule` back, not an exception. All problems are collected as structured `FormulaError`s with stable codes: `UNEXPECTED_TOKEN` and `PARSER_CRASH` for mangled input, `UNKNOWN_FUNCTION`, `UNKNOWN_VARIABLE`, `NO_MATCHING_OVERLOAD` (e.g. `LEN(1)` — `LEN` exists, but not for numbers). The contract for saving:
 
 ```ts
 const rule = parseFormula(userInput, { registry, syntax });
@@ -182,6 +182,8 @@ if (rule.errors.length > 0) {
   // refuse to save; render rule.errors — a formula is valid iff this array is empty
 }
 ```
+
+Two things do throw out of `parseFormula`, as on 1.0.0: an exception a registry method throws while the parser binds the formula (tokenizing and parsing turn one into `PARSER_CRASH`; binding runs after that guard), and the `RangeError` of a tree too deep to bind, which the default limits rule out ([5.3](#53-resource-limits-are-your-dos-defense)). A host whose registry can fail, or that raises the parse limits, wraps the call.
 
 ### 3.2 Use spans for editor feedback
 
@@ -341,7 +343,7 @@ Modes split the same way, and the parser is not the only check. The parser refus
 
 ### 5.3 Resource limits are your DoS defense
 
-Every limit violation resolves to a structured `security` error — the host never catches exceptions or hangs. Verified: `limits: { maxEvaluationSteps: 5 }` fails a ten-term sum with `EVAL_LIMIT_EXCEEDED`; cost and wall-time overruns behave the same ([4.3](#43-cost-estimators-reject-expensive-calls-before-they-run), [4.4](#44-wall-time-limits-catch-what-estimates-miss)). Set per-surface `limits` at both parse time (source shape: `maxSourceLength`, `maxTokens`, `maxAstNodes`, ...) and eval time (work: steps, wall time, cost, list sizes), and pass the same overrides to both calls. Defaults live in `DEFAULT_FORMULA_LIMITS` ([definitions README](../definitions/README.md#limits-and-errors)). For a given registry, the parse's work follows its size: the check of modes passed on through callables visits at most 16 × (n + 1) argument positions for a call of n arguments, then stops without an error ([5.2](#52-parse-time-vs-eval-time-enforcement--what-each-actually-guarantees)), and each admitted list is read once per parse, at every position a parameter takes, so testing a literal against a list is one lookup however long the list is, and each refusal's message is built once, reading the values it prints; and a call that binds no definition is told apart as unknown or as matching no overload with one lookup in an index of the errors the parse has reported, each error read once. Raising `maxTokens` or `maxAstNodes` raises the parse's work in proportion, and the depth of the tree the parser binds, which it does recursively, as on 1.0.0: well past the defaults a long chain of operators or property accesses exhausts the call stack (a chain of 1,000 additions does), and `parseFormula` then throws a `RangeError` instead of returning an error.
+Every limit violation resolves to a structured `security` error, with no exception and no hang. Verified: `limits: { maxEvaluationSteps: 5 }` fails a ten-term sum with `EVAL_LIMIT_EXCEEDED`; cost and wall-time overruns behave the same ([4.3](#43-cost-estimators-reject-expensive-calls-before-they-run), [4.4](#44-wall-time-limits-catch-what-estimates-miss)). Set per-surface `limits` at both parse time (source shape: `maxSourceLength`, `maxTokens`, `maxAstNodes`, ...) and eval time (work: steps, wall time, cost, list sizes), and pass the same overrides to both calls. Defaults live in `DEFAULT_FORMULA_LIMITS` ([definitions README](../definitions/README.md#limits-and-errors)). For a given registry, the parse's work follows its size: the check of modes passed on through callables visits at most 16 × (n + 1) argument positions for a call of n arguments, then stops without an error ([5.2](#52-parse-time-vs-eval-time-enforcement--what-each-actually-guarantees)), and each admitted list is read once per parse, at every position a parameter takes, so testing a literal against a list is one lookup however long the list is, and each refusal's message is built once, reading the values it prints; and a call that binds no definition is told apart as unknown or as matching no overload with one lookup in an index of the errors the parse has reported, each error read once. Raising `maxTokens` or `maxAstNodes` raises the parse's work in proportion, and the depth of the tree the parser binds, which it does recursively, as on 1.0.0: well past the defaults a long chain of operators or property accesses exhausts the call stack (a chain of 1,000 additions does, and one of 5,000 property accesses), and as binding runs after the parser's try/catch, `parseFormula` then throws a `RangeError` instead of returning an error ([3.1](#31-parseformula-reports-errors-instead-of-throwing--gate-on-errorslength)).
 
 ### 5.4 Per-tenant registries — and per-tenant caches
 

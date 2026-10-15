@@ -96,11 +96,11 @@ result.errors; // []
 result.value; // 7  (operator precedence: * binds tighter than +)
 ```
 
-Parsing and evaluation never throw on bad formulas: type problems surface as
-structured entries in `parsed.errors` / `result.errors`, and runtime edge cases
-(division by zero, an out-of-range index) resolve to `null`. Formulas use `;` to
-separate arguments by default; pass `syntax: { argumentSeparator: ',' }` to
-`parseFormula` to switch to `,`.
+Under the default limits, parsing and evaluation do not throw on bad formulas:
+type problems surface as structured entries in `parsed.errors` /
+`result.errors`, and runtime edge cases (division by zero, an out-of-range
+index) resolve to `null`. Formulas use `;` to separate arguments by default;
+pass `syntax: { argumentSeparator: ',' }` to `parseFormula` to switch to `,`.
 
 ## The Formulang packages
 

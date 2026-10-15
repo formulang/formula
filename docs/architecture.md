@@ -108,7 +108,7 @@ There is also a deliberately smaller contract, `VariableOnlyRegistry` (just `get
 
 ## 2. Compile pipeline (`@formulang/parser`)
 
-`parseFormula(source, { registry, limits?, syntax? })` runs the following stages and always returns a `TypedRule` — it never throws:
+`parseFormula(source, { registry, limits?, syntax? })` runs the following stages and returns a `TypedRule`, with the problems it finds as errors rather than exceptions (§2.7 says what throws out of it):
 
 ```mermaid
 flowchart TD
@@ -250,9 +250,9 @@ Two related notions are computed:
 
 `optimizeRule` (`definitions/src/optimize.ts` — deliberately in the portable package, since folding is data-in/data-out) conservatively rewrites call nodes into literal nodes when `predictableValue` is present and the subtree is fully static, keeping node IDs, and merges discovered `externalData` into the requirements. The `FunctionImplementation.tryStaticEvaluate` hook is the contract for implementation-assisted folding (e.g. resolving a reference embedded in a literal argument); the shipped optimizer only folds parser-computed predictable values.
 
-### 2.7 Errors are collected, never thrown
+### 2.7 Errors are collected, not thrown
 
-Every stage appends to `TypedRule.errors` instead of throwing. Limit violations thrown inside tokenization/parsing (`FormulaLimitError`) are caught and converted; any unexpected exception becomes a `PARSER_CRASH` entry. The error shape and kind taxonomy live in `definitions/src/errors.ts`:
+Every stage appends to `TypedRule.errors` instead of throwing. Tokenization and parsing run inside a try/catch: limit violations thrown there (`FormulaLimitError`) are caught and converted, and any other exception there, a registry that throws while the parser reads an operator included, becomes a `PARSER_CRASH` entry. Binding (§2.4 to §2.6) runs after the try/catch (`parser/src/index.ts`), as on 1.0.0, so an exception it meets throws out of `parseFormula`: one a registry method throws while the parser binds (`getVariable`, `getFunction`, `listFunctionsByName`, or `getOperator` for a callable named by a string), and the `RangeError` of a tree deeper than the call stack allows, as binding walks the tree recursively. With the default limits (500 tokens, 500 AST nodes) every tree binds; raised far past them, a chain of 1,000 additions or of 5,000 property accesses exhausts Node's default stack. The error shape and kind taxonomy live in `definitions/src/errors.ts`:
 
 ```ts
 export type FormulaErrorKind = 'parse' | 'type' | 'runtime' | 'security' | 'config';

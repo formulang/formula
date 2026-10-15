@@ -767,8 +767,10 @@ is empty at run time, evaluation reports `NULL_NOT_ALLOWED` for that node.
 
 ## When a formula is invalid
 
-Parsing never throws and never half-works silently: you always get a result
-plus a list of structured errors. Each error carries:
+Under the default limits, a bad formula does not make parsing throw, and parsing
+never half-works silently: you get a result plus a list of structured errors
+(the [parser README](../parser/README.md#why-are-errors-collected-instead-of-thrown)
+lists what does throw out of it). Each error carries:
 
 - `kind` — `parse` (malformed syntax), `type` (well-formed but incorrectly
   typed), `security` (blocked by policy or resource limits), `config`
