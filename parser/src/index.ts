@@ -10,6 +10,8 @@ import type {
   VariableOnlyRegistry,
 } from '@formulang/definitions';
 import {
+  admittedValues,
+  argumentFits,
   BuiltinSignatureIds,
   emptyRequirements,
   formatType,
@@ -17,6 +19,7 @@ import {
   FormulaLimitError,
   FormulaTypes,
   isAssignable,
+  literalCheckAt,
   makeFormulaError,
   resolveFormulaLimits,
   stripNullability,
@@ -24,10 +27,8 @@ import {
 import { invocationOf, invokedArguments, RESULTS_BY_NAME } from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
 import {
-  admittedValues,
   callableCandidates,
   callWalk,
-  paramAt,
   readLiteralArgument,
   referenceExists,
   runWalk,
@@ -959,12 +960,10 @@ function bindTypesAndRequirements(
 
         const argType = argTypes[i] ?? FormulaTypes.any(true);
         const argNoNull = stripNullability(argType);
-        const paramNoNull = stripNullability(param.type);
 
-        // Skip validation for Any/template parameters.
-        if (paramNoNull.kind === 'any' || paramNoNull.kind === 'template') continue;
-
-        if (!isAssignable(argNoNull, paramNoNull)) {
+        // Any argument fits an Any or a template parameter (`argumentFits`, the rule registration
+        // reads for a string literal at a parameter that lists admitted values).
+        if (!argumentFits(argType, param.type)) {
           // Prefer the more specific NULL_NOT_ALLOWED code when the arg is literally null.
           const code =
             argNoNull.kind === 'null' && param.type.nullable !== true
@@ -989,18 +988,17 @@ function bindTypesAndRequirements(
 
       const baseReturnType = instantiateGenericReturnType(def, argTypes);
 
-      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)) at each parameter's own
-      // position. The extra arguments a variadic literal-only parameter takes are validated only
-      // when it lists its admitted values; without that list it keeps 1.0.0 behaviour, where only
-      // the first argument it takes was checked. Every callable parameter of the call seeds one
-      // walk through the callables it names, which runs once, after the loop, breadth first across
-      // all of them.
+      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)) at the positions
+      // `literalCheckAt` answers, the rule the walk and registration read too: each literal-only
+      // parameter at its own position and, past the list, a variadic literal-only parameter that
+      // lists its admitted values; without that list it keeps 1.0.0 behaviour, where only the first
+      // argument it takes was checked. Every callable parameter of the call seeds one walk through
+      // the callables it names, which runs once, after the loop, breadth first across all of them.
       let walk: CallWalk | undefined;
       let callables: CallCallables | undefined;
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
-        const p = paramAt(def.params, i);
-        if (!p || p.literalOnly !== true) continue;
-        if (i >= def.params.length && admittedValues(p) === undefined) continue;
+        const p = literalCheckAt(def.params, i, admittedValues)?.param;
+        if (p === undefined) continue;
         const arg = node.args[i];
         // Optional literal-only parameters may be omitted.
         if (!arg && p.optional === true) continue;
@@ -1069,6 +1067,21 @@ function bindTypesAndRequirements(
               );
             }
 
+            // The walk checks what the callable receives whether or not one of its overloads takes
+            // the arguments, as it does at every level below this one, where no overload is chosen:
+            // the literal rule does not wait on the choice of an overload.
+            walk ??= callWalk(registry, errors, {
+              signatureId: def.signatureId,
+              args: node.args,
+            });
+            seedCallable(walk, {
+              host: def,
+              reference: paramBase.reference,
+              name: ref,
+              index: i,
+              span: literal.span,
+            });
+
             const chosen = chosenCallable(callables, registry, paramBase.reference, ref);
 
             if (!chosen) {
@@ -1081,18 +1094,6 @@ function bindTypesAndRequirements(
                 }),
               );
             } else {
-              walk ??= callWalk(registry, errors, {
-                signatureId: def.signatureId,
-                args: node.args,
-              });
-              seedCallable(walk, {
-                host: def,
-                reference: paramBase.reference,
-                name: ref,
-                index: i,
-                span: literal.span,
-              });
-
               if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
                 const expectedReturn = expectedCallable.returnType;
                 const chosenReturn = chosen.returnType ?? FormulaTypes.any(true);

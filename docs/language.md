@@ -623,8 +623,9 @@ parameter:
 - written in the call itself;
 - passed on by a higher-order function the parser knows by name — `EACH`,
   `FILTER`, `FILTER_PROPERTY`, `REDUCE` or `FILTER_BY` — to the function a
-  string literal names as its callable, and on through every further such
-  function a string literal names, level by level.
+  string literal names at its literal-only callable parameter, and on through
+  every further such function a string literal names, level by level, whether
+  or not that function takes the other arguments it is passed.
 
 The parser follows those levels breadth first, across every callable the call
 names, and visits at most 16 × (n + 1) argument positions for a call of n
@@ -647,6 +648,9 @@ reports nothing for it:
   [extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters));
 - one a host function passes to a callable it takes after the first argument
   of a variadic callable parameter that lists no admitted values;
+- one passed to a callable named at a callable parameter that is not
+  literal-only, written in the call or passed on: the parser checks neither the
+  callable named there nor what it receives;
 - one past the bound above.
 
 A built-in function answers a mode it does not list with `null` and a `TYPE`

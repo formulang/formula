@@ -192,8 +192,10 @@ describe('InMemoryFormulaRegistry', () => {
   });
 
   it('rejects admitted values on a parameter no string literal fits, and takes them where one does', () => {
-    // A literal-only parameter takes a string literal; one whose type no text fits refuses every
-    // call, whatever it lists, as an empty list would.
+    // A literal-only parameter takes a string literal; one whose type no text fits, by the parser's
+    // check of an argument's type (`argumentFits`), refuses every call, whatever it lists, as an
+    // empty list would. A template fits any argument there, whatever its constraint: the parser
+    // binds a template from the call's arguments instead of checking them against it.
     const register = (type: FormulaType) => {
       const registry = createRegistry();
       registry.registerFunction({
@@ -213,7 +215,6 @@ describe('InMemoryFormulaRegistry', () => {
       FormulaTypes.list(FormulaTypes.text(false)),
       FormulaTypes.object('date'),
       FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.boolean(false)]),
-      FormulaTypes.template('T', { constraint: FormulaTypes.number(false) }),
     ];
     for (const type of refused) {
       expect(() => register(type), formatType(type)).toThrow(
@@ -224,6 +225,7 @@ describe('InMemoryFormulaRegistry', () => {
       FormulaTypes.text(true),
       FormulaTypes.any(true),
       FormulaTypes.template('T'),
+      FormulaTypes.template('T', { constraint: FormulaTypes.number(false) }),
       FormulaTypes.callable('function'),
       FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.text(false)]),
     ];

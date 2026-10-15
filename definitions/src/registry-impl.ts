@@ -1,3 +1,4 @@
+import { admittedValues, literalCheckAt } from './literal-checks';
 import type {
   FunctionDefinition,
   FunctionParamDefinition,
@@ -5,7 +6,7 @@ import type {
   OperatorDefinition,
   VariableDefinition,
 } from './registry';
-import { formatType, isAssignable, stripNullability } from './type-utils';
+import { argumentFits, formatType, isAssignable, stripNullability } from './type-utils';
 import type { FormulaType } from './types';
 import { FormulaTypes } from './types';
 
@@ -39,23 +40,24 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
       throw new Error(`Function already registered: ${def.signatureId}`);
     }
 
-    // An admitted-value list only takes effect on a literal-only parameter whose type a string
-    // literal fits, it is a list of texts (the literals a formula writes), and an empty list would
-    // refuse every call, as a list on a parameter no string literal fits would; anything else is a
-    // definition mistake, so it fails here.
-    for (const param of def.params) {
-      if (param.literalValues === undefined) continue;
-      if (param.literalOnly !== true) {
+    // An admitted-value list takes effect only where the parser checks a literal (`literalCheckAt`,
+    // which the parser reads too) and a string literal passes the parser's check of the
+    // parameter's type (`argumentFits`); it is a list of texts (the literals a formula writes), and
+    // an empty list would refuse every call, as a list on a parameter no string literal fits would.
+    // Anything else is a definition mistake, so it fails here.
+    def.params.forEach((param, position) => {
+      if (param.literalValues === undefined) return;
+      if (literalCheckAt(def.params, position, admittedValues)?.param !== param) {
         throw new Error(
           `Parameter '${param.name}' of ${def.signatureId} declares literalValues but is not literalOnly`,
         );
       }
-      if (!isAssignable(FormulaTypes.text(false), stripNullability(param.type))) {
+      if (!argumentFits(FormulaTypes.text(false), param.type)) {
         throw new Error(
           `Parameter '${param.name}' of ${def.signatureId} declares literalValues but takes no string literal (its type is ${formatType(param.type)})`,
         );
       }
-      if (!isListOfTexts(param.literalValues)) {
+      if (admittedValues(param) === undefined) {
         throw new Error(
           `Parameter '${param.name}' of ${def.signatureId} declares literalValues that are not a list of texts`,
         );
@@ -65,7 +67,7 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
           `Parameter '${param.name}' of ${def.signatureId} declares an empty literalValues list`,
         );
       }
-    }
+    });
 
     // Legacy definitions are retired from authoring: they never enter the name index or
     // the cast map, and they are skipped by the ambiguity checks (ambiguity is a
@@ -229,15 +231,6 @@ function withoutNullLiteralValues(def: FunctionDefinition): FunctionDefinition {
       return stored;
     }),
   };
-}
-
-/** Whether `values` is a list whose every entry is a text (a hole in a sparse list is none). */
-function isListOfTexts(values: unknown): boolean {
-  if (!Array.isArray(values)) return false;
-  for (let index = 0; index < values.length; index++) {
-    if (typeof values[index] !== 'string') return false;
-  }
-  return true;
 }
 
 function typeKey(t: FormulaType): string {

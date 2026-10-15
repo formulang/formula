@@ -276,19 +276,20 @@ function expectedCodes(
   const { reach, depth } = placement;
   // The callable the call written in the formula names must take the types it is given (1.0.0);
   // an item the vehicle reads at run time (a property value) is of any type, which any overload
-  // with the arity takes. A nested callable's types are not checked.
+  // with the arity takes. A nested callable's types are not checked. The literal rule holds for
+  // what the callable receives either way.
   const takes = reach.typedItem
     ? selects !== null
     : set.overloads.some((overload) => overload.extra === undefined);
-  if (depth === 0 && !takes) return [FormulaErrorCodes.NO_MATCHING_OVERLOAD];
-  if (listing.length === 0) return [];
+  const overload = depth === 0 && !takes ? [FormulaErrorCodes.NO_MATCHING_OVERLOAD] : [];
+  if (listing.length === 0) return overload;
   // A value the vehicle supplies when it runs can be no listed literal.
   if (reach.forwardedFrom === undefined)
-    return [FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE];
+    return [...overload, FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE];
   // Passed on, any overload may run: every overload that lists values must list the literal.
   return listing.every((overload) => overload.values?.includes(literal))
-    ? []
-    : [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED];
+    ? overload
+    : [...overload, FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED];
 }
 
 function nestIn(levels: number, inner: string): string {
@@ -532,12 +533,16 @@ describe('the enumerated-literal rule, generated', () => {
     expect(new Set(cases).size).toBe(cells.length);
     expect(cells.length).toBeGreaterThan(1000);
     const outcomes = new Set(cells.map((cell) => cell.want.join() || 'compiles'));
+    // A callable that takes none of the arguments it is passed also has its literal checked.
+    const unbound = (code: string) => `${FormulaErrorCodes.NO_MATCHING_OVERLOAD},${code}`;
     expect([...outcomes].sort()).toStrictEqual(
       [
         'compiles',
         FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
         FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
         FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+        unbound(FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE),
+        unbound(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED),
       ].sort(),
     );
     // The values only some overloads list are generated, not only shared and unlisted ones.
@@ -776,7 +781,7 @@ describe('the enumerated-literal rule, generated', () => {
     expect(codes('WORD_COUNT("a b"; "letters")', wordCount.registry)).toStrictEqual([]);
   });
 
-  it('refuses a misspelt literal that reaches an overload set the nested types do not select', () => {
+  it('refuses a misspelt literal that reaches an overload set the types do not select, at every level', () => {
     const { registry } = createCoreFormulaRuntime();
     const pick = (signatureId: string, params: FunctionParamDefinition[]): FunctionDefinition => ({
       signatureId,
@@ -802,7 +807,13 @@ describe('the enumerated-literal rule, generated', () => {
     );
     const errorsOf = (source: string) => parseFormula(source, { registry }).errors;
     const codes = (source: string) => errorsOf(source).map((e) => e.code);
+    // The callable the call names takes no number (1.0.0), and the literal it receives is refused
+    // too: the literal rule does not wait on the choice of an overload.
     expect(codes('EACH(LIST(1); "PICK"; "zzz")')).toStrictEqual([
+      FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+      FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+    ]);
+    expect(codes('EACH(LIST(1); "PICK"; "b")')).toStrictEqual([
       FormulaErrorCodes.NO_MATCHING_OVERLOAD,
     ]);
     for (const nested of [

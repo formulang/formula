@@ -7,6 +7,7 @@ export * from './execution-helpers';
 export * from './execution-output';
 export * from './function-implementation-class';
 export * from './limits';
+export * from './literal-checks';
 export * from './optimize';
 export * from './register-core-definitions';
 export * from './registry';

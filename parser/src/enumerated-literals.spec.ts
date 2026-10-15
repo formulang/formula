@@ -1,16 +1,16 @@
 import type { FormulaRegistry } from '@formulang/definitions';
 import {
+  admittedValues,
+  createRegistry,
   FormulaErrorCodes,
   FormulaTypes,
-  createRegistry,
+  literalCheckAt,
   registerCoreFormulaDefinitions,
   stripNullability,
 } from '@formulang/definitions';
 import { describe, expect, it } from 'vitest';
 import {
-  admittedValues,
   callWalk,
-  paramAt,
   runWalk,
   seedCallable,
   type CallWalk,
@@ -155,9 +155,8 @@ function walked(
   const base = callWalk(registry, [], { signatureId: root.signatureId, args: root.args });
   const walk: CallWalk = { ...base, trace, limit: options.limit ?? base.limit };
   for (let index = 0; index < Math.max(host.params.length, root.args.length); index++) {
-    const param = paramAt(host.params, index);
-    if (param === undefined || param.literalOnly !== true) continue;
-    if (index >= host.params.length && admittedValues(param) === undefined) continue;
+    const param = literalCheckAt(host.params, index, admittedValues)?.param;
+    if (param === undefined) continue;
     const type = stripNullability(param.type);
     const named = root.args[index];
     if (type.kind !== 'callable' || typeof named?.predictableValue !== 'string') continue;

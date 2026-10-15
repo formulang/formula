@@ -13,7 +13,13 @@ import type {
   RuleNode,
   SourceSpan,
 } from '@formulang/definitions';
-import { FormulaErrorCodes, makeFormulaError, stripNullability } from '@formulang/definitions';
+import {
+  admittedValues,
+  FormulaErrorCodes,
+  literalCheckAt,
+  makeFormulaError,
+  stripNullability,
+} from '@formulang/definitions';
 import {
   invocationOf,
   passedSources,
@@ -24,33 +30,6 @@ import {
   type CallableInvocation,
   type PassedSources,
 } from './callable-invocations';
-
-/**
- * The values a literal-only parameter admits: its `literalValues`, a list of texts; undefined where
- * it lists none. Registration refuses any other value, but a registry that is not an
- * `InMemoryFormulaRegistry` may hand the parser a definition as written: `null` there lists nothing,
- * as on the other optional fields, and so does a value that is not a list of texts, which the
- * parser reads rather than throws on: the literal written there then reaches the function when the
- * call runs, as any literal of a literal-only parameter without a list does.
- */
-export function admittedValues(param: FunctionParamDefinition): readonly string[] | undefined {
-  const values: unknown = param.literalValues;
-  if (!Array.isArray(values)) return undefined;
-  for (let index = 0; index < values.length; index++) {
-    if (typeof values[index] !== 'string') return undefined;
-  }
-  return values as string[];
-}
-
-/** The parameter that takes argument `index`; a variadic last parameter takes every extra one. */
-export function paramAt(
-  params: readonly FunctionParamDefinition[],
-  index: number,
-): FunctionParamDefinition | undefined {
-  if (index < params.length) return params[index];
-  const last = params[params.length - 1];
-  return last?.variadic === true ? last : undefined;
-}
 
 type LiteralArgument =
   { ok: true; value: string; span: SourceSpan | undefined } | { ok: false; error: FormulaError };
@@ -178,10 +157,11 @@ type Listing = { signatureId: string; values: readonly string[] };
  * values EVERY definition the callable's name can reference lists there, because the core
  * higher-order functions invoke the first definition of the name that has an implementation, which
  * the parser cannot know. Whichever definition runs then either lists the literal or lists nothing
- * at that position. Answers the parameter to read the argument against (its `literalValues` the
- * intersection), the name of the function, and every overload's own list for the refusal message;
- * undefined when no definition lists admitted values there, as a literal-only parameter without
- * them keeps 1.0.0 behaviour.
+ * at that position. A definition lists values at a position where a call of it written in the
+ * formula checks the literal against them (`literalCheckAt`). Answers the parameter to read the
+ * argument against (its `literalValues` the intersection), the name of the function, and every
+ * overload's own list for the refusal message; undefined when no definition lists admitted values
+ * there, as a literal-only parameter without them keeps 1.0.0 behaviour.
  */
 function enumeratedTarget(
   candidates: readonly FunctionDefinition[],
@@ -190,11 +170,10 @@ function enumeratedTarget(
   let first: { param: FunctionParamDefinition; owner: string } | undefined;
   const listings: Listing[] = [];
   for (const candidate of candidates) {
-    const param = paramAt(candidate.params, position);
-    const values = param === undefined ? undefined : admittedValues(param);
-    if (param === undefined || values === undefined) continue;
-    first ??= { param, owner: candidate.name };
-    listings.push({ signatureId: candidate.signatureId, values });
+    const check = literalCheckAt(candidate.params, position, admittedValues);
+    if (check?.admitted === undefined) continue;
+    first ??= { param: check.param, owner: candidate.name };
+    listings.push({ signatureId: candidate.signatureId, values: check.admitted });
   }
   if (first === undefined) return undefined;
   const admitted = admittedValues(first.param)?.filter((value) =>
@@ -357,16 +336,19 @@ function enqueue(walk: CallWalk, state: WalkState): void {
 /**
  * How many of a state's positions the walk visits: every one up to the longest parameter list
  * among the candidates. Past it every candidate takes its variadic last parameter or nothing, the
- * same at every position, and only a variadic last parameter that lists admitted values checks a
- * literal there or, when it is callable, is followed there (`visit`): those positions are visited,
- * all of them, where the last parameter of some candidate lists admitted values, and none of them
- * otherwise.
+ * same at every position, and a literal is checked there, and a callable followed there (`visit`),
+ * only where `literalCheckAt` answers that parameter: a variadic literal-only parameter that lists
+ * admitted values. Those positions are visited, all of them, where some candidate has one, and
+ * none of them otherwise.
  */
 function positionsToVisit(state: WalkState): number {
   const count = sourceCount(state.sources);
   const widest = state.candidates.reduce((most, def) => Math.max(most, def.params.length), 0);
   if (count <= widest) return count;
-  return enumeratedTarget(state.candidates, widest) === undefined ? widest : count;
+  const checked = state.candidates.some(
+    (def) => literalCheckAt(def.params, widest, admittedValues) !== undefined,
+  );
+  return checked ? count : widest;
 }
 
 /**
@@ -407,18 +389,16 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
   const followed = new Map<CallableInvocation, Set<string>>();
   for (const def of state.candidates) {
     // Skipped: this definition does not invoke the literal as a callable in a way the parser
-    // knows: its name is not in the table, or it takes a plain value at this position.
-    const param = paramAt(def.params, position);
+    // knows: its name is not in the table, it takes a plain value at this position, or a call of
+    // it written in the formula checks no literal there (`literalCheckAt`): a callable parameter
+    // that is not literal-only, or an argument past the first of a variadic callable parameter
+    // that lists no admitted values. The walk follows exactly the callables a written call checks;
+    // one it skips is resolved when the call runs, with the mode it receives.
+    const check = literalCheckAt(def.params, position, admittedValues);
     const invocation = invocationOf(def);
-    if (param === undefined || invocation === undefined) continue;
-    const target = stripNullability(param.type);
+    if (check === undefined || invocation === undefined) continue;
+    const target = stripNullability(check.param.type);
     if (target.kind !== 'callable') continue;
-    // Skipped: the position is past the definition's own list, on a variadic callable parameter
-    // that lists no admitted values. A call of the definition written in the formula checks every
-    // further argument of a variadic literal-only parameter that lists its admitted values, and
-    // only the first of one that lists none (as 1.0.0 checks it); the walk follows the same
-    // arguments. A callable it skips is resolved when the call runs, with the mode it receives.
-    if (position >= def.params.length && admittedValues(param) === undefined) continue;
     // Skipped: an invocation already followed with this reference kind reaches the same callables.
     const kinds = followed.get(invocation) ?? new Set<string>();
     if (kinds.has(target.reference)) continue;

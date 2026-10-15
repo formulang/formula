@@ -14,6 +14,19 @@ export function sameTypeKind(a: FormulaType, b: FormulaType): boolean {
   return a.kind === b.kind;
 }
 
+/**
+ * Whether an argument of type `argument` passes the parser's check of a parameter of type `param`
+ * once a call binds the definition: any argument fits `any`, and a template, which the call's
+ * arguments bind; otherwise the argument's type must be assignable to the parameter's, nullability
+ * aside. Registration reads the same rule for a string literal at a parameter that lists admitted
+ * values.
+ */
+export function argumentFits(argument: FormulaType, param: FormulaType): boolean {
+  const target = stripNullability(param);
+  if (target.kind === 'any' || target.kind === 'template') return true;
+  return isAssignable(stripNullability(argument), target);
+}
+
 export function isAssignable(from: FormulaType, to: FormulaType): boolean {
   // Callable reference handling.
   // Callable references are represented as strings at runtime, but carry semantic meaning.
