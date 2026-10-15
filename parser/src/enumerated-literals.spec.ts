@@ -404,3 +404,115 @@ describe('the walk through nested callables', () => {
     }
   });
 });
+
+describe('admitted lists', () => {
+  /** `code<from>` ... `code<from + k - 1>`. */
+  const codes = (k: number, from = 0) =>
+    Array.from({ length: k }, (_, index) => `code${from + index}`);
+
+  /**
+   * `codes(k)` as a list that counts every read of one of its values, whichever code reads it: the
+   * parser's own reads of a definition's list, seen from outside it.
+   */
+  function countedList(k: number) {
+    const reads = { count: 0 };
+    const list = new Proxy(codes(k), {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && /^\d+$/.test(key)) reads.count++;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    return { list, reads };
+  }
+
+  /**
+   * The core registry with CODE(subject; code), whose code lists `list`; with `second`, CODE has a
+   * second overload, CODE(text; code), whose code lists `second`.
+   */
+  function registryWithCode(list: string[], second?: string[]) {
+    const registry = createRegistry();
+    registerCoreFormulaDefinitions(registry);
+    const code = (values: string[]) => ({
+      name: 'code',
+      type: FormulaTypes.text(false),
+      literalOnly: true,
+      literalValues: values,
+    });
+    const overloads = [
+      { id: 'CODE/v1', subject: FormulaTypes.number(true), values: list },
+      ...(second === undefined
+        ? []
+        : [{ id: 'CODE/v2', subject: FormulaTypes.text(true), values: second }]),
+    ];
+    for (const { id, subject, values } of overloads) {
+      registry.registerFunction({
+        signatureId: id,
+        name: 'CODE',
+        category: 'custom',
+        description: 'A function whose code lists many values.',
+        params: [{ name: 'subject', type: subject }, code(values)],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+    }
+    return registry;
+  }
+
+  /** `count` checks of `literal` against CODE's list, written directly or passed on by EACH. */
+  const checks = (count: number, literal: string, through: 'written' | 'EACH') =>
+    `LIST(${Array.from({ length: count }, () =>
+      through === 'written' ? `CODE(1; "${literal}")` : `EACH(LIST(1); "CODE"; "${literal}")`,
+    ).join('; ')})`;
+
+  it('reads a list once per parse, and tests each literal in one lookup', () => {
+    // Forty checks within the default limits, against lists of 1,000, 5,000 and 20,000 values,
+    // smallest first: reading a list per check, or a list per value, fails at the first size.
+    for (const k of [1_000, 5_000, 20_000]) {
+      for (const through of ['written', 'EACH'] as const) {
+        const label = `${k} values, ${through}`;
+        const { list, reads } = countedList(k);
+        const registry = registryWithCode(list);
+        // Taken: the list is read once, to check it is a list of texts and to build its set (2k),
+        // and each of the forty checks is one lookup.
+        reads.count = 0;
+        const accepted = observed(registry, checks(40, `code${k - 1}`, through), {});
+        expect(accepted.codes, label).toStrictEqual([]);
+        expect(accepted.work.units.admitted, label).toBe(2 * k + 40);
+        expect(reads.count, label).toBe(2 * k);
+        // Refused: each refusal is its lookup and the k values its message prints, no more.
+        reads.count = 0;
+        const refused = observed(registry, checks(40, 'z0', through), {});
+        expect(refused.codes, label).toStrictEqual(Array.from({ length: 40 }, () => LVNA));
+        expect(refused.rule.errors[0]?.message, label).toContain(`"code${k - 1}"; got "z0"`);
+        expect(refused.work.units.admitted, label).toBe(2 * k + 40 * (1 + k));
+        expect(reads.count, label).toBe(2 * k + 40 * k);
+      }
+    }
+  }, 60_000);
+
+  it('works out the values two overloads list in common once per parse', () => {
+    // CODE's two overloads list code0 ... code<k-1> and code1 ... code<k>: a literal passed on to
+    // CODE must be one of code1 ... code<k-1>, which either overload lists.
+    for (const k of [1_000, 5_000]) {
+      const label = `${k} values`;
+      const registry = registryWithCode(codes(k), codes(k, 1));
+      const parse = (count: number, literal: string) =>
+        observed(registry, checks(count, literal, 'EACH'), {});
+      // Reading both lists and their intersection is linear in the lists, once per parse; every
+      // further check is one lookup.
+      const one = parse(1, `code${k - 1}`);
+      expect(one.work.units.admitted, label).toBeLessThanOrEqual(10 * k);
+      const forty = parse(40, `code${k - 1}`);
+      expect(forty.codes, label).toStrictEqual([]);
+      expect(forty.work.units.admitted - one.work.units.admitted, label).toBe(39);
+      // A refusal reads the k - 1 values it prints, and one lookup per overload for the message.
+      const refusedOne = parse(1, 'code0');
+      const refusedForty = parse(40, 'code0');
+      expect(refusedForty.codes, label).toStrictEqual(Array.from({ length: 40 }, () => LVNA));
+      expect(refusedForty.rule.errors[0]?.message, label).toContain('which CODE/v2 does not list');
+      expect(refusedForty.work.units.admitted - refusedOne.work.units.admitted, label).toBe(
+        39 * (1 + (k - 1) + 2),
+      );
+    }
+  }, 60_000);
+});

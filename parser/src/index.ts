@@ -10,7 +10,6 @@ import type {
   VariableOnlyRegistry,
 } from '@formulang/definitions';
 import {
-  admittedValues,
   argumentFits,
   BuiltinSignatureIds,
   emptyRequirements,
@@ -27,12 +26,14 @@ import {
 import { invocationOf, invokedArguments, RESULTS_BY_NAME } from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
 import {
+  admittedLists,
   callableCandidates,
   callWalk,
   readLiteralArgument,
   referenceExists,
   runWalk,
   seedCallable,
+  type AdmittedLists,
   type CallWalk,
 } from './enumerated-literals';
 import { assignStableNodeIds } from './node-id';
@@ -152,7 +153,9 @@ export function parseFormula(source: string, options: ParseFormulaOptions): Type
     }
   }
 
-  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors);
+  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors, {
+    lists: admittedLists(),
+  });
 
   // Requirements: variablesRead is based on full accessor paths, not just root variables.
   // NOTE: we compute this separately so property/wildcard chains can be collapsed into
@@ -266,7 +269,9 @@ export function parseVariableReference(
     }
   }
 
-  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors);
+  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors, {
+    lists: admittedLists(),
+  });
   requirements.variablesRead = collectVariablesReadPaths(root);
   requirements.functionsUsed = uniqStable(requirements.functionsUsed);
   requirements.externalData = uniqExternalData(requirements.externalData);
@@ -717,11 +722,18 @@ function parsePrimary(
   };
 }
 
+/**
+ * What one parse reads once and keeps while it binds the tree: the admitted values of the
+ * parameters it checks literals against, each list read once (`AdmittedLists`).
+ */
+type ParseScope = { readonly lists: AdmittedLists };
+
 function bindTypesAndRequirements(
   node: RuleNode,
   registry: RegistryLike,
   requirements: FormulaRequirements,
   errors: TypedRule['errors'],
+  scope: ParseScope,
 ): FormulaType {
   switch (node.kind) {
     case 'literal': {
@@ -766,7 +778,7 @@ function bindTypesAndRequirements(
       return node.type;
     }
     case 'property': {
-      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors);
+      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors, scope);
       const base = stripNullability(objType);
       let out: FormulaType = FormulaTypes.any(true);
 
@@ -826,7 +838,7 @@ function bindTypesAndRequirements(
       return out;
     }
     case 'wildcard': {
-      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors);
+      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors, scope);
       const base = stripNullability(objType);
       if (base.kind !== 'list' && base.kind !== 'template') {
         errors.push(
@@ -893,7 +905,7 @@ function bindTypesAndRequirements(
         return node.type;
       }
       const argTypes = node.args.map((a) =>
-        bindTypesAndRequirements(a, registry, requirements, errors),
+        bindTypesAndRequirements(a, registry, requirements, errors, scope),
       );
       // If already bound (operator call), just use signature
       let def = node.signatureId ? registry.getFunction(node.signatureId) : undefined;
@@ -1000,15 +1012,17 @@ function bindTypesAndRequirements(
       let callables: CallCallables | undefined;
       chargeWork('arguments', Math.max(def.params.length, node.args.length));
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
-        const p = literalCheckAt(def.params, i, admittedValues)?.param;
-        if (p === undefined) continue;
+        const check = literalCheckAt(def.params, i, scope.lists.list);
+        if (check === undefined) continue;
+        const p = check.param;
         const arg = node.args[i];
         // Optional literal-only parameters may be omitted.
         if (!arg && p.optional === true) continue;
-        const literal = readLiteralArgument(p, arg, {
+        const literal = readLiteralArgument(arg, {
           subject: `Parameter '${p.name}'`,
           span: arg?.span ?? node.span,
           path: ['call', def.signatureId, 'arg', String(i)],
+          admitted: check.admitted,
         });
         if (!literal.ok) {
           errors.push(literal.error);
@@ -1073,7 +1087,7 @@ function bindTypesAndRequirements(
             // The walk checks what the callable receives whether or not one of its overloads takes
             // the arguments, as it does at every level below this one, where no overload is chosen:
             // the literal rule does not wait on the choice of an overload.
-            walk ??= callWalk(registry, errors, {
+            walk ??= callWalk(registry, errors, scope.lists, {
               signatureId: def.signatureId,
               args: node.args,
               span: node.span,

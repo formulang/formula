@@ -30,58 +30,144 @@ import {
   type CallableInvocation,
   type PassedSources,
 } from './callable-invocations';
-import { workRecord, type WorkRecord } from './work-trace';
+import { chargeWork, workRecord, type WorkRecord } from './work-trace';
 
 type LiteralArgument =
   { ok: true; value: string; span: SourceSpan | undefined } | { ok: false; error: FormulaError };
 
 /**
+ * Admitted values as one parse reads them (`AdmittedLists`): testing a literal against them is one
+ * lookup, and only `values`, which a refusal reads to print them, reads every one. Each read is
+ * charged to the work record of a parse a spec observes.
+ */
+export type AdmittedList = {
+  /** Whether `value` is one of the admitted values. */
+  readonly admits: (value: string) => boolean;
+  /** How many values the list holds. */
+  readonly length: number;
+  /** The values, in order. */
+  readonly values: () => readonly string[];
+};
+
+/** The `AdmittedList` of `values`, read once into a set. */
+function admittedList(values: readonly string[]): AdmittedList {
+  chargeWork('admitted', values.length);
+  const set = new Set(values);
+  return {
+    admits: (value) => {
+      chargeWork('admitted', 1);
+      return set.has(value);
+    },
+    length: values.length,
+    values: () => {
+      chargeWork('admitted', values.length);
+      return values;
+    },
+  };
+}
+
+/** An overload that lists admitted values at a position, with the values it lists there. */
+type Listing = { signatureId: string; list: AdmittedList };
+
+/**
+ * The enumerated-literal rule at one position of the definitions a callable's name can reference:
+ * the parameter that names the argument (the first listing's), the name of the function, the
+ * values every listing lists, the listings, and whether they all list the same values.
+ */
+type EnumeratedTarget = {
+  readonly param: FunctionParamDefinition;
+  readonly owner: string;
+  readonly admitted: AdmittedList;
+  readonly listings: readonly Listing[];
+  readonly alike: boolean;
+};
+
+/**
+ * The admitted values one parse reads, each read once: a parameter's list, on the first check
+ * against it (`list`, by the parameter, the `read` of `literalCheckAt`), and the values the
+ * definitions of a callable's name list in common at a position (`target`, by their signature ids
+ * and the position). A check then costs one lookup however long the lists are, and a refusal reads
+ * the values it prints.
+ */
+export type AdmittedLists = {
+  readonly list: (param: FunctionParamDefinition) => AdmittedList | undefined;
+  readonly target: (
+    candidates: readonly FunctionDefinition[],
+    position: number,
+  ) => EnumeratedTarget | undefined;
+};
+
+/** The admitted lists of one parse, empty until it reads one. */
+export function admittedLists(): AdmittedLists {
+  const lists = new Map<FunctionParamDefinition, AdmittedList | undefined>();
+  const targets = new Map<string, EnumeratedTarget | undefined>();
+  const list = (param: FunctionParamDefinition): AdmittedList | undefined => {
+    if (lists.has(param)) return lists.get(param);
+    // `admittedValues` reads every value once to check that the list is a list of texts.
+    const values = admittedValues(param);
+    if (values !== undefined) chargeWork('admitted', values.length);
+    const read = values === undefined ? undefined : admittedList(values);
+    lists.set(param, read);
+    return read;
+  };
+  const target = (
+    candidates: readonly FunctionDefinition[],
+    position: number,
+  ): EnumeratedTarget | undefined => {
+    const key = JSON.stringify([position, ...candidates.map((def) => def.signatureId)]);
+    if (targets.has(key)) return targets.get(key);
+    const found = enumeratedTarget(list, candidates, position);
+    targets.set(key, found);
+    return found;
+  };
+  return { list, target };
+}
+
+/**
  * The refusal of a literal that is not among `admitted`. With overloads that list different
- * values, `admitted` holds the values every one of them lists, and the message names the overloads
- * that do not list the literal.
+ * values (`among`), `admitted` holds the values every one of them lists, and the message names the
+ * overloads that do not list the literal. It reads the values it prints, and one lookup per
+ * overload.
  */
 function notAdmittedMessage(
   subject: string,
-  owner: string,
-  admitted: readonly string[],
+  admitted: AdmittedList,
   value: string,
-  listings: readonly Listing[],
+  among: Pick<EnumeratedTarget, 'owner' | 'listings' | 'alike'> | undefined,
 ): string {
-  const quoted = admitted.map((v) => JSON.stringify(v)).join(', ');
+  const quoted = admitted
+    .values()
+    .map((v) => JSON.stringify(v))
+    .join(', ');
   const got = JSON.stringify(value);
-  const first = listings[0]?.values ?? [];
-  const alike = listings.every(
-    (listing) =>
-      listing.values.length === first.length && listing.values.every((v) => first.includes(v)),
-  );
-  if (alike) return `${subject} must be one of ${quoted}; got ${got}`;
-  const missing = listings
-    .filter((listing) => !listing.values.includes(value))
+  if (among === undefined || among.alike) return `${subject} must be one of ${quoted}; got ${got}`;
+  const missing = among.listings
+    .filter((listing) => !listing.list.admits(value))
     .map((listing) => listing.signatureId);
   const verb = missing.length === 1 ? 'does' : 'do';
   const expected =
     admitted.length > 0
-      ? `one of ${quoted}, the values every overload of ${owner} lists here`
-      : `one of the values every overload of ${owner} lists here, and they list none in common`;
+      ? `one of ${quoted}, the values every overload of ${among.owner} lists here`
+      : `one of the values every overload of ${among.owner} lists here, and they list none in common`;
   return `${subject} must be ${expected}; got ${got}, which ${missing.join(', ')} ${verb} not list`;
 }
 
 /**
  * Reads the argument a literal-only parameter takes: a string literal written in the formula and,
- * when the parameter lists `literalValues`, one of them. `suppliedBy` names the higher-order
- * function that passes the parameter a value at run time instead, which no literal can be.
- * `listings` are the lists of the overloads the admitted values come from, for the message.
+ * when the parameter lists admitted values (`admitted`), one of them. `suppliedBy` names the
+ * higher-order function that passes the parameter a value at run time instead, which no literal
+ * can be. `among` holds, for a literal passed on to a callable, the overloads the admitted values
+ * come from, for the message.
  */
 export function readLiteralArgument(
-  param: FunctionParamDefinition,
   arg: RuleNode | undefined,
   at: {
     subject: string;
     span: SourceSpan | undefined;
     path: string[];
     suppliedBy?: string;
-    owner?: string;
-    listings?: readonly Listing[];
+    admitted?: AdmittedList;
+    among?: Pick<EnumeratedTarget, 'owner' | 'listings' | 'alike'>;
   },
 ): LiteralArgument {
   if (!arg || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
@@ -99,15 +185,14 @@ export function readLiteralArgument(
   }
   const value = arg.predictableValue;
   // Enumerated literals: the parameter names the only values it admits.
-  const admitted = admittedValues(param);
-  if (admitted !== undefined && !admitted.includes(value)) {
-    const listings = at.listings ?? [{ signatureId: '', values: admitted }];
+  const admitted = at.admitted;
+  if (admitted !== undefined && !admitted.admits(value)) {
     return {
       ok: false,
       error: makeFormulaError({
         kind: 'type',
         code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-        message: notAdmittedMessage(at.subject, at.owner ?? '', admitted, value, listings),
+        message: notAdmittedMessage(at.subject, admitted, value, at.among),
         span: arg.span,
         path: at.path,
       }),
@@ -150,37 +235,45 @@ export function callableCandidates(
   return candidates;
 }
 
-/** An overload that lists admitted values at a position, with the values it lists there. */
-type Listing = { signatureId: string; values: readonly string[] };
-
 /**
  * The admitted values that bind a literal passed on to argument `position` of a callable: the
  * values EVERY definition the callable's name can reference lists there, because the core
  * higher-order functions invoke the first definition of the name that has an implementation, which
  * the parser cannot know. Whichever definition runs then either lists the literal or lists nothing
  * at that position. A definition lists values at a position where a call of it written in the
- * formula checks the literal against them (`literalCheckAt`). Answers the parameter to read the
- * argument against (its `literalValues` the intersection), the name of the function, and every
- * overload's own list for the refusal message; undefined when no definition lists admitted values
- * there, as a literal-only parameter without them keeps 1.0.0 behaviour.
+ * formula checks the literal against them (`literalCheckAt`, reading lists through `list`). Answers
+ * the parameter that names the argument, the name of the function, the values every listing lists
+ * (one listing's own list, or their intersection, read once), every overload's own list, and
+ * whether they all list the same values, for the refusal message; undefined when no definition
+ * lists admitted values there, as a literal-only parameter without them keeps 1.0.0 behaviour.
  */
 function enumeratedTarget(
+  list: AdmittedLists['list'],
   candidates: readonly FunctionDefinition[],
   position: number,
-): { param: FunctionParamDefinition; owner: string; listings: Listing[] } | undefined {
+): EnumeratedTarget | undefined {
   let first: { param: FunctionParamDefinition; owner: string } | undefined;
   const listings: Listing[] = [];
   for (const candidate of candidates) {
-    const check = literalCheckAt(candidate.params, position, admittedValues);
+    const check = literalCheckAt(candidate.params, position, list);
     if (check?.admitted === undefined) continue;
     first ??= { param: check.param, owner: candidate.name };
-    listings.push({ signatureId: candidate.signatureId, values: check.admitted });
+    listings.push({ signatureId: candidate.signatureId, list: check.admitted });
   }
-  if (first === undefined) return undefined;
-  const admitted = admittedValues(first.param)?.filter((value) =>
-    listings.every((listing) => listing.values.includes(value)),
+  const [head, ...rest] = listings;
+  if (first === undefined || head === undefined) return undefined;
+  const admitted =
+    rest.length === 0
+      ? head.list
+      : admittedList(
+          head.list.values().filter((value) => rest.every((listing) => listing.list.admits(value))),
+        );
+  const alike = rest.every(
+    (listing) =>
+      listing.list.length === head.list.length &&
+      listing.list.values().every((value) => head.list.admits(value)),
   );
-  return { param: { ...first.param, literalValues: admitted }, owner: first.owner, listings };
+  return { param: first.param, owner: first.owner, admitted, listings, alike };
 }
 
 /**
@@ -196,14 +289,17 @@ export const WALK_STEPS_PER_ARGUMENT = 16;
  * walk visits every state of one level, across all of them, before any state of the next. It holds
  * the states it has queued, the diagnostics it has reported, and the steps it has taken, one per
  * argument position it visits, of the `limit` it may take: `WALK_STEPS_PER_ARGUMENT` × (n + 1) for
- * a call of n arguments, so its work is linear in the size of the formula however the registry's
- * definitions nest. At the limit the walk stops following: it never throws and never refuses a
- * formula for its cost. Every level shallower than the one it stopped in has been checked; a mode
- * it leaves reaches the function when the call runs.
+ * a call of n arguments, so the positions it visits are linear in the size of the formula however
+ * the registry's definitions nest, and a check at one of them is a lookup in admitted values the
+ * parse reads once (`AdmittedLists`). At the limit the walk stops following: it never throws and
+ * never refuses a formula for its cost. Every level shallower than the one it stopped in has been
+ * checked; a mode it leaves reaches the function when the call runs.
  */
 export type CallWalk = {
   readonly registry: FormulaRegistry;
   readonly errors: FormulaError[];
+  /** The admitted values the parse reads, each list once. */
+  readonly lists: AdmittedLists;
   /** The call written in the formula: every source indexes its arguments. */
   readonly call: { signatureId: string; args: readonly RuleNode[]; span?: SourceSpan };
   readonly walked: Set<string>;
@@ -220,10 +316,14 @@ export type CallWalk = {
   readonly id: number;
 };
 
-/** A walk for `call`, a call written in the formula, that reports into `errors`. */
+/**
+ * A walk for `call`, a call written in the formula, that reports into `errors` and reads admitted
+ * values through `lists`, the parse's.
+ */
 export function callWalk(
   registry: FormulaRegistry,
   errors: FormulaError[],
+  lists: AdmittedLists,
   call: { signatureId: string; args: readonly RuleNode[]; span?: SourceSpan },
 ): CallWalk {
   const record = workRecord();
@@ -240,6 +340,7 @@ export function callWalk(
   return {
     registry,
     errors,
+    lists,
     call,
     walked: new Set(),
     reported: new Set(),
@@ -312,7 +413,7 @@ export function seedCallable(
 export function runWalk(walk: CallWalk): void {
   for (let next = 0; next < walk.queue.length; next++) {
     const state = walk.queue[next] as WalkState;
-    const end = positionsToVisit(state);
+    const end = positionsToVisit(walk, state);
     const key = walk.record === undefined ? '' : stateKey(state);
     for (let position = 0; position < end; position++) {
       // Exit: the limit is reached, so the walk stops following. Every argument it has not
@@ -359,7 +460,7 @@ function enqueue(walk: CallWalk, state: WalkState): void {
     walk: walk.id,
     depth: state.depth,
     state: key,
-    positions: positionsToVisit(state),
+    positions: positionsToVisit(walk, state),
   });
 }
 
@@ -371,12 +472,12 @@ function enqueue(walk: CallWalk, state: WalkState): void {
  * admitted values. Those positions are visited, all of them, where some candidate has one, and
  * none of them otherwise.
  */
-function positionsToVisit(state: WalkState): number {
+function positionsToVisit(walk: CallWalk, state: WalkState): number {
   const count = sourceCount(state.sources);
   const widest = state.candidates.reduce((most, def) => Math.max(most, def.params.length), 0);
   if (count <= widest) return count;
   const checked = state.candidates.some(
-    (def) => literalCheckAt(def.params, widest, admittedValues) !== undefined,
+    (def) => literalCheckAt(def.params, widest, walk.lists.list) !== undefined,
   );
   return checked ? count : widest;
 }
@@ -389,15 +490,15 @@ function positionsToVisit(state: WalkState): number {
 function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] {
   const source = sourceAt(state.sources, position);
   const arg = source === undefined ? undefined : walk.call.args[source];
-  const enumerated = enumeratedTarget(state.candidates, position);
+  const enumerated = walk.lists.target(state.candidates, position);
   if (enumerated !== undefined) {
-    const literal = readLiteralArgument(enumerated.param, arg, {
+    const literal = readLiteralArgument(arg, {
       subject: `Parameter '${enumerated.param.name}' of ${enumerated.owner}`,
       span: arg?.span ?? state.named.span,
       path: ['call', walk.call.signatureId, 'arg', String(source ?? state.named.index)],
       suppliedBy: source === undefined ? state.host.name : undefined,
-      owner: enumerated.owner,
-      listings: enumerated.listings,
+      admitted: enumerated.admitted,
+      among: enumerated,
     });
     if (!literal.ok) {
       report(walk, literal.error);
@@ -424,7 +525,7 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
     // that is not literal-only, or an argument past the first of a variadic callable parameter
     // that lists no admitted values. The walk follows exactly the callables a written call checks;
     // one it skips is resolved when the call runs, with the mode it receives.
-    const check = literalCheckAt(def.params, position, admittedValues);
+    const check = literalCheckAt(def.params, position, walk.lists.list);
     const invocation = invocationOf(def);
     if (check === undefined || invocation === undefined) continue;
     const target = stripNullability(check.param.type);
