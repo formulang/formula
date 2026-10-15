@@ -32,9 +32,6 @@ import {
 } from './callable-invocations';
 import { chargeWork, workRecord, type WorkRecord } from './work-trace';
 
-type LiteralArgument =
-  { ok: true; value: string; span: SourceSpan | undefined } | { ok: false; error: FormulaError };
-
 /**
  * Admitted values as one parse reads them (`AdmittedLists`): testing a literal against them is one
  * lookup, and only `values`, which a refusal reads to print them, reads every one. Each read is
@@ -43,8 +40,8 @@ type LiteralArgument =
 export type AdmittedList = {
   /** Whether `value` is one of the admitted values. */
   readonly admits: (value: string) => boolean;
-  /** How many values the list holds. */
-  readonly length: number;
+  /** How many distinct values the list holds. */
+  readonly size: number;
   /** The values, in order. */
   readonly values: () => readonly string[];
 };
@@ -58,7 +55,7 @@ function admittedList(values: readonly string[]): AdmittedList {
       chargeWork('admitted', 1);
       return set.has(value);
     },
-    length: values.length,
+    size: set.size,
     values: () => {
       chargeWork('admitted', values.length);
       return values;
@@ -70,37 +67,44 @@ function admittedList(values: readonly string[]): AdmittedList {
 type Listing = { signatureId: string; list: AdmittedList };
 
 /**
- * The enumerated-literal rule at one position of the definitions a callable's name can reference:
- * the parameter that names the argument (the first listing's), the name of the function, the
- * values every listing lists, the listings, and whether they all list the same values.
+ * What a literal is checked against, and what its refusal says: the subject the message names, the
+ * admitted values (none for a literal-only parameter that lists none), and, for a literal passed on
+ * to a callable, the name of the function, every overload's own list and whether they all list the
+ * same values. The message refusing a value is built on the first report of that value against
+ * this target, and kept for every other report in the parse.
  */
-type EnumeratedTarget = {
-  readonly param: FunctionParamDefinition;
-  readonly owner: string;
-  readonly admitted: AdmittedList;
-  readonly listings: readonly Listing[];
-  readonly alike: boolean;
+export type LiteralTarget = {
+  readonly subject: string;
+  readonly admitted: AdmittedList | undefined;
+  readonly among:
+    | { readonly owner: string; readonly listings: readonly Listing[]; readonly alike: boolean }
+    | undefined;
+  readonly messages: Map<string, string>;
 };
 
 /**
- * The admitted values one parse reads, each read once: a parameter's list, on the first check
- * against it (`list`, by the parameter, the `read` of `literalCheckAt`), and the values the
- * definitions of a callable's name list in common at a position (`target`, by their signature ids
- * and the position). A check then costs one lookup however long the lists are, and a refusal reads
- * the values it prints.
+ * The admitted values one parse reads, each read once, and the targets they make, each made once:
+ * a parameter's list, on the first check against it (`list`, by the parameter, the `read` of
+ * `literalCheckAt`); the target of a literal written at a parameter (`written`, by the parameter);
+ * and the target of a literal passed on to a callable (`passed`), by the parameters the position
+ * resolves to for the definitions of the callable's name, never by the position itself, so every
+ * position a variadic parameter takes past the list shares one target. A check then costs one
+ * lookup however long the lists are, and a refusal reads the values it prints.
  */
 export type AdmittedLists = {
   readonly list: (param: FunctionParamDefinition) => AdmittedList | undefined;
-  readonly target: (
+  readonly written: (param: FunctionParamDefinition) => LiteralTarget;
+  readonly passed: (
     candidates: readonly FunctionDefinition[],
     position: number,
-  ) => EnumeratedTarget | undefined;
+  ) => LiteralTarget | undefined;
 };
 
 /** The admitted lists of one parse, empty until it reads one. */
 export function admittedLists(): AdmittedLists {
   const lists = new Map<FunctionParamDefinition, AdmittedList | undefined>();
-  const targets = new Map<string, EnumeratedTarget | undefined>();
+  const writtenTargets = new Map<FunctionParamDefinition, LiteralTarget>();
+  const passedTargets = new Map<string, LiteralTarget>();
   const list = (param: FunctionParamDefinition): AdmittedList | undefined => {
     if (lists.has(param)) return lists.get(param);
     // `admittedValues` reads every value once to check that the list is a list of texts.
@@ -110,95 +114,168 @@ export function admittedLists(): AdmittedLists {
     lists.set(param, read);
     return read;
   };
-  const target = (
+  const written = (param: FunctionParamDefinition): LiteralTarget => {
+    let target = writtenTargets.get(param);
+    if (target === undefined) {
+      target = {
+        subject: `Parameter '${param.name}'`,
+        admitted: list(param),
+        among: undefined,
+        messages: new Map(),
+      };
+      writtenTargets.set(param, target);
+    }
+    return target;
+  };
+  const passed = (
     candidates: readonly FunctionDefinition[],
     position: number,
-  ): EnumeratedTarget | undefined => {
-    const key = JSON.stringify([position, ...candidates.map((def) => def.signatureId)]);
-    if (targets.has(key)) return targets.get(key);
-    const found = enumeratedTarget(list, candidates, position);
-    targets.set(key, found);
-    return found;
+  ): LiteralTarget | undefined => {
+    const checks: {
+      def: FunctionDefinition;
+      param: FunctionParamDefinition;
+      list: AdmittedList;
+    }[] = [];
+    for (const def of candidates) {
+      const check = literalCheckAt(def.params, position, list);
+      if (check?.admitted !== undefined) {
+        checks.push({ def, param: check.param, list: check.admitted });
+      }
+    }
+    if (checks.length === 0) return undefined;
+    const key = JSON.stringify(
+      checks.map(({ def, param }) => [def.signatureId, def.params.indexOf(param)]),
+    );
+    let target = passedTargets.get(key);
+    if (target === undefined) {
+      target = passedTarget(checks);
+      passedTargets.set(key, target);
+    }
+    return target;
   };
-  return { list, target };
+  return { list, written, passed };
 }
 
 /**
- * The refusal of a literal that is not among `admitted`. With overloads that list different
- * values (`among`), `admitted` holds the values every one of them lists, and the message names the
- * overloads that do not list the literal. It reads the values it prints, and one lookup per
- * overload.
+ * The target of a literal passed on to a callable whose definitions list admitted values at the
+ * parameters in `checks`, in the order of the definitions: the values EVERY one of them lists,
+ * because the core higher-order functions invoke the first definition of the name that has an
+ * implementation, which the parser cannot know; whichever definition runs then either lists the
+ * literal or lists nothing at that position. The subject is the first listing's parameter. The
+ * listings list the same values exactly when each lists no more distinct values than they list in
+ * common, so `alike` compares them as sets.
  */
-function notAdmittedMessage(
-  subject: string,
-  admitted: AdmittedList,
-  value: string,
-  among: Pick<EnumeratedTarget, 'owner' | 'listings' | 'alike'> | undefined,
-): string {
-  const quoted = admitted
-    .values()
-    .map((v) => JSON.stringify(v))
-    .join(', ');
-  const got = JSON.stringify(value);
-  if (among === undefined || among.alike) return `${subject} must be one of ${quoted}; got ${got}`;
-  const missing = among.listings
-    .filter((listing) => !listing.list.admits(value))
-    .map((listing) => listing.signatureId);
-  const verb = missing.length === 1 ? 'does' : 'do';
-  const expected =
-    admitted.length > 0
-      ? `one of ${quoted}, the values every overload of ${among.owner} lists here`
-      : `one of the values every overload of ${among.owner} lists here, and they list none in common`;
-  return `${subject} must be ${expected}; got ${got}, which ${missing.join(', ')} ${verb} not list`;
+function passedTarget(
+  checks: readonly {
+    def: FunctionDefinition;
+    param: FunctionParamDefinition;
+    list: AdmittedList;
+  }[],
+): LiteralTarget {
+  const listings = checks.map(({ def, list }) => ({ signatureId: def.signatureId, list }));
+  const [first] = checks;
+  const [head, ...rest] = listings;
+  if (first === undefined || head === undefined) throw new Error('a target needs a listing');
+  const admitted =
+    rest.length === 0
+      ? head.list
+      : admittedList(
+          head.list.values().filter((value) => rest.every((listing) => listing.list.admits(value))),
+        );
+  const alike = listings.every((listing) => listing.list.size === admitted.size);
+  return {
+    subject: `Parameter '${first.param.name}' of ${first.def.name}`,
+    admitted,
+    among: { owner: first.def.name, listings, alike },
+    messages: new Map(),
+  };
 }
+
+/**
+ * The refusal of `value`, a literal `target` does not admit, built on its first use and kept on the
+ * target. With overloads that list different values, the admitted values are the ones every
+ * overload lists, and the message names the overloads that do not list the literal. It reads the
+ * values it prints, and one lookup per overload.
+ */
+function refusalMessage(target: LiteralTarget, value: string): string {
+  const known = target.messages.get(value);
+  if (known !== undefined) return known;
+  const admitted = target.admitted;
+  const quoted = (admitted?.values() ?? []).map((v) => JSON.stringify(v)).join(', ');
+  const got = JSON.stringify(value);
+  const among = target.among;
+  let message: string;
+  if (among === undefined || among.alike) {
+    message = `${target.subject} must be one of ${quoted}; got ${got}`;
+  } else {
+    const missing = among.listings
+      .filter((listing) => !listing.list.admits(value))
+      .map((listing) => listing.signatureId);
+    const verb = missing.length === 1 ? 'does' : 'do';
+    const expected =
+      admitted !== undefined && admitted.size > 0
+        ? `one of ${quoted}, the values every overload of ${among.owner} lists here`
+        : `one of the values every overload of ${among.owner} lists here, and they list none in common`;
+    message = `${target.subject} must be ${expected}; got ${got}, which ${missing.join(', ')} ${verb} not list`;
+  }
+  target.messages.set(value, message);
+  return message;
+}
+
+/** A literal its target does not admit, with what its report needs; the message is built later. */
+export type Refusal = {
+  readonly target: LiteralTarget;
+  readonly value: string;
+  readonly span: SourceSpan | undefined;
+  readonly path: string[];
+};
+
+/** The error reporting `refusal`, its message from the target. */
+export function refusalError(refusal: Refusal): FormulaError {
+  return makeFormulaError({
+    kind: 'type',
+    code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+    message: refusalMessage(refusal.target, refusal.value),
+    span: refusal.span,
+    path: refusal.path,
+  });
+}
+
+type LiteralArgument =
+  | { kind: 'literal'; value: string; span: SourceSpan | undefined }
+  | { kind: 'not a literal'; error: FormulaError }
+  | { kind: 'refused'; refusal: Refusal };
 
 /**
  * Reads the argument a literal-only parameter takes: a string literal written in the formula and,
- * when the parameter lists admitted values (`admitted`), one of them. `suppliedBy` names the
- * higher-order function that passes the parameter a value at run time instead, which no literal
- * can be. `among` holds, for a literal passed on to a callable, the overloads the admitted values
- * come from, for the message.
+ * when `target` lists admitted values, one of them. `suppliedBy` names the higher-order function
+ * that passes the parameter a value at run time instead, which no literal can be. A literal the
+ * target does not admit comes back as a refusal, whose message its report builds.
  */
 export function readLiteralArgument(
   arg: RuleNode | undefined,
-  at: {
-    subject: string;
-    span: SourceSpan | undefined;
-    path: string[];
-    suppliedBy?: string;
-    admitted?: AdmittedList;
-    among?: Pick<EnumeratedTarget, 'owner' | 'listings' | 'alike'>;
-  },
+  target: LiteralTarget,
+  at: { span: SourceSpan | undefined; path: string[]; suppliedBy?: string },
 ): LiteralArgument {
   if (!arg || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
     const supplied =
       at.suppliedBy === undefined ? '' : `; ${at.suppliedBy} passes it a value at run time`;
     return {
-      ok: false,
+      kind: 'not a literal',
       error: makeFormulaError({
         kind: 'type',
         code: FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-        message: `${at.subject} must be a string literal${supplied}`,
+        message: `${target.subject} must be a string literal${supplied}`,
         span: at.span,
       }),
     };
   }
   const value = arg.predictableValue;
   // Enumerated literals: the parameter names the only values it admits.
-  const admitted = at.admitted;
-  if (admitted !== undefined && !admitted.admits(value)) {
-    return {
-      ok: false,
-      error: makeFormulaError({
-        kind: 'type',
-        code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-        message: notAdmittedMessage(at.subject, admitted, value, at.among),
-        span: arg.span,
-        path: at.path,
-      }),
-    };
+  if (target.admitted !== undefined && !target.admitted.admits(value)) {
+    return { kind: 'refused', refusal: { target, value, span: arg.span, path: at.path } };
   }
-  return { ok: true, value, span: arg.span };
+  return { kind: 'literal', value, span: arg.span };
 }
 
 /** Whether `name` is a registered function or operator of the kind a reference admits. */
@@ -236,47 +313,6 @@ export function callableCandidates(
 }
 
 /**
- * The admitted values that bind a literal passed on to argument `position` of a callable: the
- * values EVERY definition the callable's name can reference lists there, because the core
- * higher-order functions invoke the first definition of the name that has an implementation, which
- * the parser cannot know. Whichever definition runs then either lists the literal or lists nothing
- * at that position. A definition lists values at a position where a call of it written in the
- * formula checks the literal against them (`literalCheckAt`, reading lists through `list`). Answers
- * the parameter that names the argument, the name of the function, the values every listing lists
- * (one listing's own list, or their intersection, read once), every overload's own list, and
- * whether they all list the same values, for the refusal message; undefined when no definition
- * lists admitted values there, as a literal-only parameter without them keeps 1.0.0 behaviour.
- */
-function enumeratedTarget(
-  list: AdmittedLists['list'],
-  candidates: readonly FunctionDefinition[],
-  position: number,
-): EnumeratedTarget | undefined {
-  let first: { param: FunctionParamDefinition; owner: string } | undefined;
-  const listings: Listing[] = [];
-  for (const candidate of candidates) {
-    const check = literalCheckAt(candidate.params, position, list);
-    if (check?.admitted === undefined) continue;
-    first ??= { param: check.param, owner: candidate.name };
-    listings.push({ signatureId: candidate.signatureId, list: check.admitted });
-  }
-  const [head, ...rest] = listings;
-  if (first === undefined || head === undefined) return undefined;
-  const admitted =
-    rest.length === 0
-      ? head.list
-      : admittedList(
-          head.list.values().filter((value) => rest.every((listing) => listing.list.admits(value))),
-        );
-  const alike = rest.every(
-    (listing) =>
-      listing.list.length === head.list.length &&
-      listing.list.values().every((value) => head.list.admits(value)),
-  );
-  return { param: first.param, owner: first.owner, admitted, listings, alike };
-}
-
-/**
  * Argument positions the walk may visit for each argument of the call written in the formula: a
  * call of n arguments may visit `WALK_STEPS_PER_ARGUMENT` × (n + 1) positions.
  */
@@ -304,6 +340,8 @@ export type CallWalk = {
   readonly call: { signatureId: string; args: readonly RuleNode[]; span?: SourceSpan };
   readonly walked: Set<string>;
   readonly reported: Set<string>;
+  /** The refusals reported, by target, value and the start of the literal refused. */
+  readonly refused: Map<LiteralTarget, Map<string, Set<number | undefined>>>;
   /** The states to visit, in breadth-first order. */
   readonly queue: WalkState[];
   steps: number;
@@ -344,6 +382,7 @@ export function callWalk(
     call,
     walked: new Set(),
     reported: new Set(),
+    refused: new Map(),
     queue: [],
     steps: 0,
     limit,
@@ -398,7 +437,7 @@ export function seedCallable(
 
 /**
  * Holds what each seeded higher-order function passes its callable to the callable's
- * enumerated-literal rule (`enumeratedTarget`): an argument reaching a parameter that lists
+ * enumerated-literal rule (`passedTarget`): an argument reaching a parameter that lists
  * admitted `literalValues` must be a string literal naming a value every definition of the name
  * lists there. A literal that names a callable in turn, at an argument a definition invokes as a
  * callable (`visit`), is followed into the invocation that callable makes, for every definition of
@@ -490,20 +529,21 @@ function positionsToVisit(walk: CallWalk, state: WalkState): number {
 function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] {
   const source = sourceAt(state.sources, position);
   const arg = source === undefined ? undefined : walk.call.args[source];
-  const enumerated = walk.lists.target(state.candidates, position);
-  if (enumerated !== undefined) {
-    const literal = readLiteralArgument(arg, {
-      subject: `Parameter '${enumerated.param.name}' of ${enumerated.owner}`,
+  const target = walk.lists.passed(state.candidates, position);
+  if (target !== undefined) {
+    const literal = readLiteralArgument(arg, target, {
       span: arg?.span ?? state.named.span,
       path: ['call', walk.call.signatureId, 'arg', String(source ?? state.named.index)],
       suppliedBy: source === undefined ? state.host.name : undefined,
-      admitted: enumerated.admitted,
-      among: enumerated,
     });
-    if (!literal.ok) {
+    // Exit: the argument is refused, so the formula does not compile and nothing it would pass on
+    // is ever invoked.
+    if (literal.kind === 'not a literal') {
       report(walk, literal.error);
-      // Exit: the argument is refused, so the formula does not compile and nothing it would pass
-      // on is ever invoked.
+      return [];
+    }
+    if (literal.kind === 'refused') {
+      reportRefusal(walk, literal.refusal);
       return [];
     }
   }
@@ -543,6 +583,28 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
     });
   }
   return follows;
+}
+
+/**
+ * Reports `refusal` unless the walk has reported the same target refusing the same value at the
+ * same literal, which every state that passes that literal on to that target reaches: the states
+ * share one report, decided before its message is built, and the message is the target's, built
+ * on the first report of the value anywhere in the parse.
+ */
+function reportRefusal(walk: CallWalk, refusal: Refusal): void {
+  let values = walk.refused.get(refusal.target);
+  if (values === undefined) {
+    values = new Map();
+    walk.refused.set(refusal.target, values);
+  }
+  let starts = values.get(refusal.value);
+  if (starts === undefined) {
+    starts = new Set();
+    values.set(refusal.value, starts);
+  }
+  if (starts.has(refusal.span?.start)) return;
+  starts.add(refusal.span?.start);
+  report(walk, refusalError(refusal));
 }
 
 /**

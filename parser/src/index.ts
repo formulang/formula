@@ -31,6 +31,7 @@ import {
   callWalk,
   readLiteralArgument,
   referenceExists,
+  refusalError,
   runWalk,
   seedCallable,
   type AdmittedLists,
@@ -1052,14 +1053,16 @@ function bindTypesAndRequirements(
         const arg = node.args[i];
         // Optional literal-only parameters may be omitted.
         if (!arg && p.optional === true) continue;
-        const literal = readLiteralArgument(arg, {
-          subject: `Parameter '${p.name}'`,
+        const literal = readLiteralArgument(arg, scope.lists.written(p), {
           span: arg?.span ?? node.span,
           path: ['call', def.signatureId, 'arg', String(i)],
-          admitted: check.admitted,
         });
-        if (!literal.ok) {
+        if (literal.kind === 'not a literal') {
           errors.push(literal.error);
+          continue;
+        }
+        if (literal.kind === 'refused') {
+          errors.push(refusalError(literal.refusal));
           continue;
         }
         const ref = literal.value;
