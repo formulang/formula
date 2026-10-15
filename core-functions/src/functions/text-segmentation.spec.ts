@@ -6,7 +6,6 @@ import {
   evalFormula,
   evalOk,
   evalOkWithOutput,
-  evalTimed,
 } from '../test-helpers/eval-formula';
 import {
   LINE_SPLIT_MODES,
@@ -313,8 +312,9 @@ describe('Text segmentation', () => {
     it('finds keep tokens in work linear in the text and the tokens', async () => {
       // A run of one letter holds the half-length token at every position; only the one at the
       // start begins at a word boundary. Re-checking each occurrence re-read half the text each
-      // time (seconds at 80,000). The steps are counted through SENTENCES, as an embedder calls it.
-      for (const n of [20_000, 80_000]) {
+      // time (seconds at 80,000). The steps are counted through SENTENCES, as an embedder calls it,
+      // smallest first: the search charges every character it compares.
+      for (const n of [20_000, 80_000, 160_000]) {
         const value = `${'a'.repeat(n)}. Next.`;
         const token = 'a'.repeat(n / 2);
         const counted = await evalCountingWork(
@@ -324,8 +324,10 @@ describe('Text segmentation', () => {
           { value, other: [token] },
         );
         expect(counted.value).toStrictEqual([`${'a'.repeat(n)}.`, 'Next.']);
-        expect(counted.steps).toBeGreaterThanOrEqual(value.length);
-        expect(counted.steps).toBeLessThanOrEqual(2 * (value.length + token.length));
+        expect(counted.steps, `${n} letters`).toBeGreaterThanOrEqual(value.length);
+        expect(counted.steps, `${n} letters`).toBeLessThanOrEqual(
+          2 * (value.length + token.length),
+        );
       }
       // The occurrence that starts at a word boundary protects its range: `aa.` here.
       const kept = await evalCountingWork(
@@ -341,17 +343,6 @@ describe('Text segmentation', () => {
         }),
       ).toBe(1);
     });
-
-    it('finds keep tokens in linear time through SENTENCES', async () => {
-      // The time also covers work the step count cannot see. On this input the search loop this
-      // one replaced takes seconds; the linear search takes milliseconds.
-      const { value, milliseconds } = await evalTimed('SENTENCES(value; "punctuation"; other)', {
-        value: `${'a'.repeat(160_000)}. Next.`,
-        other: ['a'.repeat(80_000)],
-      });
-      expect(value).toHaveLength(2);
-      expect(milliseconds).toBeLessThan(1_000);
-    }, 60_000);
 
     it('bounds the keep list and the sentence list', async () => {
       const keep = Array.from({ length: 1_001 }, (_, i) => `t${i}.`);

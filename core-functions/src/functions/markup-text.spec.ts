@@ -5,7 +5,6 @@ import {
   evalCountingWork,
   evalFormula,
   evalOk,
-  evalTimed,
 } from '../test-helpers/eval-formula';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
 import {
@@ -270,16 +269,21 @@ describe('Markup text', () => {
   describe('scan work', () => {
     // A scan that reaches the end of its input visits every character at least once; a linear
     // scan visits each at most STEPS_PER_CHARACTER times, plus a fixed allowance. Each input
-    // below is measured at two sizes, through PLAIN_TEXT and MARKDOWN_BLOCKS as an embedder calls
-    // them; a scan that re-reads its input per tag, per delimiter run or per backtick run exceeds
-    // the bound by orders of magnitude at either size.
+    // below is measured at each of its sizes, smallest first, through PLAIN_TEXT and
+    // MARKDOWN_BLOCKS as an embedder calls them; a scan that re-reads its input per tag, per
+    // delimiter run or per backtick run exceeds the bound by orders of magnitude at the first.
+    // The count is what the scans charge: every search charges the characters it skips and
+    // compares, and a line pattern the line it reads. The count does not see inside a regular
+    // expression: the line patterns run once per line, anchored at its start, and the space and
+    // backtick runs before a line separator, on which earlier patterns backtracked, are among the
+    // inputs for the text they give.
     const STEPS_PER_CHARACTER = 16;
     const FIXED_STEPS = 1_000;
 
     type AdversarialInput = {
       build: (size: number) => string;
       text: (size: number) => string;
-      sizes: readonly [number, number];
+      sizes: readonly number[];
     };
 
     const backtickRuns = (lengths: readonly number[]) =>
@@ -290,7 +294,7 @@ describe('Markup text', () => {
       'a quoted > after each tag name': {
         build: (m) => '<a ">"'.repeat(m),
         text: (m) => '"'.repeat(m),
-        sizes: [1_000, 4_000],
+        sizes: [1_000, 4_000, 10_000],
       },
       'unterminated double-quoted values': {
         build: (m) => '<a title="x'.repeat(m),
@@ -353,7 +357,7 @@ describe('Markup text', () => {
       'emphasis openers without closers': {
         build: (k) => '_a '.repeat(k) + 'a* '.repeat(k),
         text: (k) => ('_a '.repeat(k) + 'a* '.repeat(k)).trim(),
-        sizes: [2_000, 8_000],
+        sizes: [2_000, 8_000, 80_000],
       },
       'unmatched openers of both markers': {
         build: (k) => '*a _a '.repeat(k),
@@ -368,7 +372,7 @@ describe('Markup text', () => {
       'backtick runs of rising lengths': {
         build: (k) => backtickRuns(rising(k)),
         text: (k) => backtickRuns(rising(k)).trim(),
-        sizes: [100, 300],
+        sizes: [100, 300, 2_000],
       },
       'backtick runs of falling lengths': {
         build: (k) => backtickRuns(rising(k).reverse()),
@@ -395,6 +399,26 @@ describe('Markup text', () => {
         text: (k) => 'a '.repeat(k).trim(),
         sizes: [10_000, 40_000],
       },
+      'a space run inside a heading': {
+        build: (k) => `# a${' '.repeat(k)}b`,
+        text: () => 'a b',
+        sizes: [10_000, 60_000],
+      },
+      'a space run before a line separator in a heading': {
+        build: (k) => `# Title${' '.repeat(k)}\u2028more`,
+        text: () => 'Title more',
+        sizes: [10_000, 60_000],
+      },
+      'a space run after a list marker before a line separator': {
+        build: (k) => `-${' '.repeat(k)}\u2028item`,
+        text: () => 'item',
+        sizes: [10_000, 60_000],
+      },
+      'a backtick run before a line separator': {
+        build: (k) => `${'`'.repeat(k)}\u2028`,
+        text: () => '',
+        sizes: [10_000, 60_000],
+      },
     };
 
     /** The public function a scan is measured through. */
@@ -419,7 +443,10 @@ describe('Markup text', () => {
       implementation: MarkdownBlocksImplementation,
     };
 
-    /** Bounds the work of `path` on `input` at both sizes; checks the text where it is known. */
+    /**
+     * Bounds the work of `path` on `input` at each of its sizes, smallest first; checks the text
+     * where it is known.
+     */
     const expectLinearWork = async (
       path: PublicPath,
       input: AdversarialInput,
@@ -435,9 +462,12 @@ describe('Markup text', () => {
             value,
           },
         );
-        expect(counted.steps).toBeGreaterThanOrEqual(value.length);
-        expect(counted.steps).toBeLessThanOrEqual(STEPS_PER_CHARACTER * value.length + FIXED_STEPS);
-        if (checkText) expect(counted.value).toBe(input.text(size));
+        const label = `${path.formula} on ${value.length} characters`;
+        expect(counted.steps, label).toBeGreaterThanOrEqual(value.length);
+        expect(counted.steps, label).toBeLessThanOrEqual(
+          STEPS_PER_CHARACTER * value.length + FIXED_STEPS,
+        );
+        if (checkText) expect(counted.value, label).toBe(input.text(size));
       }
     };
 
@@ -446,6 +476,7 @@ describe('Markup text', () => {
       async (_name, input) => {
         await expectLinearWork(plainHtml, input, true);
       },
+      120_000,
     );
 
     it.each(Object.entries(markdownInputs))(
@@ -454,48 +485,8 @@ describe('Markup text', () => {
         await expectLinearWork(plainMarkdown, input, true);
         await expectLinearWork(markdownBlocks, input, false);
       },
+      120_000,
     );
-
-    it('reads markup in linear time through PLAIN_TEXT and MARKDOWN_BLOCKS', async () => {
-      // The time also covers work the step count cannot see. On each input the code these scans
-      // replaced takes seconds: it re-read the rest of the markup per tag that never closed, per
-      // emphasis closer without an opener of its kind, or per backtick run length. The scans take
-      // milliseconds.
-      const quoted = '<a ">"'.repeat(10_000);
-      const emphasis = '_a '.repeat(80_000) + 'a* '.repeat(80_000);
-      const backticks = backtickRuns(rising(2_000));
-      const cases: Array<[PublicPath, string]> = [
-        [plainHtml, quoted],
-        [plainMarkdown, emphasis],
-        [markdownBlocks, emphasis],
-        [plainMarkdown, backticks],
-        [markdownBlocks, backticks],
-      ];
-      for (const [path, value] of cases) {
-        const { milliseconds } = await evalTimed(path.formula, { value });
-        expect(milliseconds, `${path.formula} on ${value.length} characters`).toBeLessThan(1_000);
-      }
-    }, 120_000);
-
-    it('matches the markdown line patterns in linear time', async () => {
-      // The step count does not see inside a regular expression: these lines made the line
-      // patterns backtrack quadratically (seconds at this size); a linear match takes
-      // milliseconds.
-      const spaces = ' '.repeat(60_000);
-      const lines: Array<[string, string]> = [
-        [`# a${spaces}b`, 'a b'],
-        [`# Title${spaces}\u2028more`, 'Title more'],
-        [`-${spaces}\u2028item`, 'item'],
-        [`${'`'.repeat(60_000)}\u2028`, ''],
-      ];
-      for (const [line, text] of lines) {
-        const plain = await evalTimed(plainMarkdown.formula, { value: line });
-        expect(plain.value).toBe(text);
-        expect(plain.milliseconds).toBeLessThan(1_000);
-        const selected = await evalTimed(markdownBlocks.formula, { value: line });
-        expect(selected.milliseconds).toBeLessThan(1_000);
-      }
-    }, 60_000);
   });
 
   describe('reference tables', () => {

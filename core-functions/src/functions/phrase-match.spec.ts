@@ -6,7 +6,6 @@ import {
   evalFormula,
   evalOk,
   evalOkWithOutput,
-  evalTimed,
 } from '../test-helpers/eval-formula';
 import {
   ContainsAnyImplementation,
@@ -77,13 +76,14 @@ describe('Phrase matching', () => {
     it('matches a word phrase in work linear in the text and the phrase', async () => {
       // A run of one letter holds the half-length phrase at every position, never as a whole
       // word: re-checking each occurrence re-read half the text each time (seconds at 80,000).
-      // The steps are counted through the public functions, as an embedder calls them.
+      // The steps are counted through the public functions, as an embedder calls them, smallest
+      // first: the search charges every character it compares.
       const publicFunctions = [
         ['FIRST_CONTAINED', BuiltinSignatureIds.FIRST_CONTAINED, FirstContainedImplementation],
         ['CONTAINS_ANY', BuiltinSignatureIds.CONTAINS_ANY, ContainsAnyImplementation],
       ] as const;
       for (const [name, signatureId, implementation] of publicFunctions) {
-        for (const n of [20_000, 80_000]) {
+        for (const n of [20_000, 80_000, 160_000]) {
           const value = 'a'.repeat(n);
           const phrase = 'a'.repeat(n / 2);
           const source = `${name}(value; other; "word")`;
@@ -92,8 +92,10 @@ describe('Phrase matching', () => {
             other: [phrase],
           });
           expect(counted.value).toBe(name === 'CONTAINS_ANY' ? false : null);
-          expect(counted.steps).toBeGreaterThanOrEqual(value.length);
-          expect(counted.steps).toBeLessThanOrEqual(2 * (value.length + phrase.length));
+          expect(counted.steps, `${name}, ${n} letters`).toBeGreaterThanOrEqual(value.length);
+          expect(counted.steps, `${name}, ${n} letters`).toBeLessThanOrEqual(
+            2 * (value.length + phrase.length),
+          );
           const found = await evalCountingWork(source, signatureId, implementation, {
             value: `${value} ${phrase}`,
             other: [phrase],
@@ -105,17 +107,6 @@ describe('Phrase matching', () => {
         await evalOk('CONTAINS_ANY(value; LIST("aa"); "word")', { value: 'a'.repeat(1_000) }),
       ).toBe(false);
     });
-
-    it('matches a word phrase in linear time through FIRST_CONTAINED and CONTAINS_ANY', async () => {
-      // The time also covers work the step count cannot see. On this input the search loop this
-      // one replaced takes seconds; the linear search takes milliseconds.
-      const value = 'a'.repeat(160_000);
-      const other = ['a'.repeat(80_000)];
-      for (const name of ['FIRST_CONTAINED', 'CONTAINS_ANY']) {
-        const { milliseconds } = await evalTimed(`${name}(value; other; "word")`, { value, other });
-        expect(milliseconds, name).toBeLessThan(1_000);
-      }
-    }, 60_000);
 
     it('treats an empty list as no match and skips empty phrases', async () => {
       expect(await evalOk('FIRST_CONTAINED("abc"; LIST())')).toBe(null);

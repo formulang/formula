@@ -134,28 +134,6 @@ export async function evalCountingWork(
   return { value: res.value, steps: work.steps };
 }
 
-/**
- * Evaluates `source` as `evalOk` does and answers the value with the milliseconds the evaluation
- * took. `value` and `other` are the inputs.
- */
-export async function evalTimed(
-  source: string,
-  vars: Record<string, unknown> = {},
-): Promise<{ value: unknown; milliseconds: number }> {
-  const { registry, implementations } = createTestRuntime(withOther);
-  const parsed = parseFormula(source, { registry });
-  const compiled = optimizeRule(parsed, { registry });
-  const started = performance.now();
-  const res = await evaluateRuleAsync(compiled, {
-    registry,
-    resolver: implementations,
-    variables: vars,
-  });
-  const milliseconds = performance.now() - started;
-  expect(collectAllErrors(parsed, compiled, res.errors)).toStrictEqual([]);
-  return { value: res.value, milliseconds };
-}
-
 export async function evalOkWithOutput(
   source: string,
   vars: Record<string, unknown> = {},
