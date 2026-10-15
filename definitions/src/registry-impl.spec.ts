@@ -1,4 +1,6 @@
 import { createRegistry } from './registry-impl';
+import { formatType } from './type-utils';
+import type { FormulaType } from './types';
 import { FormulaTypes } from './types';
 
 describe('InMemoryFormulaRegistry', () => {
@@ -187,6 +189,50 @@ describe('InMemoryFormulaRegistry', () => {
       }),
     ).toThrow(/declares literalValues but is not literalOnly/);
     expect(registry.getFunction('MODE/v1')).toBeUndefined();
+  });
+
+  it('rejects admitted values on a parameter no string literal fits, and takes them where one does', () => {
+    // A literal-only parameter takes a string literal; one whose type no text fits refuses every
+    // call, whatever it lists, as an empty list would.
+    const register = (type: FormulaType) => {
+      const registry = createRegistry();
+      registry.registerFunction({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'Admitted values on a parameter of the type given.',
+        params: [{ name: 'mode', type, literalOnly: true, literalValues: ['1', 'true'] }],
+        returnType: FormulaTypes.text(false),
+        purity: 'pure',
+      });
+      return registry;
+    };
+    const refused = [
+      FormulaTypes.number(false),
+      FormulaTypes.boolean(true),
+      FormulaTypes.list(FormulaTypes.text(false)),
+      FormulaTypes.object('date'),
+      FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.boolean(false)]),
+      FormulaTypes.template('T', { constraint: FormulaTypes.number(false) }),
+    ];
+    for (const type of refused) {
+      expect(() => register(type), formatType(type)).toThrow(
+        `Parameter 'mode' of MODE/v1 declares literalValues but takes no string literal (its type is ${formatType(type)})`,
+      );
+    }
+    const taken = [
+      FormulaTypes.text(true),
+      FormulaTypes.any(true),
+      FormulaTypes.template('T'),
+      FormulaTypes.callable('function'),
+      FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.text(false)]),
+    ];
+    for (const type of taken) {
+      expect(
+        register(type).getFunction('MODE/v1')?.params[0]?.literalValues,
+        formatType(type),
+      ).toStrictEqual(['1', 'true']);
+    }
   });
 
   it('rejects an empty admitted-value list', () => {

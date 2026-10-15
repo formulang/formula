@@ -5,8 +5,9 @@ import type {
   OperatorDefinition,
   VariableDefinition,
 } from './registry';
-import { isAssignable, stripNullability } from './type-utils';
+import { formatType, isAssignable, stripNullability } from './type-utils';
 import type { FormulaType } from './types';
+import { FormulaTypes } from './types';
 
 export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
   /**
@@ -38,14 +39,20 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
       throw new Error(`Function already registered: ${def.signatureId}`);
     }
 
-    // An admitted-value list only takes effect on a literal-only parameter, it is a list of texts
-    // (the literals a formula writes), and an empty list would refuse every call; anything else is
-    // a definition mistake, so it fails here.
+    // An admitted-value list only takes effect on a literal-only parameter whose type a string
+    // literal fits, it is a list of texts (the literals a formula writes), and an empty list would
+    // refuse every call, as a list on a parameter no string literal fits would; anything else is a
+    // definition mistake, so it fails here.
     for (const param of def.params) {
       if (param.literalValues === undefined) continue;
       if (param.literalOnly !== true) {
         throw new Error(
           `Parameter '${param.name}' of ${def.signatureId} declares literalValues but is not literalOnly`,
+        );
+      }
+      if (!isAssignable(FormulaTypes.text(false), stripNullability(param.type))) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues but takes no string literal (its type is ${formatType(param.type)})`,
         );
       }
       if (!isListOfTexts(param.literalValues)) {
