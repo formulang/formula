@@ -27,7 +27,7 @@ arguments with `,` instead.
   `normalise`, `format` or `kind`) takes a string literal naming one of them; a
   misspelt one is a compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when
   higher-order calls pass it on through callables named by string literals
-  (see [When a mode is refused](language.md#when-a-mode-is-refused)). A mode
+  (see [When a mode is checked](language.md#when-a-mode-is-checked)). A mode
   can still reach a function when the call runs, passed to a callable that a
   higher-order call names by a variable or an expression
   (`EACH(lists; "EACH"; name; mode)`) or along a path the parser does not

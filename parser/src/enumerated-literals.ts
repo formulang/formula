@@ -30,7 +30,8 @@ import {
  * it lists none. Registration refuses any other value, but a registry that is not an
  * `InMemoryFormulaRegistry` may hand the parser a definition as written: `null` there lists nothing,
  * as on the other optional fields, and so does a value that is not a list of texts, which the
- * parser reads rather than throws on (the function refuses, when it runs, a mode it does not list).
+ * parser reads rather than throws on: the literal written there then reaches the function when the
+ * call runs, as any literal of a literal-only parameter without a list does.
  */
 export function admittedValues(param: FunctionParamDefinition): readonly string[] | undefined {
   const values: unknown = param.literalValues;
@@ -321,7 +322,7 @@ export function runWalk(walk: CallWalk): void {
     for (let position = 0; position < end; position++) {
       // Exit: the limit is reached, so the walk stops following. Every argument it has not
       // checked reaches its function when the call runs (docs/language.md, When a mode is
-      // refused, says what the formula then answers).
+      // checked, says what the formula then answers).
       if (walk.steps >= walk.limit) return;
       walk.steps++;
       walk.trace?.push({ depth: state.depth, state: stateKey(state), position });

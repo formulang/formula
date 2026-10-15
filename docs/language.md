@@ -530,8 +530,9 @@ EACH(LIST(LIST("a b")); "EACH"; "WORD" & "_COUNT")    -- [[2]]
 EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")   -- with value = "WORD_COUNT": [[null]]
 ```
 
-In the last formula `WORD_COUNT` refuses the mode it does not list when it
-runs; through the higher-order call that item is `null`.
+In the last formula `WORD_COUNT` receives a mode it does not list when it
+runs and answers `null` with a `TYPE` warning; the higher-order call keeps the
+`null` and drops the warning, so that item is `null`.
 
 Because the reference is a literal, the parser fully validates it while
 parsing:
@@ -549,7 +550,7 @@ parsing:
   also when the referenced function is itself a higher-order function that
   passes it on in turn, at any depth, as long as each callable is named by a
   string literal (within the bound of
-  [When a mode is refused](#when-a-mode-is-refused)):
+  [When a mode is checked](#when-a-mode-is-checked)):
 
   ```
   EACH(LIST("a b"); "WORD_COUNT"; "whitespce")               -- LITERAL_VALUE_NOT_ALLOWED
@@ -613,7 +614,7 @@ lists values at that position, and the message names the overloads that do
 not list it; a call written directly is checked against the overload its
 types select.
 
-### When a mode is refused
+### When a mode is checked
 
 When the formula compiles, the parser refuses a mode that is not a string
 literal naming an admitted value wherever it sees the argument reach the
@@ -636,9 +637,8 @@ walk never reaches that bound; a host's overload with a long parameter
 list under one of those names can, and past the bound the parser stops
 following without an error.
 
-When the call runs, every function checks the mode it receives, wherever it
-comes from, so a mode the parser does not see reach the function is refused
-then:
+Any other mode reaches the function when the call runs, and the parser
+reports nothing for it:
 
 - one passed on to a callable named by a variable or an expression, which is
   resolved when the call runs (`EACH(lists; "EACH"; name; "whitespce")`);
@@ -650,9 +650,11 @@ then:
 - one past the bound above.
 
 A built-in function answers a mode it does not list with `null` and a `TYPE`
-warning; through a higher-order call that item is `null`, as for any callee
-that fails, because the higher-order functions keep a callee's value, not its
-warnings.
+warning. The core higher-order functions keep a callee's value and drop its
+warnings, as on 1.0.0, so through them such a mode yields neither an error
+nor a warning: through `EACH` that item is `null`, and a filter leaves the
+item out. A higher-order function an embedder registers answers what its
+implementation keeps of the callee's output.
 
 The admitted values are part of the function definition
 (`FunctionParamDefinition.literalValues`), so an editor holding the
@@ -826,7 +828,8 @@ a formula that stays within the sizes above will not normally meet them.
 The parser's check of modes passed on through callables visits at most
 16 × (n + 1) argument positions for a call of n arguments and then stops
 following, with no error: it is no limit a formula can exceed, and a mode it
-leaves is refused when the call runs (see [When a mode is refused](#when-a-mode-is-refused)).
+leaves reaches the function when the call runs (see
+[When a mode is checked](#when-a-mode-is-checked)).
 
 ## Cheat sheet
 

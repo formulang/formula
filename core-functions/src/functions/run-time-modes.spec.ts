@@ -5,10 +5,12 @@ import { evaluateRuleOutputAsync } from '@formulang/runner';
 import { createTestRuntime } from '../test-helpers/eval-formula';
 
 /**
- * Every function refuses, when it runs, a mode it does not list, wherever the mode comes from.
- * Every core definition with a parameter that lists admitted values comes from the live registry,
- * reconciled both ways with the calls below, and is run with each admitted mode and with misspelt
- * ones given as values when the call runs.
+ * What a formula answers for a mode that reaches a function when the call runs, which the parser
+ * does not see: a core function answers a mode it does not list with `null` and a `TYPE` warning,
+ * wherever the mode comes from, and a core higher-order function that called it keeps the `null`
+ * and drops the warning, as on 1.0.0. Every core definition with a parameter that lists admitted
+ * values comes from the live registry, reconciled both ways with the calls below, and is run with
+ * each admitted mode and with misspelt ones given as values when the call runs.
  */
 
 const MODE = 'MODE';
@@ -103,10 +105,15 @@ async function run(source: string, variables: Record<string, unknown>) {
     variables,
   });
   expect(out.errors, source).toStrictEqual([]);
-  return {
-    value: out.output.value ?? null,
-    warnings: (out.output.warnings ?? []).map((warning) => warning.code),
-  };
+  return { value: out.output.value ?? null, warnings: warningsIn(out.output) };
+}
+
+/** The codes of every warning in an output tree, at any node. */
+function warningsIn(output: FormulaNodeOutput): string[] {
+  return [
+    ...(output.warnings ?? []).map((warning) => warning.code),
+    ...output.children.flatMap(warningsIn),
+  ];
 }
 
 const enumerated = runtime()
@@ -120,7 +127,7 @@ const enumerated = runtime()
   );
 
 describe('a mode received when the call runs', () => {
-  it('calls a callable named by a value or an expression, and refuses its misspelt mode', async () => {
+  it('calls a callable named by a value or an expression, and answers null for its misspelt mode', async () => {
     // The examples of docs/language.md, Callable references: the nested call resolves the name
     // when it runs.
     expect(
@@ -144,12 +151,13 @@ describe('a mode received when the call runs', () => {
     ).toStrictEqual({ value: [[null]], warnings: [] });
   });
 
-  it('refuses, when the call runs, a mode past where the parser stops following', async () => {
+  it('answers null, with no error and no warning, for a mode past where the parser stops following', async () => {
     // A host's EACH overload with forty parameters makes the parser visit forty positions at every
     // level of a chain of EACH, so its walk reaches its limit (linear in the call) long before the
-    // end of a chain of forty levels. The formula compiles, and WORD_COUNT refuses the misspelt
-    // mode at the end of the chain when the call runs. With the core definitions alone the same
-    // formula does not compile: the walk reaches the mode.
+    // end of a chain of forty levels. The formula compiles, and WORD_COUNT receives the misspelt
+    // mode at the end of the chain when the call runs: it answers null with a TYPE warning, which
+    // the core EACH that called it drops while keeping the null, as on 1.0.0. With the core
+    // definitions alone the same formula does not compile: the walk reaches the mode.
     const levels = 40;
     const list = `${'LIST('.repeat(levels + 1)}"a b"${')'.repeat(levels + 1)}`;
     const source = (mode: string) =>
@@ -190,14 +198,30 @@ describe('a mode received when the call runs', () => {
           variables: {},
         },
       );
-      return { value: out.output.value ?? null, errors: out.errors.map((error) => error.code) };
+      return {
+        value: out.output.value ?? null,
+        errors: out.errors.map((error) => error.code),
+        warnings: warningsIn(out.output),
+      };
     };
     expect(await outcome(runtime(), 'whitespce')).toStrictEqual({
       parse: ['LITERAL_VALUE_NOT_ALLOWED'],
     });
-    expect(await outcome(wide(), 'whitespce')).toStrictEqual({ value: nested(null), errors: [] });
-    // Not vacuous: an admitted mode answers through the same chain.
-    expect(await outcome(wide(), 'letters')).toStrictEqual({ value: nested(2), errors: [] });
+    // The mode past the bound: the item is null, and the formula reports neither an error nor a
+    // warning, at any node.
+    const past = await outcome(wide(), 'whitespce');
+    expect(past).toStrictEqual({ value: nested(null), errors: [], warnings: [] });
+    // Not vacuous: an admitted mode answers through the same chain...
+    expect(await outcome(wide(), 'letters')).toStrictEqual({
+      value: nested(2),
+      errors: [],
+      warnings: [],
+    });
+    // ...and WORD_COUNT itself answers the misspelt mode with null and a TYPE warning, which the
+    // chain drops.
+    expect(
+      await run('APPLY(fn; a0; mode)', { fn: 'WORD_COUNT', a0: 'a b', mode: 'whitespce' }),
+    ).toStrictEqual({ value: null, warnings: ['TYPE'] });
   });
 
   it('answers null for a nested call that omits a required mode', async () => {
@@ -236,7 +260,7 @@ describe('a mode received when the call runs', () => {
   });
 
   it.each(enumerated.map((entry) => [entry.def.name, entry] as const))(
-    '%s answers each admitted mode as the literal does, and null with TYPE for any other',
+    '%s answers each admitted mode as the literal does, and any other with null: a TYPE warning when called directly, none through EACH',
     async (name, { def, admitted, optional }) => {
       const call = CALLS[def.signatureId] ?? [];
       const inputs = Object.fromEntries(
@@ -277,9 +301,10 @@ describe('a mode received when the call runs', () => {
           warnings: ['TYPE'],
         });
         const viaEach = await run(throughEach, { ...inputs, fn: name, mode });
-        expect(viaEach.value, `${name} ${JSON.stringify(mode)} through EACH`).toStrictEqual([
-          [null],
-        ]);
+        expect(viaEach, `${name} ${JSON.stringify(mode)} through EACH`).toStrictEqual({
+          value: [[null]],
+          warnings: [],
+        });
       }
 
       // A null mode is an omitted one: the default where the mode is optional, refused otherwise.
