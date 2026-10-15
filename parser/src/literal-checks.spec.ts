@@ -23,8 +23,13 @@ import { parseFormula } from './index';
  * the higher-order function that passes it on, with its callable parameter literal-only or not ×
  * the literal, listed or not, or a value in its place — and compares every error code the parser
  * reports, written directly, passed on one level and passed on two levels, with a table written by
- * hand. The table gives the same codes at every level for every list registration takes, and
- * registration takes a list exactly there.
+ * hand. For a definition alone, and beside a sibling overload no call matches, the table gives the
+ * same codes at every level for every list registration takes, and registration takes a list
+ * exactly there. Registration reads one definition at a time, and the parser checks a call
+ * written directly against the overload its types select but a literal passed on against every
+ * overload that lists values at its position: beside a sibling overload that a call also binds,
+ * or that lists other values there, a literal written directly can be taken where the same
+ * literal passed on is refused. The table holds two such shapes (`NEIGHBOURS`).
  */
 
 const L = FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED;
@@ -201,7 +206,7 @@ const KINDS: Kind[] = [
   },
 ].map((kind) => ({ position: 1, listed: 'a', unlisted: 'zzz', ...kind }) as Kind);
 
-function target(kind: Kind): FunctionDefinition {
+function target(kind: Pick<Kind, 'params'>): FunctionDefinition {
   return {
     signatureId: 'TARGET/v1',
     name: 'TARGET',
@@ -229,6 +234,62 @@ const SHAPES = [
   { name: 'alone', definitions: (kind: Kind) => [target(kind)] },
   { name: 'beside', definitions: (kind: Kind) => [target(kind), SIBLING] },
 ] as const;
+
+/**
+ * TARGET's text parameter that lists a and b beside a sibling overload that a call can bind or
+ * that lists other values at the same position. Registration takes every definition of both;
+ * the codes differ by level, by the rule: a call written directly is checked against the
+ * overload its types select, a literal passed on against every overload that lists values at
+ * its position.
+ */
+const NEIGHBOURS: readonly {
+  label: string;
+  definitions: FunctionDefinition[];
+  cells: Cells;
+}[] = [
+  {
+    // A call of 1 binds TARGET/v1, which lists "a"; passed on, "a" must also be one that
+    // TARGET/v2 lists.
+    label: 'beside TARGET/v2(flag: boolean; mode: a text that lists b and c)',
+    definitions: [
+      target({ params: [listing(FormulaTypes.text(false))] }),
+      {
+        signatureId: 'TARGET/v2',
+        name: 'TARGET',
+        category: 'custom',
+        description: 'A sibling overload that lists other values.',
+        params: [
+          { name: 'flag', type: FormulaTypes.boolean(false) },
+          listing(FormulaTypes.text(false), { literalValues: ['b', 'c'] }),
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      },
+    ],
+    cells: { listed: [[], [L], [L]], unlisted: everywhere([L]), value: everywhere([E]) },
+  },
+  {
+    // A call of 1 binds TARGET/v0, registered first, whose plain mode takes any text; passed on,
+    // the literal must be one TARGET/v1 lists, the one overload that lists values there.
+    label: 'after TARGET/v0(count: number; mode: a plain text)',
+    definitions: [
+      {
+        signatureId: 'TARGET/v0',
+        name: 'TARGET',
+        category: 'custom',
+        description: 'A sibling overload with a plain mode, registered first.',
+        params: [
+          { name: 'count', type: FormulaTypes.number(false) },
+          { name: 'mode', type: FormulaTypes.text(false) },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      },
+      target({ params: [listing(FormulaTypes.text(false))] }),
+    ],
+    cells: { listed: everywhere([]), unlisted: [[], [L], [L]], value: [[], [E], [E]] },
+  },
+];
 
 /**
  * The higher-order functions that pass a written argument on to their callable's second position,
@@ -308,7 +369,9 @@ function codes(registry: FormulaRegistry, source: string): string[] {
 }
 
 /** TARGET's arguments after its subject for each cell: the listed literal, the unlisted, a value. */
-function argumentsOf(kind: Kind): Array<[keyof Cells, string]> {
+function argumentsOf(
+  kind: Pick<Kind, 'position' | 'listed' | 'unlisted'>,
+): Array<[keyof Cells, string]> {
   const at = (argument: string) =>
     kind.position === 1 ? argument : `${JSON.stringify(kind.listed)}; ${argument}`;
   return [
@@ -369,7 +432,33 @@ describe('where a literal is checked, by one rule', () => {
     expect(cells).toBe((12 * 4 + 2) * 2 * 2 * 3);
   });
 
-  it('takes a list at registration exactly where the table reads it alike at every level', () => {
+  it('reports the codes of the table beside a sibling a call can bind or that lists other values', () => {
+    let cells = 0;
+    for (const { label, definitions, cells: expected } of NEIGHBOURS) {
+      for (const vehicle of VEHICLES) {
+        for (const literalOnlyCallable of [true, false]) {
+          const registry = registryFor(definitions, vehicle.name, literalOnlyCallable);
+          for (const [name, args] of argumentsOf({ position: 1, listed: 'a', unlisted: 'zzz' })) {
+            const [direct, one, two] = expected[name];
+            const cell = `${label}, ${vehicle.name}${literalOnlyCallable ? '' : '/v9'}, ${name}`;
+            expect(codes(registry, `TARGET(1; ${args})`), `${cell}, written`).toStrictEqual(direct);
+            expect(codes(registry, vehicle.one(args)), `${cell}, one level`).toStrictEqual(
+              literalOnlyCallable ? one : [],
+            );
+            expect(codes(registry, vehicle.two(args)), `${cell}, two levels`).toStrictEqual(
+              literalOnlyCallable ? two : [],
+            );
+            cells++;
+          }
+        }
+      }
+    }
+    // Every cell visited: two shapes through four vehicles, with both kinds of callable
+    // parameter, for three arguments.
+    expect(cells).toBe(2 * 4 * 2 * 3);
+  });
+
+  it('takes a list at registration exactly where the table reads it alike at every level, alone and beside a sibling no call matches', () => {
     const readAlike = (cells: Cells) => JSON.stringify(cells) === JSON.stringify(CHECKED);
     let accepted = 0;
     for (const kind of KINDS.filter((k) => k.params[0]?.literalValues !== undefined)) {
@@ -382,5 +471,11 @@ describe('where a literal is checked, by one rule', () => {
     // variadic text register; the template constrained to numbers, the number, the boolean, the
     // list and the parameter that is not literal-only do not.
     expect(accepted).toBe(7);
+    // Registration reads one definition at a time: it takes every definition of the two shapes
+    // beside a sibling a call can bind or that lists other values, whose codes differ by level.
+    for (const { label, definitions, cells } of NEIGHBOURS) {
+      expect(registers(definitions), label).toBe(true);
+      expect(readAlike(cells), label).toBe(false);
+    }
   });
 });

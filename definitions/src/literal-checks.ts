@@ -7,8 +7,13 @@ import type { FunctionParamDefinition } from './registry';
  * registration takes a `literalValues` list only on a parameter `literalCheckAt` answers, whose
  * type a string literal fits by both of the parser's checks of an argument's type: choosing among
  * the overloads (`argumentSelects`) and checking the call once it binds (`argumentFits`). All
- * three read this one rule, so a literal checked in one place is checked in the others, and a
- * string literal's own type never keeps the parser from reading the list.
+ * three read this one rule for a definition, so a list registration takes is checked in a call
+ * of that definition written in the formula and wherever a literal is passed on to it, and a
+ * string literal's own type never keeps the parser from reading the list. Which definitions a
+ * literal meets is the parser's: a call written directly binds the overload its types select,
+ * and a literal passed on meets every definition of the name that lists values at its
+ * position, so beside an overload that a call also binds, or one that lists other values
+ * there, a literal written directly can be taken where the same literal passed on is refused.
  */
 
 /** A literal check: the parameter the argument binds, and what it admits. */

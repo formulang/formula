@@ -95,7 +95,7 @@ const result = await evaluateRuleAsync(compiled, {
 console.log(result.value); // "bulk"
 ```
 
-The example uses top-level `await`; run it as an ES module or wrap it in an async function. Neither call throws on a bad formula under the default limits — parse, type, security, and runtime problems all surface as structured errors on `parsed.errors`, `compiled.errors`, and `result.errors`.
+The example uses top-level `await`; run it as an ES module or wrap it in an async function. None of the three calls throws on a bad formula under the default limits — parse, type, security, and runtime problems all surface as structured errors on `parsed.errors`, `compiled.errors`, and `result.errors`.
 
 Where to go next:
 
