@@ -83,7 +83,7 @@ registry.registerFunction({
 //   Parameter 'mode' must be one of "upper", "lower"; got "uper"
 ```
 
-Overloads are supported: register multiple definitions under the same `name` with different signature ids (see `COUNT/v1` vs `COUNT_VALUES/v1`, or the two `STARTS_WITH` variants). The registry rejects overload pairs that accept the same arguments with neither more specific; among the overloads it accepts, a call binds the first one registered that takes it, so register a narrower overload before a wider one (the core definitions are registered before yours). `aliases` lets one definition answer to several names.
+Overloads are supported: register multiple definitions under the same `name` with different signature ids (see `COUNT/v1` vs `COUNT_VALUES/v1`, or the two `STARTS_WITH` variants). The registry rejects overload pairs that accept the same arguments with neither more specific; among the overloads it accepts, a call binds the first one registered that takes it, so register a narrower overload before a wider one (the core definitions are registered before yours). `aliases` lets one definition answer to several names. The registry keys an alias as a name: the ambiguity check and a call's candidates count it, so a definition that answers to a name through its aliases collides with a built-in of that name as one registered under it would ([architecture.md §2.4](architecture.md#24-type-binding-and-overload-resolution)), while the parser's invocation table follows a definition's own `name` only (§2.2).
 
 ### 2.2 Templates (generics) and callable parameters
 

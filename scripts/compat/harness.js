@@ -11,7 +11,8 @@
  * `baseline-1.0.0.json`; `runner/src/compat.spec.ts` runs it against the source and requires the
  * same outcomes. The packages are passed in, so one harness serves both, and so are the names the
  * current source adds to 1.0.0's: each gets a shape in which the host registered its own function
- * under that name, probe formulas that name it, and the first one is data in one environment.
+ * under that name and one in which a host function answers to it only through its `aliases`, probe
+ * formulas that name it, and the first one is data in one environment.
  *
  * @typedef {{ definitions: any, parser: any, runner: any, coreFunctions: any }} Packages
  */
@@ -33,13 +34,21 @@ const BASE_SHAPES = [
 
 const HOST_FUNCTION_SHAPE = 'host-function:';
 
+const HOST_ALIAS_SHAPE = 'host-alias:';
+
 /**
- * Every registry shape: the base shapes, then, for each name in `addedNames`, the shape in which
- * the host registered its own function under that name.
+ * Every registry shape: the base shapes; then, for each name in `addedNames`, the shape in which
+ * the host registered its own function under that name; then, for each, the shape in which the
+ * same function is registered under a name of its own and answers to that name through its
+ * `aliases`, which the registry keys as it keys names.
  * @param {readonly string[]} addedNames
  */
 function shapeNames(addedNames) {
-  return [...BASE_SHAPES, ...addedNames.map((name) => `${HOST_FUNCTION_SHAPE}${name}`)];
+  return [
+    ...BASE_SHAPES,
+    ...addedNames.map((name) => `${HOST_FUNCTION_SHAPE}${name}`),
+    ...addedNames.map((name) => `${HOST_ALIAS_SHAPE}${name}`),
+  ];
 }
 
 /** The distinct function names of the core registry (upper case), sorted. */
@@ -230,16 +239,22 @@ function addCustomHigherOrder(packages, registry, implementations) {
  * callable takes exactly one argument while two more arguments follow it, so a version that gave
  * the name a built-in's invocation (passing the callable a second argument) or a built-in's result
  * type (a list) would change what its calls compile to. No built-in takes four arguments of these
- * types, so its own calls still reach it.
+ * types, so its own calls still reach it. With `alias`, the function is registered as
+ * `HOST_<name>` and answers to `name` only through its `aliases`: the invocation table, keyed by a
+ * definition's own name, gives it nothing, while the registry keys the alias as a name.
  */
-function addHostFunction(packages, registry, implementations, name) {
+function addHostFunction(packages, registry, implementations, name, { alias = false } = {}) {
   const { FormulaTypes, makeOkNull, makeOkNumber } = packages.definitions;
   const signatureId = `HOST_${name}/v1`;
+  const own = alias ? `HOST_${name}` : name;
   registry.registerFunction({
     signatureId,
-    name,
+    name: own,
+    ...(alias ? { aliases: [name] } : {}),
     category: 'custom',
-    description: 'Compatibility shape: a function the host registered under this name.',
+    description: alias
+      ? 'Compatibility shape: a function the host registered under a name of its own and this alias.'
+      : 'Compatibility shape: a function the host registered under this name.',
     templates: [{ name: 'T' }],
     params: [
       {
@@ -270,14 +285,14 @@ function addHostFunction(packages, registry, implementations, name) {
         const target = await call.args[0].value();
         const impl = resolveCallable(ctx, await call.args[1].value());
         if (!Array.isArray(target) || !impl) {
-          outs.push(makeOkNull(name));
+          outs.push(makeOkNull(own));
           continue;
         }
         const results = await impl.evaluateMultiple(
           target.map((item, index) => ({ args: [constant(packages, item)], callId: `${index}` })),
           ctx,
         );
-        outs.push(makeOkNumber(name, results.filter((r) => r.value === true).length));
+        outs.push(makeOkNumber(own, results.filter((r) => r.value === true).length));
       }
       return outs;
     },
@@ -357,6 +372,11 @@ function applyShape(packages, shape, registry, implementations) {
   }
   if (shape.startsWith(HOST_FUNCTION_SHAPE)) {
     addHostFunction(packages, registry, implementations, shape.slice(HOST_FUNCTION_SHAPE.length));
+  }
+  if (shape.startsWith(HOST_ALIAS_SHAPE)) {
+    addHostFunction(packages, registry, implementations, shape.slice(HOST_ALIAS_SHAPE.length), {
+      alias: true,
+    });
   }
 }
 
@@ -537,6 +557,7 @@ module.exports = {
   withFrozenClock,
   BASE_SHAPES,
   HOST_FUNCTION_SHAPE,
+  HOST_ALIAS_SHAPE,
   environmentsFor,
   shapeNames,
   coreFunctionNames,

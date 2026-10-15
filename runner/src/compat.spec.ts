@@ -110,7 +110,7 @@ describe('compatibility with 1.0.0', () => {
     expect(day?.outcome.run?.value).toBe(new Date(harness.FROZEN_CLOCK).getUTCDate());
   });
 
-  it('derives a host-function shape for every name 1.1.0 adds, and for no other name', () => {
+  it('derives a host-function and a host-alias shape for every name 1.1.0 adds, and for no other name', () => {
     // The re-versioned shape re-registers exactly the functions of the parser's invocation table.
     expect(harness.higherOrderNames(packages)).toStrictEqual(
       [...INVOCATIONS_BY_NAME.keys()].sort(),
@@ -120,9 +120,11 @@ describe('compatibility with 1.0.0', () => {
     for (const name of baseline.addedFunctionNames) {
       expect(baseline.functionNames).not.toContain(name);
     }
-    expect(shapes.filter((shape) => shape.startsWith(harness.HOST_FUNCTION_SHAPE))).toStrictEqual(
-      added.map((name) => `${harness.HOST_FUNCTION_SHAPE}${name}`),
-    );
+    for (const prefix of [harness.HOST_FUNCTION_SHAPE, harness.HOST_ALIAS_SHAPE]) {
+      expect(shapes.filter((shape) => shape.startsWith(prefix))).toStrictEqual(
+        added.map((name) => `${prefix}${name}`),
+      );
+    }
   });
 
   it('gives every formula that names no function 1.1.0 adds its 1.0.0 outcome under every shape', () => {
@@ -139,12 +141,13 @@ describe('compatibility with 1.0.0', () => {
 
   it('gives every formula its 1.0.0 behaviour once the definitions 1.1.0 adds are retired', async () => {
     // With the new definitions retired the head behaves as 1.0.0 did, also for a function a host
-    // registered under one of the new names and for every formula that names one, with one
-    // exception: the parser checks a call of any function named FILTER_BY by FILTER_BY's entry in
-    // its table, as 1.0.0 checks one named EACH, so where a host registered its own FILTER_BY, a
-    // formula that writes the name is checked now. Which names a formula asks the registry for is
-    // no behaviour, and can differ: the head looks up a nested callable a string literal names
-    // when it parses, where 1.0.0 did so only when the nested call ran.
+    // registered under one of the new names, or under a name of its own with one of them as an
+    // alias, and for every formula that names one, with one exception: the parser checks a call of
+    // any function named FILTER_BY by FILTER_BY's entry in its table, as 1.0.0 checks one named
+    // EACH, so where a host registered its own FILTER_BY under that name, a formula that writes the
+    // name is checked now (an alias takes no entry, as on 1.0.0). Which names a formula asks the
+    // registry for is no behaviour, and can differ: the head looks up a nested callable a string
+    // literal names when it parses, where 1.0.0 did so only when the nested call ran.
     expect(keyedByName).toStrictEqual(['FILTER_BY']);
     const retired = await harness.runCorpus(packages, corpus, baseline.addedFunctionNames, added);
     const checkedNow = (index: number, shape: string) =>
@@ -173,6 +176,58 @@ describe('compatibility with 1.0.0', () => {
       ).toBe(true);
     }
   }, 120_000);
+
+  it('keys an alias as a name: every formula alike under both host shapes, but FILTER_BY at the head', () => {
+    // The registry keys a definition's aliases as its name, so a host function that answers to a
+    // new name only through its aliases collides with the built-in as one registered under it.
+    // The formulas whose outcome differs between the two shapes of a name, as `name: formula`.
+    const differing = (outcomeOf: (index: number, shape: string) => Outcome | undefined) =>
+      added.flatMap((name) =>
+        formulas.flatMap((formula, index) =>
+          behaviour(outcomeOf(index, `${harness.HOST_ALIAS_SHAPE}${name}`)) ===
+          behaviour(outcomeOf(index, `${harness.HOST_FUNCTION_SHAPE}${name}`))
+            ? []
+            : [`${name}: ${formula.source}`],
+        ),
+      );
+    // 1.0.0: alike for every formula, the host's own calls among them.
+    expect(
+      differing((index, shape) => wanted(formulas[index] as BaselineFormula, shape)),
+    ).toStrictEqual([]);
+    // The head: alike but for the host's own calls of FILTER_BY. A function named FILTER_BY gets
+    // FILTER_BY's invocation, which passes the callable two arguments, so those calls fail to
+    // compile; one that answers to FILTER_BY through an alias gets none, as on 1.0.0 for EACH, and
+    // they keep their 1.0.0 outcome.
+    const atHeadDiffering = differing((index, shape) => atHead[shape]?.[index]);
+    const ownCalls = [
+      'FILTER_BY(value; "ISNUMBER"; 1; 2)',
+      'FILTER_BY(LIST(1; 2; 3); "ISNUMBER"; 1; 2) + 1',
+      'FILTER_BY(LIST("a"; "bb"); "ISTEXT"; other; value)',
+    ];
+    expect(atHeadDiffering).toStrictEqual(ownCalls.map((source) => `FILTER_BY: ${source}`));
+    for (const source of ownCalls) {
+      const index = formulas.findIndex((formula) => formula.source === source);
+      const asAlias = `${harness.HOST_ALIAS_SHAPE}FILTER_BY`;
+      expect(behaviour(atHead[asAlias]?.[index]), source).toBe(
+        behaviour(wanted(formulas[index] as BaselineFormula, asAlias)),
+      );
+      expect(
+        atHead[`${harness.HOST_FUNCTION_SHAPE}FILTER_BY`]?.[index]?.parse,
+        source,
+      ).toStrictEqual(['NO_MATCHING_OVERLOAD', 'NO_MATCHING_OVERLOAD']);
+    }
+    // Not vacuous: under either shape the host's own calls differ from the core registry's.
+    for (const name of added) {
+      const own = formulas.findIndex(
+        (formula) => formula.source === `${name}(value; "ISNUMBER"; 1; 2)`,
+      );
+      expect(own, name).toBeGreaterThanOrEqual(0);
+      expect(
+        behaviour(wanted(formulas[own] as BaselineFormula, `${harness.HOST_ALIAS_SHAPE}${name}`)),
+        name,
+      ).not.toBe(behaviour(wanted(formulas[own] as BaselineFormula, 'core')));
+    }
+  });
 
   it('changes a formula that names a function 1.1.0 adds in one of three ways, each from its call', () => {
     // Such a formula writes the name, in any letter case, or a value or an expression produces it
@@ -423,35 +478,74 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     }
   });
 
-  it('keeps a one-argument host function only where the built-in requires more arguments', () => {
-    let refused = 0;
-    let kept = 0;
-    for (const name of added) {
-      const def = builtIn(name);
-      const [first] = def.params;
-      if (first === undefined) throw new Error(`${name} takes no argument`);
-      const oneArgument = hostDefinition(def, [{ name: first.name, type: first.type }]);
-      const registry = coreRegistry();
-      if (def.params.filter((param) => param.optional !== true).length === 1) {
-        // The built-in takes the same single argument: the overloads are ambiguous.
-        expect(() => registry.registerFunction(oneArgument), name).toThrow(
-          `Ambiguous overload for ${name}`,
-        );
-        refused++;
-      } else {
-        // No one-argument call reaches the built-in, so the host function keeps its calls.
-        registry.registerFunction(oneArgument);
-        const source = `${name}(${argumentFor(first)})`;
-        const parsed = parser.parseFormula(source, { registry });
-        expect(parsed.errors, source).toStrictEqual([]);
-        expect(parsed.root.signatureId, source).toBe(`HOST_${name}/v1`);
-        kept++;
+  it.each([
+    { shape: 'registered under it', alias: false },
+    { shape: 'answering to it only through an alias', alias: true },
+  ])(
+    'keeps a one-argument host function only where the built-in requires more arguments, $shape',
+    ({ alias }) => {
+      // The registry keys an alias as a name, so the same overloads collide either way.
+      const withName = (def: definitions.FunctionDefinition): definitions.FunctionDefinition =>
+        alias ? { ...def, name: `HOST_${def.name}`, aliases: [def.name] } : def;
+      let refused = 0;
+      let kept = 0;
+      for (const name of added) {
+        const def = builtIn(name);
+        const [first] = def.params;
+        if (first === undefined) throw new Error(`${name} takes no argument`);
+        const oneArgument = withName(hostDefinition(def, [{ name: first.name, type: first.type }]));
+        const registry = coreRegistry();
+        if (def.params.filter((param) => param.optional !== true).length === 1) {
+          // The built-in takes the same single argument: the overloads are ambiguous.
+          expect(() => registry.registerFunction(oneArgument), name).toThrow(
+            `Ambiguous overload for ${name}`,
+          );
+          refused++;
+        } else {
+          // No one-argument call reaches the built-in, so the host function keeps its calls.
+          registry.registerFunction(oneArgument);
+          const source = `${name}(${argumentFor(first)})`;
+          const parsed = parser.parseFormula(source, { registry });
+          expect(parsed.errors, source).toStrictEqual([]);
+          expect(parsed.root.signatureId, source).toBe(`HOST_${name}/v1`);
+          kept++;
+        }
       }
-    }
-    // WORDS, WORD_COUNT, SENTENCES, LINES, LINE_COUNT, DISTINCT and GROUP_COUNTS take one
-    // argument; the other nine require two or more.
-    expect([refused, kept]).toStrictEqual([7, 9]);
-  });
+      // WORDS, WORD_COUNT, SENTENCES, LINES, LINE_COUNT, DISTINCT and GROUP_COUNTS take one
+      // argument; the other nine require two or more.
+      expect([refused, kept]).toStrictEqual([7, 9]);
+      // A host function whose one parameter takes a text, or a list of values of any type where the
+      // built-in's takes a list, collides with six of the seven: DISTINCT's list parameter is told
+      // apart from a list of any values.
+      const collides = added.filter((name) => {
+        const def = builtIn(name);
+        if (def.params.filter((param) => param.optional !== true).length !== 1) return false;
+        const list = definitions.stripNullability(
+          (def.params[0] as definitions.FunctionParamDefinition).type,
+        );
+        const type =
+          list.kind === 'list'
+            ? definitions.FormulaTypes.list(definitions.FormulaTypes.any(true), true)
+            : definitions.FormulaTypes.text(true);
+        const host = withName(hostDefinition(def, [{ name: 'input', type }]));
+        try {
+          coreRegistry().registerFunction(host);
+          return false;
+        } catch (error) {
+          expect((error as Error).message, name).toContain(`Ambiguous overload for ${name}`);
+          return true;
+        }
+      });
+      expect(collides).toStrictEqual([
+        'GROUP_COUNTS',
+        'LINES',
+        'LINE_COUNT',
+        'SENTENCES',
+        'WORDS',
+        'WORD_COUNT',
+      ]);
+    },
+  );
 
   it('is shadowed by the built-in for every call it takes, when its parameters are narrower', async () => {
     let narrowable = 0;
@@ -637,54 +731,64 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     expect(typedChecked).toStrictEqual(['FILTER_BY/4', 'FILTER_BY/5']);
   });
 
-  it('loses the calls 1.0.0 bound to the name’s only definition whatever their arguments', async () => {
-    // 1.0.0 binds a name's only definition even where the arguments do not fit it, so that its
-    // errors name its parameters. With the built-in under the name the host's function is no
-    // longer the only definition: a direct call with an argument count it does not declare binds
-    // the built-in where the built-in takes the arguments, and otherwise fails to compile. With the
-    // new definitions retired the host's function is alone again and takes such a call, but under
-    // FILTER_BY, whose invocation checks the call of five arguments.
-    const atHead: Record<'refused' | 'builtIn', string[]> = { refused: [], builtIn: [] };
-    const alone: Record<'refused' | 'host', string[]> = { refused: [], host: [] };
-    for (const name of added) {
-      for (const count of [2, 3, 5]) {
-        const args = ['LIST(1; 2; 3)', '"ISNUMBER"', '1', '2', '3'].slice(0, count);
-        const source = `${name}(${args.join('; ')})`;
-        const label = `${name}/${count}`;
-        const now = coreFunctions.createCoreFormulaRuntime();
-        harness.addHostFunction(packages, now.registry, now.implementations, name);
-        const head = await runRecorded(now.registry, now.implementations, source);
-        if (head.parsed.errors.length > 0) {
-          expect(
-            head.parsed.errors.map((error) => error.code),
-            source,
-          ).toStrictEqual(['NO_MATCHING_OVERLOAD']);
-          atHead.refused.push(label);
-        } else {
-          expect(head.parsed.root.signatureId, source).toBe(builtIn(name).signatureId);
-          atHead.builtIn.push(label);
-        }
-        const retired = coreFunctions.createCoreFormulaRuntime();
-        for (const def of retired.registry.listFunctionsByName(name)) {
-          retired.registry.retireFunction(def.signatureId);
-        }
-        harness.addHostFunction(packages, retired.registry, retired.implementations, name);
-        const only = await runRecorded(retired.registry, retired.implementations, source);
-        if (only.parsed.errors.length > 0) {
-          alone.refused.push(label);
-        } else {
-          expect(only.parsed.root.signatureId, source).toBe(`HOST_${name}/v1`);
-          expect(only.value, source).toBe(3);
-          alone.host.push(label);
+  it.each([
+    { shape: 'registered under it', alias: false, aloneRefused: ['FILTER_BY/5'] },
+    { shape: 'answering to it only through an alias', alias: true, aloneRefused: [] },
+  ])(
+    'loses the calls 1.0.0 bound to the name’s only definition whatever their arguments, $shape',
+    async ({ alias, aloneRefused }) => {
+      // 1.0.0 binds a name's only definition even where the arguments do not fit it, so that its
+      // errors name its parameters, and keys an alias as a name: it binds the host's function for
+      // every call below either way. With the built-in under the name the host's function is no
+      // longer the only definition: a direct call with an argument count it does not declare binds
+      // the built-in where the built-in takes the arguments, and otherwise fails to compile. With the
+      // new definitions retired the host's function is alone again and takes such a call, but under
+      // FILTER_BY, whose invocation checks the call of five arguments of a function named FILTER_BY
+      // and of none that answers to it through an alias.
+      const atHead: Record<'refused' | 'builtIn', string[]> = { refused: [], builtIn: [] };
+      const alone: Record<'refused' | 'host', string[]> = { refused: [], host: [] };
+      for (const name of added) {
+        for (const count of [2, 3, 5]) {
+          const args = ['LIST(1; 2; 3)', '"ISNUMBER"', '1', '2', '3'].slice(0, count);
+          const source = `${name}(${args.join('; ')})`;
+          const label = `${name}/${count}`;
+          const now = coreFunctions.createCoreFormulaRuntime();
+          harness.addHostFunction(packages, now.registry, now.implementations, name, { alias });
+          const head = await runRecorded(now.registry, now.implementations, source);
+          if (head.parsed.errors.length > 0) {
+            expect(
+              head.parsed.errors.map((error) => error.code),
+              source,
+            ).toStrictEqual(['NO_MATCHING_OVERLOAD']);
+            atHead.refused.push(label);
+          } else {
+            expect(head.parsed.root.signatureId, source).toBe(builtIn(name).signatureId);
+            atHead.builtIn.push(label);
+          }
+          const retired = coreFunctions.createCoreFormulaRuntime();
+          for (const def of retired.registry.listFunctionsByName(name)) {
+            retired.registry.retireFunction(def.signatureId);
+          }
+          harness.addHostFunction(packages, retired.registry, retired.implementations, name, {
+            alias,
+          });
+          const only = await runRecorded(retired.registry, retired.implementations, source);
+          if (only.parsed.errors.length > 0) {
+            alone.refused.push(label);
+          } else {
+            expect(only.parsed.root.signatureId, source).toBe(`HOST_${name}/v1`);
+            expect(only.value, source).toBe(3);
+            alone.host.push(label);
+          }
         }
       }
-    }
-    // What the PR states, for the sixteen names at two, three and five arguments.
-    expect(atHead.refused.length).toBe(47);
-    expect(atHead.builtIn).toStrictEqual(['INDEX_OF/2']);
-    expect(alone.refused).toStrictEqual(['FILTER_BY/5']);
-    expect(alone.host.length).toBe(47);
-  });
+      // What the PR states, for the sixteen names at two, three and five arguments.
+      expect(atHead.refused.length).toBe(47);
+      expect(atHead.builtIn).toStrictEqual(['INDEX_OF/2']);
+      expect(alone.refused).toStrictEqual(aloneRefused);
+      expect(alone.host.length).toBe(48 - aloneRefused.length);
+    },
+  );
 
   it('keeps its own direct calls, but under FILTER_BY, and through EACH the name reaches the built-in', async () => {
     expect(Object.keys(THROUGH_EACH).sort()).toStrictEqual([...added].sort());

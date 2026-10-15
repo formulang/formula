@@ -8,10 +8,11 @@ Release and compatibility helper scripts live here.
   into `corpus.json`. `harness.js` adds probe formulas for every function name
   the current source adds, two formulas that take a callable's name from a
   value or an expression, an environment in which a variable holds an added
-  name, and a registry shape per added name in which the host registered its
-  own function under it, next to the shapes an embedder builds by hand. It
-  freezes the clock the functions read (`new Date()`), not the one the
-  runner measures its wall-time limits by (`Date.now()`), and records whether
+  name, and two registry shapes per added name, one in which the host
+  registered its own function under it and one in which that function answers
+  to it only through its `aliases`, next to the shapes an embedder builds by
+  hand. It freezes the clock the functions read (`new Date()`), not the one
+  the runner measures its wall-time limits by (`Date.now()`), and records whether
   a formula asked the registry for an added name. `generate-baseline.js`
   recorded 1.0.0's outcome for every formula under every shape in
   `baseline-1.0.0.json`: the parse errors, or the value, warnings, errors and
@@ -26,8 +27,10 @@ Release and compatibility helper scripts live here.
   registered its own `FILTER_BY`: the parser checks every function of that name
   by the built-in's invocation, and of those 13 the spec requires exactly three
   to differ from 1.0.0, each of them a formula that ran on 1.0.0 and now fails
-  to compile with `NO_MATCHING_OVERLOAD`. Regenerate when the corpus or the
-  added names change: run `pnpm run build` here and in a 1.0.0 checkout (after
-  `pnpm install` there), then run these two from this repository:
+  to compile with `NO_MATCHING_OVERLOAD`. Through an alias the function takes
+  no invocation, and no formula is left out. Regenerate when the corpus, the
+  added names or the shapes change: run `pnpm run build` here and in a 1.0.0
+  checkout (after `pnpm install` there), then run these two from this
+  repository:
   - `node scripts/compat/extract-corpus.js <checkout> <commit>`
   - `node scripts/compat/generate-baseline.js <checkout> <commit>`
