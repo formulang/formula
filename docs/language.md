@@ -628,10 +628,11 @@ parameter:
 The parser follows those levels breadth first, across every callable the call
 names, and visits at most 16 × (n + 1) argument positions for a call of n
 arguments written in the formula, so where it stops, every level shallower
-than the one it stopped in has been checked. A level visits no
-more positions than the widest definition of the function it names has
-parameters, five for the built-in functions, so with the built-in definitions
-the walk never reaches that bound; a host's overload with a long parameter
+than the one it stopped in has been checked. A level visits no more positions
+than the widest definition of the function it names has parameters, or every
+argument it receives where a variadic last parameter lists its admitted
+values: five for the built-in functions, so with the built-in definitions the
+walk never reaches that bound; a host's overload with a long parameter
 list under one of those names can, and past the bound the parser stops
 following without an error.
 
@@ -645,7 +646,7 @@ then:
   of its own, whose callable the parser checks only by name (see
   [extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters));
 - one a host function passes to a callable it takes after the first argument
-  of a variadic callable parameter;
+  of a variadic callable parameter that lists no admitted values;
 - one past the bound above.
 
 A built-in function answers a mode it does not list with `null` and a `TYPE`

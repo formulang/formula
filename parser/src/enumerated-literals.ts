@@ -356,8 +356,10 @@ function enqueue(walk: CallWalk, state: WalkState): void {
 /**
  * How many of a state's positions the walk visits: every one up to the longest parameter list
  * among the candidates. Past it every candidate takes its variadic last parameter or nothing, the
- * same at every position, and no definition invokes a callable there (`visit`), so those positions
- * are visited only where that parameter lists admitted values.
+ * same at every position, and only a variadic last parameter that lists admitted values checks a
+ * literal there or, when it is callable, is followed there (`visit`): those positions are visited,
+ * all of them, where the last parameter of some candidate lists admitted values, and none of them
+ * otherwise.
  */
 function positionsToVisit(state: WalkState): number {
   const count = sourceCount(state.sources);
@@ -404,15 +406,18 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
   const followed = new Map<CallableInvocation, Set<string>>();
   for (const def of state.candidates) {
     // Skipped: this definition does not invoke the literal as a callable in a way the parser
-    // knows: its name is not in the table, it takes a plain value at this position, or the
-    // position is past its own parameter list. Of the arguments a variadic callable parameter
-    // takes, only the first is followed, as only the first is checked where the call is written
-    // (as in 1.0.0). The function a skipped callable calls refuses, when it runs, a mode it does
-    // not list.
-    const param = position < def.params.length ? def.params[position] : undefined;
-    const target = param === undefined ? undefined : stripNullability(param.type);
+    // knows: its name is not in the table, or it takes a plain value at this position.
+    const param = paramAt(def.params, position);
     const invocation = invocationOf(def);
-    if (target?.kind !== 'callable' || invocation === undefined) continue;
+    if (param === undefined || invocation === undefined) continue;
+    const target = stripNullability(param.type);
+    if (target.kind !== 'callable') continue;
+    // Skipped: the position is past the definition's own list, on a variadic callable parameter
+    // that lists no admitted values. A call of the definition written in the formula checks every
+    // further argument of a variadic literal-only parameter that lists its admitted values, and
+    // only the first of one that lists none (as 1.0.0 checks it); the walk follows the same
+    // arguments. A callable it skips is resolved when the call runs, with the mode it receives.
+    if (position >= def.params.length && admittedValues(param) === undefined) continue;
     // Skipped: an invocation already followed with this reference kind reaches the same callables.
     const kinds = followed.get(invocation) ?? new Set<string>();
     if (kinds.has(target.reference)) continue;

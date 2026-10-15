@@ -307,6 +307,35 @@ describe('the walk through nested callables', () => {
     },
   );
 
+  it('follows a variadic callable parameter at the arguments a written call checks', () => {
+    // A variadic callable parameter that lists the callables it admits is checked at every
+    // argument where the call is written, and followed at every argument in the walk; one that
+    // lists none is checked, and followed, at its first argument only.
+    // Written: the overload binds, and its second callable, PICK, receives "PICK" as its mode.
+    const written = 'EACH(1; "EACH"; "PICK")';
+    // Nested: the core EACH calls EACH, whose overload's second callable is PICK, alike.
+    const nested = 'EACH(LIST(1); "EACH"; "EACH"; "PICK")';
+    // Whether the walk visits PICK at its mode, which only the second callable passes it.
+    const modeVisited = (trace: readonly WalkStep[]) =>
+      trace.some((step) => step.state.includes('PICK/v1') && step.position === 1);
+    for (const source of [written, nested]) {
+      const listing = walked(withHostEach(registryWithPick(), { operators: 'listing' }), source, {
+        limits: {},
+      });
+      expect(codes(listing.rule.errors), source).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
+      expect(modeVisited(listing.trace), source).toBe(true);
+      // Without a list, neither checks nor follows the second callable, though the walk runs.
+      const unlisted = walked(withHostEach(registryWithPick(), { operators: 'unlisted' }), source, {
+        limits: {},
+      });
+      expect(unlisted.rule.errors, source).toStrictEqual([]);
+      expect(unlisted.trace.length, source).toBeGreaterThan(0);
+      expect(modeVisited(unlisted.trace), source).toBe(false);
+    }
+  });
+
   it('parses a chain of 12,000 arguments in time comparable to the parse without the walk', () => {
     // The parse of the same formula under MAP, a plain copy of EACH for which no walk starts, is
     // the parse 1.0.0 makes of it, which has no walk. The step counts above are the invariant;
