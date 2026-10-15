@@ -222,7 +222,10 @@ function refusalMessage(target: LiteralTarget, value: string): string {
   return message;
 }
 
-/** A literal its target does not admit, with what its report needs; the message is built later. */
+/**
+ * A literal its target does not admit, with what its report needs: the message is built when the
+ * refusal is reported (`refusalError`).
+ */
 export type Refusal = {
   readonly target: LiteralTarget;
   readonly value: string;
