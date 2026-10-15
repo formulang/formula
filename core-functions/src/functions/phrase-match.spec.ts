@@ -10,6 +10,7 @@ import {
 import {
   ContainsAnyImplementation,
   FirstContainedImplementation,
+  MissingFromImplementation,
   PHRASE_MATCH_MODES,
   PHRASE_NORMALISATIONS,
 } from './phrase-match';
@@ -77,7 +78,9 @@ describe('Phrase matching', () => {
       // A run of one letter holds the half-length phrase at every position, never as a whole
       // word: re-checking each occurrence re-read half the text each time (seconds at 80,000).
       // The steps are counted through the public functions, as an embedder calls them, smallest
-      // first: the search charges every character it compares.
+      // first. They are the code units the search reads: each one of the text once, the phrase
+      // once per comparison (at most two a code unit of the text, two a code unit of the phrase
+      // to prepare), and the characters on either side of an occurrence.
       const publicFunctions = [
         ['FIRST_CONTAINED', BuiltinSignatureIds.FIRST_CONTAINED, FirstContainedImplementation],
         ['CONTAINS_ANY', BuiltinSignatureIds.CONTAINS_ANY, ContainsAnyImplementation],
@@ -94,7 +97,7 @@ describe('Phrase matching', () => {
           expect(counted.value).toBe(name === 'CONTAINS_ANY' ? false : null);
           expect(counted.steps, `${name}, ${n} letters`).toBeGreaterThanOrEqual(value.length);
           expect(counted.steps, `${name}, ${n} letters`).toBeLessThanOrEqual(
-            2 * (value.length + phrase.length),
+            3 * (value.length + phrase.length),
           );
           const found = await evalCountingWork(source, signatureId, implementation, {
             value: `${value} ${phrase}`,
@@ -200,6 +203,34 @@ describe('Phrase matching', () => {
         'x',
       ]);
       expect(await evalOk('MISSING_FROM(LIST(); "a b")')).toStrictEqual([]);
+    });
+
+    it('looks for an item in work linear in the text and the item', async () => {
+      // A run of one letter holds a half-length run of it at every position, but never followed
+      // by `b`: restarting the comparison after each near miss re-read half the text each time.
+      // The steps are counted through the public function, as an embedder calls it, smallest
+      // first: the code units the search reads, each one of the text once and the item once per
+      // comparison (at most two a code unit of the text, two a code unit of the item to prepare).
+      for (const n of [20_000, 80_000, 160_000]) {
+        const value = 'a'.repeat(n);
+        const item = `${'a'.repeat(n / 2)}b`;
+        const counted = await evalCountingWork(
+          'MISSING_FROM(other; value)',
+          BuiltinSignatureIds.MISSING_FROM,
+          MissingFromImplementation,
+          { value, other: [item] },
+        );
+        expect(counted.value).toStrictEqual([item]);
+        expect(counted.steps, `${n} letters`).toBeGreaterThanOrEqual(value.length);
+        expect(counted.steps, `${n} letters`).toBeLessThanOrEqual(3 * (value.length + item.length));
+        const found = await evalCountingWork(
+          'MISSING_FROM(other; value)',
+          BuiltinSignatureIds.MISSING_FROM,
+          MissingFromImplementation,
+          { value: `${value}b`, other: [item] },
+        );
+        expect(found.value).toStrictEqual([]);
+      }
     });
 
     it('follows the null convention and bounds the item list', async () => {

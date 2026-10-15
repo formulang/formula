@@ -267,16 +267,17 @@ describe('Markup text', () => {
   });
 
   describe('scan work', () => {
-    // A scan that reaches the end of its input visits every character at least once; a linear
-    // scan visits each at most STEPS_PER_CHARACTER times, plus a fixed allowance. Each input
-    // below is measured at each of its sizes, smallest first, through PLAIN_TEXT and
-    // MARKDOWN_BLOCKS as an embedder calls them; a scan that re-reads its input per tag, per
-    // delimiter run or per backtick run exceeds the bound by orders of magnitude at the first.
-    // The count is what the scans charge: every search charges the characters it skips and
-    // compares, and a line pattern the line it reads. The count does not see inside a regular
-    // expression: the line patterns run once per line, anchored at its start, and the space and
-    // backtick runs before a line separator, on which earlier patterns backtracked, are among the
-    // inputs for the text they give.
+    // The count is what the scans read: every code unit of the input or of a piece of it, read
+    // through its `CountedText`, every field of an emphasis run and every start of a backtick
+    // run, each one step as it is read. A scan that reaches the end of its input reads every
+    // character at least once; a linear one reads each at most STEPS_PER_CHARACTER times, plus a
+    // fixed allowance. Each input below is measured at each of its sizes, smallest first,
+    // through PLAIN_TEXT and MARKDOWN_BLOCKS as an embedder calls them; a scan that re-reads its
+    // input per tag, per delimiter run or per backtick run exceeds the bound by orders of
+    // magnitude at the first. The count does not see inside a regular expression: every one of
+    // these modules is listed, with why it reads in linear time, in regex-roster.spec.ts. The
+    // space and backtick runs before a line separator, on which earlier line patterns
+    // backtracked, are among the inputs, with the text they give.
     const STEPS_PER_CHARACTER = 16;
     const FIXED_STEPS = 1_000;
 

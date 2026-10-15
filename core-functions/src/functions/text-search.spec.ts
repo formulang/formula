@@ -1,5 +1,5 @@
 import { someOccurrence } from './text-search';
-import type { WorkCount } from './work-count';
+import { CountedText, type WorkCount } from './work-count';
 
 /** Every start of `needle` in `text`, as restarting `indexOf` after each occurrence finds them. */
 function indexOfOccurrences(text: string, needle: string): number[] {
@@ -11,15 +11,10 @@ function indexOfOccurrences(text: string, needle: string): number[] {
 
 function occurrences(text: string, needle: string, work: WorkCount = { steps: 0 }): number[] {
   const starts: number[] = [];
-  someOccurrence(
-    text,
-    needle,
-    (at) => {
-      starts.push(at);
-      return false;
-    },
-    work,
-  );
+  someOccurrence(new CountedText(text, work), new CountedText(needle, work), (at) => {
+    starts.push(at);
+    return false;
+  });
   return starts;
 }
 
@@ -54,23 +49,21 @@ describe('someOccurrence', () => {
 
   it('stops at the first occurrence found accepts', () => {
     const seen: number[] = [];
-    const found = someOccurrence(
-      'a-a-a',
-      'a',
-      (at) => {
-        seen.push(at);
-        return at === 2;
-      },
-      { steps: 0 },
-    );
+    const counted = (text: string) => new CountedText(text, { steps: 0 });
+    const found = someOccurrence(counted('a-a-a'), counted('a'), (at) => {
+      seen.push(at);
+      return at === 2;
+    });
     expect(found).toBe(true);
     expect(seen).toStrictEqual([0, 2]);
-    expect(someOccurrence('a-a-a', 'a', () => false, { steps: 0 })).toBe(false);
+    expect(someOccurrence(counted('a-a-a'), counted('a'), () => false)).toBe(false);
   });
 
-  it('compares each character a bounded number of times, however periodic the input', () => {
+  it('reads each character a bounded number of times, however periodic the input', () => {
     // A run of one letter holds an occurrence of a half-length run at every position, and
-    // restarting a search after each one re-reads half the text each time.
+    // restarting a search after each one re-reads half the text each time. Each code unit of the
+    // text is read once, and the needle once per comparison: at most two comparisons per code
+    // unit of the text, and two per code unit of the needle to prepare.
     const inputs: Array<[string, (n: number) => [string, string, number]]> = [
       ['a run and a half-length run', (n) => ['a'.repeat(n), 'a'.repeat(n / 2), n / 2 + 1]],
       ['a run and a near-miss run', (n) => ['a'.repeat(n), `${'a'.repeat(n / 2)}b`, 0]],
@@ -83,7 +76,7 @@ describe('someOccurrence', () => {
         const work: WorkCount = { steps: 0 };
         const starts = occurrences(text, needle, work);
         expect(work.steps, `${name} n=${n}`).toBeGreaterThanOrEqual(text.length);
-        expect(work.steps, `${name} n=${n}`).toBeLessThanOrEqual(2 * (text.length + needle.length));
+        expect(work.steps, `${name} n=${n}`).toBeLessThanOrEqual(3 * (text.length + needle.length));
         expect(starts.length, `${name} n=${n}`).toBe(count);
       }
     }

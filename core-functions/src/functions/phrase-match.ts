@@ -1,8 +1,4 @@
-import type {
-  BaseFunctionConfig,
-  FormulaExecutionContext,
-  FormulaNodeOutput,
-} from '@formulang/definitions';
+import type { FormulaExecutionContext, FormulaNodeOutput } from '@formulang/definitions';
 import { makeOkBoolean, makeOkList, makeOkNull, makeOkText } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import {
@@ -12,9 +8,9 @@ import {
   textCost,
   typeWarning,
 } from './argument-readers';
-import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
+import { isWordCharacter } from './helpers';
 import { someOccurrence } from './text-search';
-import { workOf, type WorkCount, type WorkCountingConfig } from './work-count';
+import { CountedText, workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** How `FIRST_CONTAINED` and `CONTAINS_ANY` match a phrase. */
 export type PhraseMatchMode = 'substring' | 'word';
@@ -65,21 +61,24 @@ function normalise(value: string, mode: PhraseNormalisation): string {
 }
 
 /**
- * Whether `phrase` occurs in `text` with no letter, mark or number directly on either side, in
- * time linear in their lengths (`work` counts the characters compared).
+ * Whether `phrase` occurs in `text`, anywhere (`substring`) or with no letter, mark or number
+ * directly on either side (`word`), in work linear in their lengths: both are read through their
+ * counts, the characters on either side of an occurrence included.
  */
-function containsAsWord(text: string, phrase: string, work: WorkCount): boolean {
+function contains(text: CountedText, phrase: CountedText, match: PhraseMatchMode): boolean {
   return someOccurrence(
     text,
     phrase,
-    (at) => !isWordCharacterBefore(text, at) && !isWordCharacterAt(text, at + phrase.length),
-    work,
+    (at) =>
+      match === 'substring' ||
+      (!isWordCharacter(text.characterBefore(at)) &&
+        !isWordCharacter(text.characterAt(at + phrase.length))),
   );
 }
 
 /**
  * The first phrase, in list order, that the text contains; `null` when none does. `work` counts
- * the characters the `"word"` search compares.
+ * the characters the searches read.
  */
 function firstContained(
   text: string,
@@ -88,12 +87,10 @@ function firstContained(
   ignoreCase: boolean,
   work: WorkCount,
 ): string | null {
-  const haystack = ignoreCase ? text.toLowerCase() : text;
+  const haystack = new CountedText(ignoreCase ? text.toLowerCase() : text, work);
   for (const phrase of phrases) {
-    const needle = ignoreCase ? phrase.toLowerCase() : phrase;
-    const found =
-      match === 'word' ? containsAsWord(haystack, needle, work) : haystack.includes(needle);
-    if (found) return phrase;
+    const needle = new CountedText(ignoreCase ? phrase.toLowerCase() : phrase, work);
+    if (contains(haystack, needle, match)) return phrase;
   }
   return null;
 }
@@ -161,8 +158,8 @@ export class ContainsAnyImplementation extends AbstractEagerBatchImplementation<
   }
 }
 
-export class MissingFromImplementation extends AbstractEagerBatchImplementation {
-  constructor(config: BaseFunctionConfig) {
+export class MissingFromImplementation extends AbstractEagerBatchImplementation<WorkCountingConfig> {
+  constructor(config: WorkCountingConfig) {
     super(config);
   }
 
@@ -179,10 +176,11 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
     const mode = readOptionalMode('MISSING_FROM', 'normalise', args[2], PHRASE_NORMALISATIONS);
     if (typeof mode !== 'string') return mode;
 
-    const haystack = normalise(text, mode);
+    const work = workOf(this.config);
+    const haystack = new CountedText(normalise(text, mode), work);
     const missing = items.filter((item) => {
-      const needle = normalise(item, mode);
-      return needle.length > 0 && !haystack.includes(needle);
+      const needle = new CountedText(normalise(item, mode), work);
+      return needle.length > 0 && !contains(haystack, needle, 'substring');
     });
     return makeOkList('MISSING_FROM', missing);
   }

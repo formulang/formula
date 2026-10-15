@@ -313,7 +313,8 @@ describe('Text segmentation', () => {
       // A run of one letter holds the half-length token at every position; only the one at the
       // start begins at a word boundary. Re-checking each occurrence re-read half the text each
       // time (seconds at 80,000). The steps are counted through SENTENCES, as an embedder calls it,
-      // smallest first: the search charges every character it compares.
+      // smallest first. They are the code units read: the search reads at most three a code unit of
+      // the text and the token, and the sentences copy the text once.
       for (const n of [20_000, 80_000, 160_000]) {
         const value = `${'a'.repeat(n)}. Next.`;
         const token = 'a'.repeat(n / 2);
@@ -326,7 +327,7 @@ describe('Text segmentation', () => {
         expect(counted.value).toStrictEqual([`${'a'.repeat(n)}.`, 'Next.']);
         expect(counted.steps, `${n} letters`).toBeGreaterThanOrEqual(value.length);
         expect(counted.steps, `${n} letters`).toBeLessThanOrEqual(
-          2 * (value.length + token.length),
+          4 * (value.length + token.length),
         );
       }
       // The occurrence that starts at a word boundary protects its range: `aa.` here.

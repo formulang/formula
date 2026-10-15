@@ -23,10 +23,10 @@ import {
   textCost,
   typeWarning,
 } from './argument-readers';
-import { asNumber, isEmptyValue, isWordCharacterAt, isWordCharacterBefore } from './helpers';
+import { asNumber, isEmptyValue, isWordCharacter } from './helpers';
 import { compileSafeRegex, type RegexCompileFailure } from './regex';
 import { someOccurrence } from './text-search';
-import { workOf, type WorkCount, type WorkCountingConfig } from './work-count';
+import { CountedText, workOf, type WorkCount, type WorkCountingConfig } from './work-count';
 
 /** How `WORDS`, `WORD_COUNT` and `LEADING_WORDS` find the words of a text. */
 export type WordSplitMode = 'whitespace' | 'letters' | 'locale' | 'pattern';
@@ -193,31 +193,27 @@ function scanWords(
  * The split positions a `keep` token protects: every position inside or at the end of an
  * occurrence that starts at a word boundary. A token that starts with a letter, mark or number
  * starts at one where no such character precedes it; a token that starts with anything else
- * (`...`) always does. `null` when no token occurs. Each token is found in time linear in the
- * lengths of the text and the token (`work` counts the characters compared).
+ * (`...`) always does. `null` when no token occurs. Each token is found in work linear in the
+ * lengths of the text and the token: both are read through their counts.
  */
 function protectedPositions(
-  text: string,
+  text: CountedText,
   keep: readonly string[],
   work: WorkCount,
 ): Uint8Array | null {
   // depth[p + 1] - depth[p]: how many protected ranges open (+) or close (-) at position p.
   const ranges: { depth: Int32Array | null } = { depth: null };
   for (const token of keep) {
-    const startsWithWordCharacter = isWordCharacterAt(token, 0);
-    someOccurrence(
-      text,
-      token,
-      (at) => {
-        if (startsWithWordCharacter && isWordCharacterBefore(text, at)) return false;
-        if (ranges.depth === null) ranges.depth = new Int32Array(text.length + 2);
-        ranges.depth[at + 1] += 1;
-        ranges.depth[at + token.length + 1] -= 1;
-        // Every occurrence protects its range, so the search continues to the end.
-        return false;
-      },
-      work,
-    );
+    const needle = new CountedText(token, work);
+    const startsWithWordCharacter = isWordCharacter(needle.characterAt(0));
+    someOccurrence(text, needle, (at) => {
+      if (startsWithWordCharacter && isWordCharacter(text.characterBefore(at))) return false;
+      if (ranges.depth === null) ranges.depth = new Int32Array(text.length + 2);
+      ranges.depth[at + 1] += 1;
+      ranges.depth[at + token.length + 1] -= 1;
+      // Every occurrence protects its range, so the search continues to the end.
+      return false;
+    });
   }
   const depth = ranges.depth;
   if (depth === null) return null;
@@ -230,35 +226,39 @@ function protectedPositions(
   return marks;
 }
 
-/** The sentences of `text`; `work` counts the characters the `keep` search compares. */
+/**
+ * The sentences of `text`; `work` counts the characters the `keep` search reads and the pieces
+ * copy.
+ */
 function sentencePieces(
   text: string,
   mode: SentenceSplitMode,
   keep: readonly string[],
   work: WorkCount,
 ): string[] {
-  const protectedAt = keep.length > 0 ? protectedPositions(text, keep, work) : null;
+  const counted = new CountedText(text, work);
+  const protectedAt = keep.length > 0 ? protectedPositions(counted, keep, work) : null;
   const pieces: string[] = [];
   let start = 0;
   if (mode === 'punctuation') {
     for (const match of text.matchAll(PUNCTUATION_BREAK)) {
       if (protectedAt !== null && protectedAt[match.index] === 1) continue;
-      const piece = text.slice(start, match.index).trim();
+      const piece = counted.slice(start, match.index).trim();
       if (piece.length > 0) pieces.push(piece);
       start = match.index + match[0].length;
     }
-    const last = text.slice(start).trim();
+    const last = counted.slice(start).trim();
     if (last.length > 0) pieces.push(last);
     return pieces;
   }
   for (const match of text.matchAll(TERMINATOR_RUN)) {
     const end = match.index + match[0].length;
     if (protectedAt !== null && protectedAt[end] === 1) continue;
-    const piece = text.slice(start, end).trim();
+    const piece = counted.slice(start, end).trim();
     if (SENTENCE_CONTENT.test(piece)) pieces.push(piece);
     start = end;
   }
-  const last = text.slice(start).trim();
+  const last = counted.slice(start).trim();
   if (SENTENCE_CONTENT.test(last)) pieces.push(last);
   return pieces;
 }

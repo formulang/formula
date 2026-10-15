@@ -626,9 +626,33 @@ Embedders that count outside a formula import the same tokenisers from
 longer than `maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security
 error, as `FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count
 past that bound. List arguments (`keep`, `phrases`, `items`) longer than
-`maxListLength` (1,000) raise `LIST_TOO_LARGE`. Each `keep` token, and each
-phrase in `"word"` mode, is found in time linear in the lengths of the text
-and of the token or phrase, however often their occurrences overlap.
+`maxListLength` (1,000) raise `LIST_TOO_LARGE`. Each `keep` token, phrase and
+item is found in time linear in the lengths of the text and of the token,
+phrase or item, however often their occurrences overlap.
+
+**Work.** `FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`, `SENTENCES`,
+`PLAIN_TEXT` and `MARKDOWN_BLOCKS` read their text through a step count: one
+step for each UTF-16 code unit a scan or search reads or copies out of the
+text, and one for each field of an emphasis run and each start of a backtick
+run that the markdown reading looks up. The specs call these functions as an
+embedder does, on inputs built against each scan (runs of one letter and
+other periodic texts, to 160,000 characters; 25 markup shapes, to about two
+million characters), and hold the steps between the length of the text and a
+fixed multiple of the length of everything the call reads: 3 for the
+searches, 4 for `SENTENCES` with `keep`, and for the markup 16, plus 1,000
+steps.
+The count does not see what a regular expression reads: every expression in
+the modules of these functions is listed, with why it reads in linear time,
+in `core-functions/src/functions/regex-roster.spec.ts`, which reconciles the
+list with the expressions written in those modules, both ways. Nor does it
+see a string method that makes one pass over a text (`trim`, `toLowerCase`,
+a `replace` with a listed expression), over a piece the count copied or,
+before a search, over the whole text and each phrase or item (`ignoreCase`,
+the `normalise` modes). `WORDS`, `WORD_COUNT`, `LEADING_WORDS`, `LINES` and
+`LINE_COUNT` count nothing: they run listed expressions, except in two modes
+of the tokeniser: `"locale"` runs `Intl.Segmenter`, whose work is the
+runtime's, and `"pattern"` runs the formula's own expression, which the
+[MATCH_EXPRESSION](#match_expression) safety rules bound.
 
 ### CONCAT
 
@@ -1063,8 +1087,8 @@ each line and blank lines dropped. `format` is a required literal:
   of a fenced code block stays a line. The document is read as
   [MARKDOWN_BLOCKS](#markdown_blocks) reads it.
 
-Both formats are read in one forward pass, in time linear in the length of
-`markup`.
+Both formats are read in time linear in the length of `markup`; **Work**
+under [Text](#text) states what that rests on.
 
 ```ts
 await evalOk('PLAIN_TEXT("<p>A&amp;B</p><p>C&nbsp;D</p><script>x</script>"; "html")'); // "A&B\nC D"
@@ -1095,7 +1119,8 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 The reading is a line-based subset of CommonMark with GFM tables: ATX
 headings only (no `===` or `---` underlines), fenced code only (no indented
 code blocks), list items recognised by their marker at any indentation, and
-`>` quote markers read through. The text is read in time linear in its length.
+`>` quote markers read through. The text is read in time linear in its length;
+**Work** under [Text](#text) states what that rests on.
 
 ```ts
 // value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'
