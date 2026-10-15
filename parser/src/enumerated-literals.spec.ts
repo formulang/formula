@@ -480,14 +480,14 @@ describe('admitted lists', () => {
         expect(accepted.work.units.admitted, label).toBe(2 * k + 40);
         expect(reads.count, label).toBe(2 * k);
         // Refused: each refusal is its lookup; the forty print one message, which reads the k
-        // values once, on its first report.
+        // values once, from the set, on its first report.
         reads.count = 0;
         const refused = observed(registry, checks(40, 'z0', through), {});
         expect(refused.codes, label).toStrictEqual(Array.from({ length: 40 }, () => LVNA));
         expect(refused.rule.errors[0]?.message, label).toContain(`"code${k - 1}"; got "z0"`);
         expect(new Set(refused.rule.errors.map((error) => error.message)).size, label).toBe(1);
         expect(refused.work.units.admitted, label).toBe(2 * k + 40 + k);
-        expect(reads.count, label).toBe(3 * k);
+        expect(reads.count, label).toBe(2 * k);
       }
     }
   }, 60_000);
@@ -500,26 +500,27 @@ describe('admitted lists', () => {
       const registry = registryWithCode(codes(k), codes(k, 1));
       const parse = (count: number, literal: string) =>
         observed(registry, checks(count, literal, 'EACH'), {});
-      // Reading both lists and their intersection is linear in the lists, once per parse; every
-      // further check is one lookup.
+      // Reading both lists is linear in the lists, once per parse; every further check is one
+      // lookup in each of the two.
       const one = parse(1, `code${k - 1}`);
       expect(one.work.units.admitted, label).toBeLessThanOrEqual(10 * k);
       const forty = parse(40, `code${k - 1}`);
       expect(forty.codes, label).toStrictEqual([]);
-      expect(forty.work.units.admitted - one.work.units.admitted, label).toBe(39);
-      // The first refusal reads the k - 1 values it prints and does one lookup per overload for
-      // its message; every further refusal of the same value is its lookup alone.
+      expect(forty.work.units.admitted - one.work.units.admitted, label).toBe(2 * 39);
+      // The first refusal works out the k - 1 values in common, which it prints, and does one
+      // lookup per overload for its message; every further refusal of the same value is its
+      // lookups alone.
       const refusedOne = parse(1, 'code0');
       const refusedForty = parse(40, 'code0');
       expect(refusedForty.codes, label).toStrictEqual(Array.from({ length: 40 }, () => LVNA));
       expect(refusedForty.rule.errors[0]?.message, label).toContain('which CODE/v2 does not list');
-      expect(refusedForty.work.units.admitted - refusedOne.work.units.admitted, label).toBe(39);
+      expect(refusedForty.work.units.admitted - refusedOne.work.units.admitted, label).toBe(2 * 39);
     }
   }, 60_000);
   it('names the overload that leaves a value out, whatever values a list repeats', () => {
     // CODE/v1 lists a and b, b twice; CODE/v2 lists a three times: they list different values,
     // so refusing b names CODE/v2. Listing the same values in another order or number, they list
-    // the same values.
+    // the same values, and the refusal prints each once.
     const differ = observed(
       registryWithCode(['a', 'b', 'b'], ['a', 'a', 'a']),
       checks(1, 'b', 'EACH'),
@@ -535,7 +536,7 @@ describe('admitted lists', () => {
       {},
     );
     expect(same.rule.errors[0]?.message).toBe(
-      `Parameter 'code' of CODE must be one of "a", "b", "b"; got "z"`,
+      `Parameter 'code' of CODE must be one of "a", "b"; got "z"`,
     );
   });
 
@@ -602,6 +603,102 @@ describe('admitted lists', () => {
     return withHostEach(registry, { operators: ['PICKN'] });
   }
 
+  /**
+   * The core registry with MANY: `count` overloads whose variadic mode starts one position further on
+   * each, after object parameters of the overload's own, each listing code0 ... code<size - 1> but
+   * one, its own index: each position up to `count` is checked against a different set of lists.
+   */
+  function registryWithStaggeredModes(count: number, size: number) {
+    const registry = createRegistry();
+    registerCoreFormulaDefinitions(registry);
+    for (let index = 0; index < count; index++) {
+      registry.registerFunction({
+        signatureId: `MANY/v${index + 1}`,
+        name: 'MANY',
+        category: 'custom',
+        description: "A variadic mode after the overload's own object parameters.",
+        params: [
+          { name: 'subject', type: FormulaTypes.number(true) },
+          ...Array.from({ length: index }, (_, at) => ({
+            name: `x${at}`,
+            type: FormulaTypes.object(`C${index}x${at}`),
+          })),
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            variadic: true,
+            literalValues: codes(size).filter((value) => value !== `code${index}`),
+          },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+    }
+    return registry;
+  }
+
+  /** The sets of two or more of four overloads, as indices, and the name given to each. */
+  const ALIASED_SETS = Array.from({ length: 16 }, (_, mask) =>
+    [0, 1, 2, 3].filter((index) => (mask >> index) & 1),
+  ).filter((set) => set.length >= 2);
+  const ALIAS_NAMES = ALIASED_SETS.map((set) => `P${set.join('')}`);
+
+  /**
+   * The core registry with PICK on four subject types, each variadic mode listing code0 ...
+   * code<size - 1>, and a name for every set of two or more of the overloads, which each of them
+   * takes as an alias, so each name reaches its own set of lists; and `items`, of any type.
+   */
+  function registryWithAliasedPicks(size: number) {
+    const registry = createRegistry();
+    registerCoreFormulaDefinitions(registry);
+    registry.registerVariable({
+      name: 'items',
+      description: 'Items of any type.',
+      type: FormulaTypes.any(true),
+    });
+    const subjects = [
+      FormulaTypes.number(true),
+      FormulaTypes.text(true),
+      FormulaTypes.boolean(true),
+      FormulaTypes.list(FormulaTypes.number(true), true),
+    ];
+    subjects.forEach((subject, index) => {
+      registry.registerFunction({
+        signatureId: `PICK/v${index + 1}`,
+        name: 'PICK',
+        aliases: ALIAS_NAMES.filter((_, at) => ALIASED_SETS[at]?.includes(index)),
+        category: 'custom',
+        description: 'A variadic mode, under names that each reach a set of overloads.',
+        params: [
+          { name: 'subject', type: subject },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            variadic: true,
+            literalValues: codes(size),
+          },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+    });
+    return registry;
+  }
+
+  /** `registry`, handing out a fresh copy of each definition on every lookup. */
+  function copying(registry: FormulaRegistry): FormulaRegistry {
+    const handing = Object.create(registry) as FormulaRegistry;
+    handing.listFunctionsByName = (name) =>
+      registry.listFunctionsByName(name).map((def) => structuredClone(def));
+    handing.getFunction = (id) => {
+      const def = registry.getFunction(id);
+      return def === undefined ? undefined : structuredClone(def);
+    };
+    return handing;
+  }
+
   /** `count` arguments, all `literal` but the last, which is `last`. */
   const literals = (count: number, literal: string, last = literal) =>
     `${`"${literal}"; `.repeat(count - 1)}"${last}"`;
@@ -610,62 +707,127 @@ describe('admitted lists', () => {
    * Shapes in which admitted values are read at many positions or one refusal is reached by many
    * walk states, each written directly and passed on one and two levels down, within the default
    * limits: n = 200 arguments, lists of k = 20,000 values. `lists` is the length of the lists the
-   * registry declares; `refusals` how many literals each formula refuses.
+   * registry declares; `least` the length of the shortest list a parse of the shape reads;
+   * `refusals` how many literals each formula refuses.
    */
   const k = 20_000;
   const n = 200;
+  const forms = (args: string, callable: string) => [
+    { level: 'written', source: `${callable}(1; ${args})` },
+    { level: 'one level down', source: `EACH(LIST(1); "${callable}"; ${args})` },
+    { level: 'two levels down', source: `EACH(LIST(LIST(1)); "EACH"; "${callable}"; ${args})` },
+  ];
+  const pickNForms = [
+    { level: 'written', source: `PICKN(1; ${literals(n, 'PICKN')})` },
+    { level: 'one level down', source: `EACH(1; ${literals(n, 'PICKN')})` },
+    { level: 'two levels down', source: `EACH(LIST(1); "EACH"; ${literals(n, 'PICKN')})` },
+  ];
+  const everyName = (call: (name: string) => string) =>
+    `LIST(${ALIAS_NAMES.map((name) => call(name)).join('; ')})`;
+  const calls = (call: string) => `LIST(${Array.from({ length: 25 }, () => call).join('; ')})`;
   const WORK_SHAPES = [
     {
       shape: 'a variadic mode two overloads list, every argument taken',
       registry: () => registryWithVariadicPick(codes(k), codes(k, 1)),
       lists: 2 * k,
-      args: literals(n, 'code1'),
+      least: k,
       refusals: 0,
+      forms: forms(literals(n, 'code1'), 'PICK'),
     },
     {
       shape: 'a variadic mode two overloads list, the last argument refused',
       registry: () => registryWithVariadicPick(codes(k), codes(k, 1)),
       lists: 2 * k,
-      args: literals(n, 'code1', 'zzz'),
+      least: k,
       refusals: 1,
+      forms: forms(literals(n, 'code1', 'zzz'), 'PICK'),
+    },
+    {
+      shape: 'one refused literal that every callable parameter of a call passes on',
+      registry: () => registryWithPickN(codes(k)),
+      lists: k + 1,
+      least: k,
+      refusals: 1,
+      forms: pickNForms,
+    },
+    {
+      shape: 'a variadic mode that starts at a different position on each of 20 overloads',
+      registry: () => registryWithStaggeredModes(20, 5_000),
+      lists: 20 * 4_999,
+      least: 4_999,
+      refusals: 0,
+      forms: forms(literals(n, 'code100'), 'MANY'),
+    },
+    {
+      shape: 'eleven names, each reaching its own set of four listing overloads',
+      registry: () => registryWithAliasedPicks(k),
+      lists: 4 * k,
+      least: k,
+      refusals: 0,
+      forms: [
+        { level: 'written', source: everyName((name) => `${name}(items; "code1")`) },
+        {
+          level: 'one level down',
+          source: everyName((name) => `EACH(items; "${name}"; "code1")`),
+        },
+        {
+          level: 'two levels down',
+          source: everyName((name) => `EACH(LIST(items); "EACH"; "${name}"; "code1")`),
+        },
+      ],
+    },
+    {
+      shape: 'a registry handing out fresh definitions, a variadic mode two overloads list',
+      registry: () => copying(registryWithVariadicPick(codes(k), codes(k, 1))),
+      lists: 2 * k,
+      least: k,
+      refusals: 0,
+      forms: forms(literals(n, 'code1'), 'PICK'),
+    },
+    {
+      shape: 'a registry handing out fresh definitions, one refused literal passed on',
+      registry: () => copying(registryWithPickN(codes(k))),
+      lists: k + 1,
+      least: k,
+      refusals: 1,
+      forms: pickNForms,
+    },
+    {
+      shape: 'a registry handing out fresh definitions, twenty-five calls of one name',
+      registry: () => copying(registryWithVariadicPick(codes(k), codes(k, 1))),
+      lists: 2 * k,
+      least: k,
+      refusals: 0,
+      forms: [
+        { level: 'written', source: calls('PICK(1; "code1")') },
+        { level: 'one level down', source: calls('EACH(LIST(1); "PICK"; "code1")') },
+        {
+          level: 'two levels down',
+          source: calls('EACH(LIST(LIST(1)); "EACH"; "PICK"; "code1")'),
+        },
+      ],
     },
   ];
 
-  it('reads admitted values in work bounded by the lists and what the refusals print', () => {
-    // Over every variadic position and every report of a refusal: the units of admitted values a
-    // parse reads stay within 4 x (the length of the lists + the characters its refusals print).
-    const bound = (lists: number, errors: readonly { message: string }[]) =>
-      4 * (lists + errors.reduce((sum, error) => sum + error.message.length, 0));
-    const forms = (args: string, callable: string, written: string) => [
-      { level: 'written', source: `${written}(1; ${args})` },
-      { level: 'one level down', source: `EACH(LIST(1); "${callable}"; ${args})` },
-      { level: 'two levels down', source: `EACH(LIST(LIST(1)); "EACH"; "${callable}"; ${args})` },
-    ];
-    const cases = [
-      ...WORK_SHAPES.map((entry) => ({ ...entry, forms: forms(entry.args, 'PICK', 'PICK') })),
-      {
-        shape: 'one refused literal that every callable parameter of a call passes on',
-        registry: () => registryWithPickN(codes(k)),
-        lists: k + 1,
-        refusals: 1,
-        forms: [
-          { level: 'written', source: `PICKN(1; ${literals(n, 'PICKN')})` },
-          { level: 'one level down', source: `EACH(1; ${literals(n, 'PICKN')})` },
-          { level: 'two levels down', source: `EACH(LIST(1); "EACH"; ${literals(n, 'PICKN')})` },
-        ],
-      },
-    ];
-    for (const { shape, registry: registryFor, lists, refusals, forms: sources } of cases) {
+  /** 4 x (the length of the lists + the characters the refusals in `errors` print). */
+  const bound = (lists: number, errors: readonly { message: string }[]) =>
+    4 * (lists + errors.reduce((sum, error) => sum + error.message.length, 0));
+
+  it.each(WORK_SHAPES)(
+    'reads admitted values in work bounded by the lists and what the refusals print: $shape',
+    ({ registry: registryFor, lists, least, refusals, forms: sources }) => {
+      // At every variadic position and every report of a refusal, the units of admitted values a
+      // parse reads stay within the bound.
       const registry = registryFor();
       for (const { level, source } of sources) {
-        const label = `${shape}, ${level}`;
         const { rule, work, codes: got } = observed(registry, source, {});
-        expect(got, label).toStrictEqual(Array.from({ length: refusals }, () => LVNA));
+        expect(got, level).toStrictEqual(Array.from({ length: refusals }, () => LVNA));
         // Not vacuous: the parse read a list, and a check passed on was walked.
-        expect(work.units.admitted, label).toBeGreaterThanOrEqual(k);
-        if (level !== 'written') expect(walksOf(work).length, label).toBeGreaterThan(0);
-        expect(work.units.admitted, label).toBeLessThanOrEqual(bound(lists, rule.errors));
+        expect(work.units.admitted, level).toBeGreaterThanOrEqual(least);
+        if (level !== 'written') expect(walksOf(work).length, level).toBeGreaterThan(0);
+        expect(work.units.admitted, level).toBeLessThanOrEqual(bound(lists, rule.errors));
       }
-    }
-  }, 60_000);
+    },
+    60_000,
+  );
 });

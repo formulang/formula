@@ -1048,13 +1048,13 @@ function bindTypesAndRequirements(
       let callables: CallCallables | undefined;
       chargeWork('arguments', Math.max(def.params.length, node.args.length));
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
-        const check = literalCheckAt(def.params, i, scope.lists.list);
+        const check = literalCheckAt(def.params, i, scope.lists.list(def));
         if (check === undefined) continue;
         const p = check.param;
         const arg = node.args[i];
         // Optional literal-only parameters may be omitted.
         if (!arg && p.optional === true) continue;
-        const literal = readLiteralArgument(arg, scope.lists.written(p), {
+        const literal = readLiteralArgument(arg, scope.lists.written(def, p), {
           span: arg?.span ?? node.span,
           path: ['call', def.signatureId, 'arg', String(i)],
         });

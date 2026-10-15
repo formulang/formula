@@ -33,7 +33,7 @@ import {
 import { chargeWork, workRecord, type WorkRecord } from './work-trace';
 
 /**
- * Admitted values as one parse reads them (`AdmittedLists`): testing a literal against them is one
+ * Admitted values as one parse reads them (`AdmittedLists`): testing a literal against them is a
  * lookup, and only `values`, which a refusal reads to print them, reads every one. Each read is
  * charged to the work record of a parse a spec observes.
  */
@@ -41,8 +41,8 @@ export type AdmittedList = {
   /** Whether `value` is one of the admitted values. */
   readonly admits: (value: string) => boolean;
   /** How many distinct values the list holds. */
-  readonly size: number;
-  /** The values, in order. */
+  readonly size: () => number;
+  /** The distinct values, in the order they first appear. */
   readonly values: () => readonly string[];
 };
 
@@ -55,11 +55,36 @@ function admittedList(values: readonly string[]): AdmittedList {
       chargeWork('admitted', 1);
       return set.has(value);
     },
-    size: set.size,
+    size: () => set.size,
     values: () => {
-      chargeWork('admitted', values.length);
-      return values;
+      chargeWork('admitted', set.size);
+      return [...set];
     },
+  };
+}
+
+/**
+ * The values every one of `listings` lists. A check looks the literal up in each listing until one
+ * leaves it out; the values themselves are worked out only when a refusal prints them, once, from
+ * the first listing's values, each looked up in the further listings until one leaves it out, so a
+ * parse that refuses nothing reads no list beyond its first read.
+ */
+function commonValues(listings: readonly Listing[]): AdmittedList {
+  let common: AdmittedList | undefined;
+  const built = (): AdmittedList => {
+    if (common === undefined) {
+      const [head, ...rest] = listings;
+      const values = head === undefined ? [] : head.list.values();
+      common = admittedList(
+        values.filter((value) => rest.every((listing) => listing.list.admits(value))),
+      );
+    }
+    return common;
+  };
+  return {
+    admits: (value) => listings.every((listing) => listing.list.admits(value)),
+    size: () => built().size(),
+    values: () => built().values(),
   };
 }
 
@@ -70,30 +95,40 @@ type Listing = { signatureId: string; list: AdmittedList };
  * What a literal is checked against, and what its refusal says: the subject the message names, the
  * admitted values (none for a literal-only parameter that lists none), and, for a literal passed on
  * to a callable, the name of the function, every overload's own list and whether they all list the
- * same values. The message refusing a value is built on the first report of that value against
- * this target, and kept for every other report in the parse.
+ * same values, worked out when a refusal needs it. The message refusing a value is built on the
+ * first report of that value against this target, and kept for every other report in the parse.
  */
 export type LiteralTarget = {
   readonly subject: string;
   readonly admitted: AdmittedList | undefined;
   readonly among:
-    | { readonly owner: string; readonly listings: readonly Listing[]; readonly alike: boolean }
+    | {
+        readonly owner: string;
+        readonly listings: readonly Listing[];
+        readonly alike: () => boolean;
+      }
     | undefined;
   readonly messages: Map<string, string>;
 };
 
 /**
- * The admitted values one parse reads, each read once, and the targets they make, each made once:
- * a parameter's list, on the first check against it (`list`, by the parameter, the `read` of
- * `literalCheckAt`); the target of a literal written at a parameter (`written`, by the parameter);
- * and the target of a literal passed on to a callable (`passed`), by the parameters the position
- * resolves to for the definitions of the callable's name, never by the position itself, so every
- * position a variadic parameter takes past the list shares one target. A check then costs one
- * lookup however long the lists are, and a refusal reads the values it prints.
+ * The admitted values one parse reads, each read once, and the targets they make, each made once,
+ * all keyed by the definition's signature id and the parameter's position, so a fresh copy of a
+ * definition, as a registry may hand out on every lookup, shares them: a parameter's list, on the
+ * first check against it (`list(def)`, the `read` of `literalCheckAt` for that definition); the
+ * target of a literal written at a parameter (`written`); and the target of a literal passed on to
+ * a callable (`passed`), by the parameters the position resolves to for the definitions of the
+ * callable's name, never by the position itself, so every position a variadic parameter takes
+ * past the list shares one target. A check then costs a lookup in each listing definition, until
+ * one leaves the literal out, however long the lists are; the values several definitions list in
+ * common are worked out on the first refusal against them, once per target; and a refusal's
+ * message reads the values it prints.
  */
 export type AdmittedLists = {
-  readonly list: (param: FunctionParamDefinition) => AdmittedList | undefined;
-  readonly written: (param: FunctionParamDefinition) => LiteralTarget;
+  readonly list: (
+    def: FunctionDefinition,
+  ) => (param: FunctionParamDefinition) => AdmittedList | undefined;
+  readonly written: (def: FunctionDefinition, param: FunctionParamDefinition) => LiteralTarget;
   readonly passed: (
     candidates: readonly FunctionDefinition[],
     position: number,
@@ -102,28 +137,36 @@ export type AdmittedLists = {
 
 /** The admitted lists of one parse, empty until it reads one. */
 export function admittedLists(): AdmittedLists {
-  const lists = new Map<FunctionParamDefinition, AdmittedList | undefined>();
-  const writtenTargets = new Map<FunctionParamDefinition, LiteralTarget>();
+  const lists = new Map<string, AdmittedList | undefined>();
+  const writtenTargets = new Map<string, LiteralTarget>();
   const passedTargets = new Map<string, LiteralTarget>();
-  const list = (param: FunctionParamDefinition): AdmittedList | undefined => {
-    if (lists.has(param)) return lists.get(param);
+  const keyOf = (def: FunctionDefinition, param: FunctionParamDefinition): string =>
+    JSON.stringify([def.signatureId, def.params.indexOf(param)]);
+  const read = (
+    def: FunctionDefinition,
+    param: FunctionParamDefinition,
+  ): AdmittedList | undefined => {
+    const key = keyOf(def, param);
+    if (lists.has(key)) return lists.get(key);
     // `admittedValues` reads every value once to check that the list is a list of texts.
     const values = admittedValues(param);
     if (values !== undefined) chargeWork('admitted', values.length);
-    const read = values === undefined ? undefined : admittedList(values);
-    lists.set(param, read);
-    return read;
+    const listed = values === undefined ? undefined : admittedList(values);
+    lists.set(key, listed);
+    return listed;
   };
-  const written = (param: FunctionParamDefinition): LiteralTarget => {
-    let target = writtenTargets.get(param);
+  const list = (def: FunctionDefinition) => (param: FunctionParamDefinition) => read(def, param);
+  const written = (def: FunctionDefinition, param: FunctionParamDefinition): LiteralTarget => {
+    const key = keyOf(def, param);
+    let target = writtenTargets.get(key);
     if (target === undefined) {
       target = {
         subject: `Parameter '${param.name}'`,
-        admitted: list(param),
+        admitted: read(def, param),
         among: undefined,
         messages: new Map(),
       };
-      writtenTargets.set(param, target);
+      writtenTargets.set(key, target);
     }
     return target;
   };
@@ -137,7 +180,7 @@ export function admittedLists(): AdmittedLists {
       list: AdmittedList;
     }[] = [];
     for (const def of candidates) {
-      const check = literalCheckAt(def.params, position, list);
+      const check = literalCheckAt(def.params, position, list(def));
       if (check?.admitted !== undefined) {
         checks.push({ def, param: check.param, list: check.admitted });
       }
@@ -163,7 +206,7 @@ export function admittedLists(): AdmittedLists {
  * implementation, which the parser cannot know; whichever definition runs then either lists the
  * literal or lists nothing at that position. The subject is the first listing's parameter. The
  * listings list the same values exactly when each lists no more distinct values than they list in
- * common, so `alike` compares them as sets.
+ * common, so `alike` compares them as sets, when a refusal asks.
  */
 function passedTarget(
   checks: readonly {
@@ -176,13 +219,8 @@ function passedTarget(
   const [first] = checks;
   const [head, ...rest] = listings;
   if (first === undefined || head === undefined) throw new Error('a target needs a listing');
-  const admitted =
-    rest.length === 0
-      ? head.list
-      : admittedList(
-          head.list.values().filter((value) => rest.every((listing) => listing.list.admits(value))),
-        );
-  const alike = listings.every((listing) => listing.list.size === admitted.size);
+  const admitted = rest.length === 0 ? head.list : commonValues(listings);
+  const alike = (): boolean => listings.every((listing) => listing.list.size() === admitted.size());
   return {
     subject: `Parameter '${first.param.name}' of ${first.def.name}`,
     admitted,
@@ -205,7 +243,7 @@ function refusalMessage(target: LiteralTarget, value: string): string {
   const got = JSON.stringify(value);
   const among = target.among;
   let message: string;
-  if (among === undefined || among.alike) {
+  if (among === undefined || among.alike()) {
     message = `${target.subject} must be one of ${quoted}; got ${got}`;
   } else {
     const missing = among.listings
@@ -213,7 +251,7 @@ function refusalMessage(target: LiteralTarget, value: string): string {
       .map((listing) => listing.signatureId);
     const verb = missing.length === 1 ? 'does' : 'do';
     const expected =
-      admitted !== undefined && admitted.size > 0
+      admitted !== undefined && admitted.size() > 0
         ? `one of ${quoted}, the values every overload of ${among.owner} lists here`
         : `one of the values every overload of ${among.owner} lists here, and they list none in common`;
     message = `${target.subject} must be ${expected}; got ${got}, which ${missing.join(', ')} ${verb} not list`;
@@ -519,7 +557,7 @@ function positionsToVisit(walk: CallWalk, state: WalkState): number {
   const widest = state.candidates.reduce((most, def) => Math.max(most, def.params.length), 0);
   if (count <= widest) return count;
   const checked = state.candidates.some(
-    (def) => literalCheckAt(def.params, widest, walk.lists.list) !== undefined,
+    (def) => literalCheckAt(def.params, widest, walk.lists.list(def)) !== undefined,
   );
   return checked ? count : widest;
 }
@@ -568,7 +606,7 @@ function visit(walk: CallWalk, state: WalkState, position: number): WalkState[] 
     // that is not literal-only, or an argument past the first of a variadic callable parameter
     // that lists no admitted values. The walk follows exactly the callables a written call checks;
     // one it skips is resolved when the call runs, with the mode it receives.
-    const check = literalCheckAt(def.params, position, walk.lists.list);
+    const check = literalCheckAt(def.params, position, walk.lists.list(def));
     const invocation = invocationOf(def);
     if (check === undefined || invocation === undefined) continue;
     const target = stripNullability(check.param.type);
