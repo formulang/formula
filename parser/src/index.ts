@@ -1,4 +1,5 @@
 import type {
+  CallableReferenceKind,
   FormulaLimits,
   FormulaRegistry,
   FormulaRequirements,
@@ -995,6 +996,7 @@ function bindTypesAndRequirements(
       // walk through the callables it names, which runs once, after the loop, breadth first across
       // all of them.
       let walk: CallWalk | undefined;
+      let callables: CallCallables | undefined;
       for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
         const p = paramAt(def.params, i);
         if (!p || p.literalOnly !== true) continue;
@@ -1030,14 +1032,14 @@ function bindTypesAndRequirements(
           // Strict callable validation for the higher-order functions whose invocation the parser
           // knows (`invocationOf`: the table's entry for the definition's name):
           // arity, overload, return type, and the referenced function's literal-only rules for
-          // every argument the invocation passes it.
-          const outerBindings = inferGenericBindingsForCall(def, argTypes);
+          // every argument the invocation passes it. What the call passes its callables, and the
+          // templates its own arguments bind, are worked out once per call (`callCallables`).
+          callables ??= callCallables(def, argTypes);
+          const outerBindings = new Map(callables.bindings);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
-          const invocation = invocationOf(def);
-          const invoked = invocation === undefined ? null : invokedArguments(invocation, argTypes);
+          const invokedArgTypes = callables.invokedTypes;
 
-          if (invoked) {
-            const invokedArgTypes = invoked.map((invokedArg) => invokedArg.type);
+          if (invokedArgTypes) {
             if (
               expectedCallable.kind === 'callable' &&
               expectedCallable.minArity !== undefined &&
@@ -1067,14 +1069,7 @@ function bindTypesAndRequirements(
               );
             }
 
-            const candidates = callableCandidates(registry, paramBase.reference, ref);
-            const chosen =
-              candidates.length > 0
-                ? chooseOverload(
-                    candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
-                    invokedArgTypes,
-                  )
-                : null;
+            const chosen = chosenCallable(callables, registry, paramBase.reference, ref);
 
             if (!chosen) {
               errors.push(
@@ -1484,6 +1479,54 @@ function chooseOverload(
     if (ok) return def;
   }
   return null;
+}
+
+/**
+ * What the callable parameters of one call share while the parser validates them: the types of the
+ * arguments the call passes its callables (null where the parser does not know its invocation), the
+ * templates the call's own arguments bind, and the overload each name, of each reference kind,
+ * chooses for those arguments. The first callable parameter of the call works them out and every
+ * other one reads them, so validating all of them takes time linear in the call, however many
+ * callable parameters it has.
+ */
+type CallCallables = {
+  readonly invokedTypes: FormulaType[] | null;
+  readonly bindings: ReadonlyMap<string, FormulaType>;
+  readonly chosen: Map<string, ReturnType<typeof chooseOverload>>;
+};
+
+function callCallables(def: FunctionDefinition, argTypes: FormulaType[]): CallCallables {
+  const invocation = invocationOf(def);
+  return {
+    invokedTypes:
+      invocation === undefined
+        ? null
+        : invokedArguments(invocation, argTypes).map((invokedArg) => invokedArg.type),
+    bindings: inferGenericBindingsForCall(def, argTypes),
+    chosen: new Map(),
+  };
+}
+
+/** The overload `name`, a reference of kind `reference`, chooses for what the call passes it. */
+function chosenCallable(
+  callables: CallCallables,
+  registry: FormulaRegistry,
+  reference: CallableReferenceKind,
+  name: string,
+): ReturnType<typeof chooseOverload> {
+  const key = `${reference}:${name}`;
+  const known = callables.chosen.get(key);
+  if (known !== undefined) return known;
+  const candidates = callableCandidates(registry, reference, name);
+  const chosen =
+    candidates.length > 0 && callables.invokedTypes !== null
+      ? chooseOverload(
+          candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
+          callables.invokedTypes,
+        )
+      : null;
+  callables.chosen.set(key, chosen);
+  return chosen;
 }
 
 function computeIsStatic(node: RuleNode, registry: RegistryLike): boolean {

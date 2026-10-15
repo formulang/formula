@@ -76,13 +76,19 @@ type Registry = ReturnType<typeof registryWithPick>;
 
 /**
  * Adds a host's EACH overload, which under a name of the table gets EACH's invocation: one whose
- * callable parameter is variadic; one with `width` parameters in all; or one with `callables`
+ * callable parameter is variadic; one with `width` parameters in all; one with `callables`
  * callable parameters after a number target, forty parameters in all, the last of them variadic,
- * so a call written with a number binds it at any length and its callables fan out at every level.
+ * so a call written with a number binds it at any length and its callables fan out at every level;
+ * or one whose variadic callable parameter after a number target lists the callables EACH and PICK
+ * (`operators: 'listing'`) or lists none (`'unlisted'`).
  */
 function withHostEach(
   registry: Registry,
-  shape: { variadic: true } | { width: number } | { callables: number },
+  shape:
+    | { variadic: true }
+    | { width: number }
+    | { callables: number }
+    | { operators: 'listing' | 'unlisted' },
 ) {
   const [each] = registry.listFunctionsByName('EACH');
   if (each === undefined) throw new Error('no EACH');
@@ -98,20 +104,29 @@ function withHostEach(
     optional: true,
     variadic,
   });
+  const target = { name: 'target', type: FormulaTypes.number(true) };
   const params =
-    'callables' in shape
+    'operators' in shape
       ? [
-          { name: 'target', type: FormulaTypes.number(true) },
-          ...Array.from({ length: shape.callables }, (_, index) => callable(`callable${index}`)),
-          ...Array.from({ length: 39 - shape.callables }, (_, index) =>
-            option(index, index === 38 - shape.callables),
-          ),
+          target,
+          {
+            ...callable('operators', true),
+            ...(shape.operators === 'listing' ? { literalValues: ['EACH', 'PICK'] } : {}),
+          },
         ]
-      : [
-          { name: 'target', type: FormulaTypes.list(FormulaTypes.number(true)) },
-          callable('operator', 'variadic' in shape),
-          ...Array.from({ length: 'width' in shape ? shape.width - 2 : 0 }, (_, i) => option(i)),
-        ];
+      : 'callables' in shape
+        ? [
+            target,
+            ...Array.from({ length: shape.callables }, (_, index) => callable(`callable${index}`)),
+            ...Array.from({ length: 39 - shape.callables }, (_, index) =>
+              option(index, index === 38 - shape.callables),
+            ),
+          ]
+        : [
+            { name: 'target', type: FormulaTypes.list(FormulaTypes.number(true)) },
+            callable('operator', 'variadic' in shape),
+            ...Array.from({ length: 'width' in shape ? shape.width - 2 : 0 }, (_, i) => option(i)),
+          ];
   registry.registerFunction({ ...each, signatureId: 'HOST_EACH/v1', params });
   return registry;
 }
@@ -298,17 +313,46 @@ describe('the walk through nested callables', () => {
     // this bound only guards against a walk that is no longer linear, which at this size would
     // take hundreds of times as long.
     const registry = registryWithPick();
-    const fastest = (source: string) => {
-      let best = Number.POSITIVE_INFINITY;
-      for (let run = 0; run < 3; run++) {
-        const started = performance.now();
-        parseFormula(source, { registry, limits: LIMITS });
-        best = Math.min(best, performance.now() - started);
-      }
-      return best;
-    };
-    const withWalk = fastest(chain(12_000, 'zzz'));
-    const withoutWalk = fastest(chain(12_000, 'zzz', 'MAP'));
+    const withWalk = fastestParse(registry, chain(12_000, 'zzz'));
+    const withoutWalk = fastestParse(registry, chain(12_000, 'zzz', 'MAP'));
     expect(withWalk).toBeLessThan(10 * withoutWalk);
   });
+
+  it('parses a call whose every argument names a callable in time linear in the call', () => {
+    // A variadic callable parameter that lists the callables it admits makes every argument of the
+    // call a callable parameter, each validated and seeded into the walk. What the call passes its
+    // callables, and the overload a name chooses, are worked out once per call, and the walk spends
+    // one limit for all of them. A budget per callable parameter, or work per callable parameter
+    // in proportion to the call, would make the time grow with the square of the call.
+    const listing = withHostEach(registryWithPick(), { operators: 'listing' });
+    const everyArgument = (count: number) => `EACH(1; ${'"EACH"; '.repeat(count - 2)}"EACH")`;
+    const { rule, walk } = walked(listing, everyArgument(1_000));
+    expect(rule.errors).toStrictEqual([]);
+    // Not vacuous: every argument after the first is a callable parameter, and the walk spends
+    // its limit.
+    expect(walk.walked.size).toBeGreaterThanOrEqual(999);
+    expect(walk.steps).toBe(walk.limit);
+    // A thousand callable parameters cost about what one costs when both walks spend the limit...
+    const wide = withHostEach(registryWithPick(), { callables: 2 });
+    const [branching] = FAN_OUT;
+    if (branching === undefined) throw new Error('no shape');
+    expect(fastestParse(listing, everyArgument(1_000))).toBeLessThan(
+      8 * fastestParse(wide, branching.formula(1_000)),
+    );
+    // ...and four times the arguments take about four times as long.
+    expect(fastestParse(listing, everyArgument(12_000))).toBeLessThan(
+      8 * fastestParse(listing, everyArgument(3_000)),
+    );
+  });
 });
+
+/** The fastest of three parses of `source`, in milliseconds. */
+function fastestParse(registry: FormulaRegistry, source: string): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (let run = 0; run < 3; run++) {
+    const started = performance.now();
+    parseFormula(source, { registry, limits: LIMITS });
+    best = Math.min(best, performance.now() - started);
+  }
+  return best;
+}
