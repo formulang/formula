@@ -638,8 +638,8 @@ walk never reaches that bound; a host's overload with a long parameter
 list under one of those names can, and past the bound the parser stops
 following without an error.
 
-Any other mode reaches the function when the call runs, and the parser
-reports nothing for it:
+Any other mode reaches the function when the call runs, if it is passed at
+all, and the parser reports nothing for it:
 
 - one passed on to a callable named by a variable or an expression, which is
   resolved when the call runs (`EACH(lists; "EACH"; name; "whitespce")`);
@@ -651,10 +651,16 @@ reports nothing for it:
 - one passed to a callable named at a callable parameter that is not
   literal-only, written in the call or passed on: the parser checks neither the
   callable named there nor what it receives;
+- a required mode that a callable two or more levels down is not passed:
+  `EACH(LIST(LIST("# T")); "EACH"; "MARKDOWN_BLOCKS")` compiles, and the inner
+  `EACH` calls `MARKDOWN_BLOCKS` with the item alone; a callable the call
+  itself names must take what it is passed (`EACH(LIST("# T"); "MARKDOWN_BLOCKS")`
+  is `NO_MATCHING_OVERLOAD`), and a call written in the formula that omits a
+  required mode is `EXPECTED_STRING_LITERAL_REFERENCE`;
 - one past the bound above.
 
-A built-in function answers a mode it does not list with `null` and a `TYPE`
-warning. The core higher-order functions keep a callee's value and drop its
+A built-in function answers a mode it does not list, or a required mode it is
+not passed, with `null` and a `TYPE` warning. The core higher-order functions keep a callee's value and drop its
 warnings, as on 1.0.0, so through them such a mode yields neither an error
 nor a warning: through `EACH` that item is `null`, and a filter leaves the
 item out. A higher-order function an embedder registers answers what its
