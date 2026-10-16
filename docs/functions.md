@@ -661,8 +661,8 @@ time or the work of these functions, and none checks the complexity of a loop
 or of a pattern.
 
 Four patterns of 1.0.0 code read their input in more than linear time. Each was
-measured on Node 22.23.3, as the best of three runs on an input built against
-it:
+measured on Node 22.23.3 on an input built against it, as the best of three
+runs where no single run is named:
 
 - `regex.ts`'s nested-quantifier check, `\([^)]*[+*{][^)]*\)[+*{]`, on `(+`
   repeated: 0.06 ms at 100 code units, 19 ms at 800. It is cubic in the length
@@ -671,14 +671,22 @@ it:
 - The alternation check beside it, `\([^)]*\|[^)]*\)[+*{]`, on `(|` repeated:
   0.05 ms at 100 code units, 17 ms at 800; cubic in the same way.
 - The formula's own pattern, which the regex functions and the `"pattern"`
-  mode compile through 1.0.0's `compileSafeRegex`, inherits its rules and
-  their gap: a pattern they accept can take polynomial time, and
-  `maxRegexTextLength` (8,000) does not bound it.
-  `WORD_COUNT(value; "pattern"; "\\s*\\s*!")` on a run of spaces, under the
-  default limits, takes 0.14 s at 1,000 spaces, 1.1 s at 2,000 and 8.9 s at
-  4,000, and 76 s at 8,000 (one run). The function wall-time limit,
-  `maxFunctionWallTimeMs` (10 s), is read when the call returns, so it reports
-  such a call only after the call has run.
+  mode compile through 1.0.0's `compileSafeRegex`, inherits its rules, and
+  they accept some patterns that backtrack exponentially: its nested-quantifier
+  check reads `[^)]*`, so it misses a quantifier outside a nested group, as in
+  `((a+))+$` and `(?:(a+))+$`. `MATCH_EXPRESSION` in 1.0.0 accepts them too.
+  Under the default limits, `WORD_COUNT(value; "pattern"; "((a+))+$")` on `a`s
+  followed by `b` takes 12 ms at 20 code units, 199 ms at 24 and 2.9 s at 28
+  (one run), as `MATCH_EXPRESSION` does; with the text written as a
+  29-character literal,
+  `WORD_COUNT("aaaaaaaaaaaaaaaaaaaaaaaaaaaab"; "pattern"; "(?:(a+))+$")` takes
+  3.2 s (one run). The rules also accept patterns that take polynomial time:
+  `WORD_COUNT(value; "pattern"; "\\s*\\s*!")` on a run of spaces takes 0.14 s
+  at 1,000 spaces, 1.1 s at 2,000, 8.9 s at 4,000 and 76 s at 8,000 (one
+  run). `maxRegexPatternLength` (100) and `maxRegexTextLength` (8,000) bound
+  neither, and the function wall-time limit, `maxFunctionWallTimeMs` (10 s),
+  is read when the call returns, so it reports such a call only after the
+  call has run.
 - `ISURL`'s check of a `mailto:` address, `^[^\s@]+@[^\s@]+\.[^\s@]+$`, on `a@`
   followed by a run of dots and `@`, which no split fits: 2.5 ms at 2,000 code
   units, 162 ms at 16,000. It is quadratic in the address, which `ISURL` does

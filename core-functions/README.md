@@ -185,7 +185,8 @@ loops and for the patterns it runs, and review owns those claims: no spec
 checks the complexity of a loop or of a pattern. `docs/functions.md` also
 records, measured, the four patterns of 1.0.0 code that read their input in
 more than linear time, among them the formula's own pattern in `"pattern"`
-mode, which inherits the gap of 1.0.0's safe-regex rules.
+mode, whose safe-regex rules, inherited from 1.0.0, accept some patterns that
+backtrack exponentially.
 
 ## Register your own handlers
 
