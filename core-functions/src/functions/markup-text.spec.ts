@@ -270,6 +270,10 @@ describe('Markup text', () => {
       size: number;
     };
 
+    /** The kinds of block a markdown input can be, each with its own selection. */
+    const MARKDOWN_KINDS = ['paragraph', 'heading', 'list-item', 'table-row', 'code'] as const;
+    type MarkdownKind = (typeof MARKDOWN_KINDS)[number];
+
     const backtickRuns = (lengths: readonly number[]) =>
       lengths.map((length) => `${'`'.repeat(length)} x `).join('');
     const rising = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
@@ -337,68 +341,82 @@ describe('Markup text', () => {
       },
     };
 
-    const markdownInputs: Record<string, HardInput> = {
+    // Each markdown input is one block, of `kind`, whose text is the one PLAIN_TEXT gives.
+    const markdownInputs: Record<string, HardInput & { kind: MarkdownKind }> = {
       'emphasis openers without closers': {
+        kind: 'paragraph',
         build: (k) => '_a '.repeat(k) + 'a* '.repeat(k),
         text: (k) => ('_a '.repeat(k) + 'a* '.repeat(k)).trim(),
         size: 2_000,
       },
       'unmatched openers of both markers': {
+        kind: 'paragraph',
         build: (k) => '*a _a '.repeat(k),
         text: (k) => '*a _a '.repeat(k).trim(),
         size: 2_000,
       },
       'emphasis pairs': {
+        kind: 'paragraph',
         build: (k) => '*a* _b_ '.repeat(k),
         text: (k) => 'a b '.repeat(k).trim(),
         size: 2_000,
       },
       'backtick runs of rising lengths': {
+        kind: 'paragraph',
         build: (k) => backtickRuns(rising(k)),
         text: (k) => backtickRuns(rising(k)).trim(),
         size: 100,
       },
       'backtick runs of falling lengths': {
+        kind: 'paragraph',
         build: (k) => backtickRuns(rising(k).reverse()),
         text: (k) => backtickRuns(rising(k).reverse()).trim(),
         size: 100,
       },
       'unclosed brackets': {
+        kind: 'paragraph',
         build: (k) => `${'['.repeat(k)}]`,
         text: (k) => `${'['.repeat(k)}]`,
         size: 10_000,
       },
       'nested quote markers': {
+        kind: 'paragraph',
         build: (k) => `${'>'.repeat(k)} x`,
         text: () => 'x',
         size: 10_000,
       },
       'closing hashes after a space run': {
+        kind: 'heading',
         build: (k) => `# a${' '.repeat(k)}b ##`,
         text: () => 'a b',
         size: 10_000,
       },
       'many short lines': {
+        kind: 'paragraph',
         build: (k) => 'a\n'.repeat(k),
         text: (k) => 'a '.repeat(k).trim(),
         size: 10_000,
       },
       'a space run inside a heading': {
+        kind: 'heading',
         build: (k) => `# a${' '.repeat(k)}b`,
         text: () => 'a b',
         size: 10_000,
       },
       'a space run before a line separator in a heading': {
+        kind: 'heading',
         build: (k) => `# Title${' '.repeat(k)}\u2028more`,
         text: () => 'Title more',
         size: 10_000,
       },
       'a space run after a list marker before a line separator': {
+        kind: 'list-item',
         build: (k) => `-${' '.repeat(k)}\u2028item`,
         text: () => 'item',
         size: 10_000,
       },
       'a backtick run before a line separator': {
+        kind: 'code',
         build: (k) => `${'`'.repeat(k)}\u2028`,
         text: () => '',
         size: 10_000,
@@ -410,7 +428,14 @@ describe('Markup text', () => {
     });
 
     it.each(Object.entries(markdownInputs))('reads markdown with %s', async (_name, input) => {
-      expect(await markdown(input.build(input.size))).toBe(input.text(input.size));
+      const value = input.build(input.size);
+      expect(await markdown(value)).toBe(input.text(input.size));
+      // MARKDOWN_BLOCKS reads the same input: the one block of its kind, and none of another.
+      for (const kind of MARKDOWN_KINDS) {
+        expect(await blocks(value, kind), kind).toStrictEqual(
+          kind === input.kind ? [input.text(input.size)] : [],
+        );
+      }
     });
   });
 
