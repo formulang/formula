@@ -651,43 +651,54 @@ of these functions; nothing checks the complexity of a loop. What a spec checks
 is which regular expressions compile: every one that
 `@formulang/core-functions` compiles is listed, with how it reads its input, in
 `core-functions/src/functions/regex-roster.spec.ts`. The list is a maintainer's
-guard: the spec fails when a pattern is added, changed or removed without its
-listing. It is not a boundary against code written to slip past it. The trust
-boundary is the one [SECURITY.md](../SECURITY.md) draws: formulas are
-untrusted, and the library's source is reviewed code.
+guard against a pattern added, changed or removed without its listing; the
+project's review owns code written to slip past it. Each listing says how its
+pattern reads its input, so a pattern a formula can drive past the limits is in
+view: [SECURITY.md](../SECURITY.md) counts bypassing resource limits as a
+vulnerability.
 
 The spec reads every module of the package with the TypeScript type checker:
-every regular expression literal; every reference by the name `RegExp`, as an
-identifier or as a property name, where a call or `new` of it is a
-construction; every site named like a method that compiles or runs a pattern
-(`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`, `test`,
-`exec`, `compile`, or the `Symbol` key of one), on any receiver, with each
-pattern a call runs followed to where it comes from; every reference by name
-to `eval`, `Function` or `Reflect`, and every `prototype` of `String`, `RegExp`
-or `Function`; and every receiver of a site so named, and every callee, that
-the checker types `any` or `unknown`. It fails on a pattern the list leaves
-out, on a listed one that is gone, and on a site it cannot classify; a site so
-named that holds no pattern is listed by module, line, column and name. It
-does not decide a spelling that hides the construct from the type checker: a
-value made callable through a type annotation or a type predicate, an alias
-typed with its own construct signature, code run by any other route
-(`node:vm` and the like), or a module outside the package, such as a helper
-`@formulang/definitions` exports. Review owns those spellings, as it owns the
-loops.
+every regular expression literal; every construction, a call or `new` by the
+name `RegExp`, keyed by what it writes — its pattern and flags folded through
+string and template literals, `+`, `String.raw`, conditionals (a key per
+branch), constants and imports, so that one written in full is keyed as a
+literal, and one with parts a value fills by the function that builds it and
+its text, each such part a hole named by its source; every site named like a
+method that compiles or runs a pattern (`match`, `matchAll`, `search`,
+`replace`, `replaceAll`, `split`, `test`, `exec`, `compile`, or the `Symbol`
+key of one), on any receiver, with each pattern a call runs followed to where
+it comes from; every other reference by the name `RegExp`, `eval`, `Function`
+or `Reflect`, and every `prototype` of `String`, `RegExp` or `Function`; and
+every receiver of a site so named, and every callee, that the checker types
+`any` or `unknown`. A declaration so named is no reference, and a member so
+named on a receiver declared in the repository is a site to list. The spec
+fails on a pattern the list leaves out, on a listed one that is gone or
+changed, and on a site it cannot classify; a site so named that holds no
+pattern is listed by module, line, column and name, and the spec's own cases
+check each of these rules. It does not decide a spelling that hides the
+construct from the type checker (a value made callable through a type
+annotation or a type predicate, an alias typed with its own construct
+signature, code run by any other route such as `node:vm`), what a value
+filling a hole holds, or code outside the package's `src`: a pattern value
+that comes from another package is reported as such, but a helper there that
+compiles a pattern itself, such as one `@formulang/definitions` exports, is not
+read. Review owns those, as it owns the loops.
 
-Five listed patterns of 1.0.0 code read their input in more than linear time.
-Three read the formula's own pattern after its length check
-(`maxRegexPatternLength`, 100 by default): the nested-quantifier checks
+Four listed patterns of 1.0.0 code read their input in more than linear time,
+measured on Node 22.23.3. Two read the formula's own pattern after its length
+check (`maxRegexPatternLength`, 100 by default): the nested-quantifier checks
 `\([^)]*[+*{][^)]*\)[+*{]` and `\([^)]*\|[^)]*\)[+*{]` are cubic in the
-pattern's length, and the split of `/source/flags`, `^\/(.*)\/([a-z]*)$`, is
-quadratic in it. The formula's own pattern, which the regex functions and the
-`"pattern"` mode compile through 1.0.0's `compileSafeRegex`, inherits its
-rules and their gap: a pattern they accept can take polynomial time, and the
-input limit does not bound it — `WORD_COUNT(value; "pattern"; "\\s*\\s*!")`
-over 8,000 spaces, within the default limits, works for minutes (216 seconds
-measured on Node 22.23.3) before the wall-time limit, which is read when the
-call returns, reports it. And `ISURL`'s check of a `mailto:` address,
-`^[^\s@]+@[^\s@]+\.[^\s@]+$`, is quadratic in the address after `@`.
+pattern's length, 0.07 ms at 100 code units and 20 ms at 800. The formula's own
+pattern, which the regex functions and the `"pattern"` mode compile through
+1.0.0's `compileSafeRegex`, inherits its rules and their gap: a pattern they
+accept can take polynomial time, and the input limit does not bound it —
+`WORD_COUNT(value; "pattern"; "\\s*\\s*!")` over 8,000 spaces, within the
+default limits, works for minutes (216 seconds) before the wall-time limit,
+which is read when the call returns, reports it. And `ISURL`'s check of a
+`mailto:` address, `^[^\s@]+@[^\s@]+\.[^\s@]+$`, is quadratic in the address
+after `@`, which `ISURL` does not bound: 125 ms at 16,000 code units. The split
+of `/source/flags`, `^\/(.*)\/([a-z]*)$`, is linear: 2.9 ms at 640,000 code
+units.
 
 ### CONCAT
 

@@ -184,13 +184,15 @@ the limits that bound the input. That cost is what the code claims for its own
 loops and for how often it runs each pattern; no spec checks it, and nothing
 checks the complexity of a loop. What a spec checks is which regular
 expressions compile: `src/functions/regex-roster.spec.ts` lists every one this
-package compiles, with how it reads its input, and fails when a pattern is
-added, changed or removed without its listing. The list is a maintainer's
-guard, not a boundary against code written to slip past it: the trust boundary
-is the one [SECURITY.md](../SECURITY.md) draws, where formulas are untrusted
-and the library's source is reviewed code. `docs/functions.md` states what the
-spec reads, by name and with the type checker, and the spellings it does not
-decide, which review owns.
+package compiles, with how it reads its input, keyed by what its construction
+writes, and fails when a pattern is added, changed or removed without its
+listing. The list is a maintainer's guard; the project's review owns code
+written to slip past it. Each listing says how its pattern reads its input, so
+a pattern a formula can drive past the limits is in view:
+[SECURITY.md](../SECURITY.md) counts bypassing resource limits as a
+vulnerability. `docs/functions.md` states what the spec reads, the spellings it
+does not decide, and the four listed patterns that read their input in more
+than linear time.
 
 ## Register your own handlers
 

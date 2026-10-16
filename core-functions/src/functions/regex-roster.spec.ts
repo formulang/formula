@@ -263,7 +263,7 @@ const ROSTER: Readonly<Record<string, readonly Entry[]>> = {
     {
       regex: '/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/',
       reads:
-        "Quadratic in the text after `@` when no split of it fits, as each `.` makes the last class re-read the rest (16,000 code units take 0.4 s): ISURL's check of a `mailto:` address.",
+        "Quadratic in the text after `@` when no split of it fits, as each `.` makes the last class re-read the rest (a run of 16,000 dots takes 125 ms, best of three): ISURL's check of a `mailto:` address, which ISURL does not bound.",
     },
     { regex: '/[/?#]/', reads: 'One character class, unanchored: each code unit tested once.' },
     { regex: '/^\\/\\//', reads: 'Anchored, two fixed code units.' },
