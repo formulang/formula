@@ -18,15 +18,15 @@ pnpm install
 
 All commands run from the repo root.
 
-| Command                   | Purpose                                                                                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run build`          | Compile all packages to `dist/`.                                                                                                                                       |
-| `pnpm run lint`           | Type-check all packages (`tsc --noEmit`). Requires a prior `pnpm run build`, because package entrypoints resolve to the built `dist/` of their workspace dependencies. |
-| `pnpm run test`           | Run the full vitest suite. No build required.                                                                                                                          |
-| `pnpm run test:coverage`  | Full suite with V8 coverage.                                                                                                                                           |
-| `pnpm run prettier`       | Format the repo.                                                                                                                                                       |
-| `pnpm run prettier:check` | Verify formatting (CI runs this).                                                                                                                                      |
-| `pnpm run clean`          | Remove all build outputs.                                                                                                                                              |
+| Command                   | Purpose                                                                                                                                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run build`          | Compile all packages to `dist/`.                                                                                                                                                                                                                      |
+| `pnpm run lint`           | Type-check all packages (`tsc --noEmit`), and core-functions' test helper (`core-functions/tsconfig.test-helpers.json`). Requires a prior `pnpm run build`, because package entrypoints resolve to the built `dist/` of their workspace dependencies. |
+| `pnpm run test`           | Run the full vitest suite. No build required.                                                                                                                                                                                                         |
+| `pnpm run test:coverage`  | Full suite with V8 coverage.                                                                                                                                                                                                                          |
+| `pnpm run prettier`       | Format the repo.                                                                                                                                                                                                                                      |
+| `pnpm run prettier:check` | Verify formatting (CI runs this).                                                                                                                                                                                                                     |
+| `pnpm run clean`          | Remove all build outputs.                                                                                                                                                                                                                             |
 
 ## Project layout
 

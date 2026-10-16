@@ -41,7 +41,7 @@ Run from the repo root.
 ## Critical facts (non-obvious — read before working)
 
 - **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 71 spec files / 511 tests). Run `pnpm run test` freely and often.
-- **Lint DOES need a build.** `lint` is `tsc --noEmit` per package, and cross-package imports resolve through the published entrypoints (`dist/`). Run `pnpm run build` before `pnpm run lint` — and before anything else that resolves `dist/` instead of the vitest aliases.
+- **Lint DOES need a build.** `lint` is `tsc --noEmit` per package (core-functions' also type-checks its test helper, `src/test-helpers/`, under `tsconfig.test-helpers.json`), and cross-package imports resolve through the published entrypoints (`dist/`). Run `pnpm run build` before `pnpm run lint` — and before anything else that resolves `dist/` instead of the vitest aliases.
 - Test files are `*.spec.ts`, co-located with the source they test.
 - TypeScript 6 with `module`/`moduleResolution` set to `nodenext` (modern Node module semantics, matching `engines >=22`), CJS emit. Mind Node-style module resolution rules when adding imports.
 - Formatting is enforced: prettier plus `prettier-plugin-organize-imports`. Run `pnpm run prettier` before finishing any change; CI fails on `prettier:check`.
