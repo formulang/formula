@@ -1293,5 +1293,6 @@ describe('the regular expressions of core-functions', () => {
         .map(siteKey)
         .sort(),
     );
+    expect(new Set(own.unlisted.map(siteKey)).size).toBe(own.unlisted.length);
   });
 });
