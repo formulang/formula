@@ -284,7 +284,8 @@ describe('compatibility with 1.0.0', () => {
       }
       if (behaviour(now) !== behaviour(before)) changed++;
     });
-    // What the PR states, for this corpus and these probes.
+    // For this corpus and these probes: 144 formulas failed to compile on 1.0.0, 48 yielded null
+    // there, and 20 that compiled now fail to compile, by kind.
     expect([failedToCompile, yieldedNull, nowFailsToCompile]).toStrictEqual([
       144,
       48,
@@ -703,8 +704,8 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
         }
       }
     }
-    // What the PR states: PLAIN_TEXT and MARKDOWN_BLOCKS refuse at the built-in's required arity,
-    // nine more names one argument past it, six of those also two past.
+    // Untyped calls a mode refuses: PLAIN_TEXT and MARKDOWN_BLOCKS at the built-in's required
+    // arity, nine more names one argument past it, six of those also two past.
     expect(outcomes.refused.sort()).toStrictEqual(
       [
         'PLAIN_TEXT/2',
@@ -782,7 +783,9 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
           }
         }
       }
-      // What the PR states, for the sixteen names at two, three and five arguments.
+      // The sixteen names at two, three and five arguments, 48 calls: beside the built-in, 47
+      // fail to compile and INDEX_OF/2 binds it; alone, the host's function takes all but
+      // `aloneRefused`.
       expect(atHead.refused.length).toBe(47);
       expect(atHead.builtIn).toStrictEqual(['INDEX_OF/2']);
       expect(alone.refused).toStrictEqual(aloneRefused);

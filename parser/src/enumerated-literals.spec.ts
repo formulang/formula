@@ -846,6 +846,15 @@ describe('admitted lists', () => {
    * of the lists of every set of two or more listing parameters a refusal reaches: working out what
    * a set lists in common reads its first list and looks each value up in the further lists until
    * one leaves it out, at most twice the set's lists.
+   *
+   * It bounds the units of admitted values one parse of a shape reads (`work.units.admitted`), and
+   * it is not tight. A refusal is charged every character it prints, and it prints the values its
+   * overload lists, so where refusals print long lists the bound sits far above the units read.
+   * The set term charges every list of every set, so it does not tell a lookup that stops at the
+   * first list leaving a value out from one that reads every further list. What it catches is a
+   * parse whose reads grow with the checks or the refusals rather than with the lists and what the
+   * refusals print: a list read again for each check, or common values worked out again on each
+   * use.
    */
   const bound = (lists: number, errors: readonly { message: string }[], setLists: number) =>
     4 * (lists + errors.reduce((sum, error) => sum + error.message.length, 0)) + 2 * setLists;
