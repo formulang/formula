@@ -4,24 +4,46 @@ import * as ts from 'typescript';
 
 /**
  * Every regular expression core-functions compiles is listed here with how it reads its input.
- * This spec guards which patterns compile, and nothing else: how a function's own loops read its
- * input, and how often it runs a listed pattern, are stated in `docs/functions.md` from the code,
- * and no spec checks them. The spec reconciles the list, both ways, with what the TypeScript type
- * checker finds on every module under `src`: each regular expression literal; each `RegExp`
- * construction, however the constructor is reached; and every site named like a method that
- * compiles or runs a pattern (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`,
- * `test`, `exec`, `compile`, or a `Symbol.match`, `matchAll`, `replace`, `search` or `split` key),
- * whatever its receiver's type: a call of a `String` or `RegExp` method is classified (a string
- * `match`, `matchAll` or `search` compiles must be a literal; a pattern a call runs is followed
- * through constants, imports, parameters at every call, returned values, object properties,
- * destructuring, conditionals and maps to the literal or construction it comes from), and every
- * other such site is a problem unless `NOT_PATTERNS` lists it by module and line. A problem, with
- * no listing possible: `compile`; a receiver typed `any` or `unknown`; a `String` or `RegExp`
- * method used as a value (`call`, `apply`, `bind`, `Reflect.apply`, an assignment, a
- * destructuring); a `prototype` of `String`, `RegExp` or `Function`; an element access whose key
- * is not a literal, where it is called or its value can be; a call of a value typed `any` or
- * `unknown`; a cast that makes a value callable; the `RegExp` constructor used as a value. A
- * pattern built at run time from a value is listed by the function that builds it.
+ * The list is a maintainer's guard: the spec fails when a pattern is added, changed or removed
+ * without its listing. It is not a boundary against code written to slip past it. The trust
+ * boundary is the one `SECURITY.md` draws: formulas are untrusted, and the library's source is
+ * reviewed code. Review owns what this spec does not decide, as it owns how a function's own loops
+ * read their input and how often a function runs a listed pattern (stated in `docs/functions.md`
+ * from the code; no spec checks them).
+ *
+ * The spec reads every module under `src` with the TypeScript type checker and reconciles the list
+ * with what it finds, both ways. A reference by name below is an identifier, a property name
+ * included, or the literal key of an element access or of a destructuring, outside a type (a
+ * class's `extends` clause is not one). It reads:
+ * - every regular expression literal;
+ * - every reference by the name `RegExp`: called or constructed, it is a construction, as is a
+ *   call or `new` the checker resolves to `RegExpConstructor`; as the right side of `instanceof`,
+ *   nothing; anything else is a problem;
+ * - every site named like a method that compiles or runs a pattern (`match`, `matchAll`, `search`,
+ *   `replace`, `replaceAll`, `split`, `test`, `exec`, `compile`, or a `Symbol.match`, `matchAll`,
+ *   `replace`, `search` or `split` key), on any receiver: a call of a `String` or `RegExp` method
+ *   is classified (a string `match`, `matchAll` or `search` compiles must be a literal; a pattern a
+ *   call runs is followed through constants, imports, parameters at every call, returned values,
+ *   object properties, destructuring, conditionals and maps to the literal or construction it
+ *   comes from); a `compile` the checker resolves to the `RegExp` interface or cannot resolve, and
+ *   a `String` or `RegExp` method used as a value (`call`, `apply`, `bind`, an assignment, a
+ *   destructuring), are problems; any other such site is a problem unless `NOT_PATTERNS` lists it
+ *   by module, line, column and name;
+ * - every reference by the name `eval`, `Function` or `Reflect`, and every `prototype` of
+ *   `String`, `RegExp` or `Function`: each is a problem;
+ * - every receiver of a site so named, and every callee, that the checker types `any` or
+ *   `unknown`: each is a problem.
+ * Also a problem: an element access whose key is not a literal, where it is called or its value
+ * can be; a cast that makes a value callable; a spec file a module imports; a file under `src`
+ * that is not a TypeScript module. A problem has no listing. A pattern built at run time from a
+ * value is listed by the function that builds it.
+ *
+ * The spec does not decide a spelling that hides the construct from the type checker: a value
+ * made callable through a type annotation or a type predicate, an alias typed with its own
+ * construct signature, code run by any other route (`node:vm` and the like), or a module outside
+ * the spec's program, such as a helper another package (`@formulang/definitions`) exports.
+ * `compileSafeRegex`, 1.0.0's helper for a formula's own pattern, is listed with the gap its rules
+ * leave.
  */
 
 const SRC = path.join(__dirname, '..');
@@ -260,36 +282,46 @@ const ROSTER: Readonly<Record<string, readonly Entry[]>> = {
 /** Where a pattern comes from: its module, and the pattern or the function that builds it. */
 type Origin = { readonly module: string; readonly key: string };
 
-/** A site the walk reports by its module, the line of its name, and the name. */
-type Site = { readonly module: string; readonly line: number; readonly name: string };
+/** A site the walk reports by its module, the line and column of its name, and the name. */
+type Site = {
+  readonly module: string;
+  readonly line: number;
+  readonly column: number;
+  readonly name: string;
+};
 
 /**
  * The sites named like a pattern method that hold no pattern, and the element accesses by a key
  * this spec cannot read whose receiver is typed `any` but whose value is never called: each with
- * what it is. Every one the walk finds must be listed, and every one listed must be found.
+ * what it is. Every one the walk finds must be listed at its module, line, column and name, and
+ * every one listed must be found there.
  */
 const NOT_PATTERNS: readonly (Site & { readonly is: string })[] = [
   {
     module: 'functions/helpers.ts',
     line: 68,
+    column: 23,
     name: '(computed key)',
     is: 'readOwnProperty reads an own property of a formula value by a path segment, after hasOwnProperty: no String or RegExp method is an own property.',
   },
   {
     module: 'functions/phrase-match.ts',
     line: 115,
+    column: 38,
     name: 'match',
     is: 'The name of the `match` parameter of FIRST_CONTAINED and CONTAINS_ANY, which readOptionalMode prints in its messages.',
   },
   {
     module: 'functions/phrase-match.ts',
     line: 136,
+    column: 28,
     name: 'match',
     is: "FIRST_CONTAINED's `match` mode, a text, destructured from its read arguments.",
   },
   {
     module: 'functions/phrase-match.ts',
     line: 154,
+    column: 28,
     name: 'match',
     is: "CONTAINS_ANY's `match` mode, a text, destructured from its read arguments.",
   },
@@ -315,6 +347,8 @@ const PATTERN_SYMBOLS: ReadonlySet<string> = new Set([
   'search',
   'split',
 ]);
+/** The globals that run code from a text (`eval`, `Function`) or call by a value (`Reflect`). */
+const DYNAMIC_NAMES: ReadonlySet<string> = new Set(['eval', 'Function', 'Reflect']);
 
 /** A pattern the spec cannot follow to its origin. */
 class Unresolved extends Error {}
@@ -339,6 +373,10 @@ function modulesUnder(dir: string): string[] {
 
 function moduleName(file: string): string {
   return path.relative(SRC, file).split(path.sep).join('/');
+}
+
+function repositoryName(file: string): string {
+  return path.relative(REPO, file).split(path.sep).join('/');
 }
 
 function keyOfPattern(source: string, flags: string): string {
@@ -439,9 +477,21 @@ type Found = {
   diagnostics: string[];
 };
 
-/** Every regular expression of the modules under `src`, and every problem following them. */
-function enumerate(): Found {
-  const files = modulesUnder(SRC).sort();
+/**
+ * Every regular expression of the modules under `src`, and every problem following them; given
+ * `modules` (a name under `src/self-test` to its text), of those modules instead.
+ */
+function enumerate(modules?: Readonly<Record<string, string>>): Found {
+  const virtual = new Map(
+    Object.entries(modules ?? {}).map(
+      ([name, text]) => [path.join(SRC, 'self-test', name), text] as const,
+    ),
+  );
+  const files = (
+    modules === undefined
+      ? modulesUnder(SRC)
+      : [...virtual.keys()].filter((file) => !file.endsWith('.spec.ts'))
+  ).sort();
   const options: ts.CompilerOptions = {
     target: ts.ScriptTarget.ES2020,
     module: ts.ModuleKind.ESNext,
@@ -460,27 +510,54 @@ function enumerate(): Found {
   // Type libraries resolve from the repository, wherever the spec runs from.
   const host = ts.createCompilerHost(options);
   host.getCurrentDirectory = () => REPO;
+  if (modules !== undefined) {
+    const onDisk = { ...host };
+    const held = (file: string): string | undefined => virtual.get(path.resolve(file));
+    host.fileExists = (file) => held(file) !== undefined || onDisk.fileExists(file);
+    host.readFile = (file) => held(file) ?? onDisk.readFile(file);
+    host.directoryExists = (directory) =>
+      path.resolve(directory) === path.join(SRC, 'self-test') ||
+      (onDisk.directoryExists?.(directory) ?? true);
+    host.realpath = (file) => (held(file) !== undefined ? file : (onDisk.realpath?.(file) ?? file));
+  }
   const program = ts.createProgram({ rootNames: files, options, host });
   const checker = program.getTypeChecker();
   const sources = files.map((file) => program.getSourceFile(file) as ts.SourceFile);
   const walked = new Set(files.map((file) => path.resolve(file)));
   const origins: Origin[] = [];
   const unlisted: Site[] = [];
-  // A file under `src` the walk does not read could hold code; only specs and declarations may.
-  const problems: string[] = filesUnder(SRC)
-    .filter((file) => !file.endsWith('.ts'))
-    .map((file) => `a file this spec does not read: ${moduleName(file)}`);
+  const problems: string[] = [
+    // A file under `src` the walk does not read could hold code; only specs and declarations may.
+    ...(modules === undefined ? filesUnder(SRC) : [])
+      .filter((file) => !file.endsWith('.ts'))
+      .map((file) => `a file this spec does not read: ${moduleName(file)}`),
+    // The walk skips specs, so no module may import one: a spec in the program is an import.
+    ...program
+      .getSourceFiles()
+      .filter(
+        (source) =>
+          source.fileName.endsWith('.spec.ts') &&
+          !source.fileName.split(/[\\/]/).includes('node_modules'),
+      )
+      .map((source) => `a spec file a module imports: ${repositoryName(source.fileName)}`),
+  ];
   let uses = 0;
   let named = 0;
 
-  const lineOf = (node: ts.Node): number =>
-    node.getSourceFile().getLineAndCharacterOfPosition(node.getStart()).line + 1;
+  const positionOf = (node: ts.Node): ts.LineAndCharacter =>
+    node.getSourceFile().getLineAndCharacterOfPosition(node.getStart());
 
   const where = (node: ts.Node): string =>
-    `${moduleName(node.getSourceFile().fileName)}:${lineOf(node)} ${node.getText().slice(0, 80)}`;
+    `${moduleName(node.getSourceFile().fileName)}:${positionOf(node).line + 1} ${node.getText().slice(0, 80)}`;
 
   const notAPattern = (node: ts.Node, name: string): void => {
-    unlisted.push({ module: moduleName(node.getSourceFile().fileName), line: lineOf(node), name });
+    const { line, character } = positionOf(node);
+    unlisted.push({
+      module: moduleName(node.getSourceFile().fileName),
+      line: line + 1,
+      column: character + 1,
+      name,
+    });
   };
 
   const symbolOf = (node: ts.Node): ts.Symbol | undefined => {
@@ -495,17 +572,65 @@ function enumerate(): Found {
     return parent !== undefined && ts.isInterfaceDeclaration(parent) ? parent.name.text : undefined;
   };
 
-  const globalValue = (name: string): ts.Symbol | undefined =>
-    checker.resolveName(name, undefined, ts.SymbolFlags.Value, false);
-  const regExpConstructor = globalValue('RegExp');
-  const symbolConstructor = globalValue('Symbol');
-  const dynamicGlobals = new Map(
-    ['Function', 'eval', 'Reflect'].map((name) => [globalValue(name), name] as const),
-  );
-  const isRegExpConstructor = (callee: ts.Expression): boolean => {
-    const node = skipOuter(callee);
-    const named = ts.isPropertyAccessExpression(node) ? node.name : node;
-    return regExpConstructor !== undefined && symbolOf(named) === regExpConstructor;
+  const symbolConstructor = checker.resolveName('Symbol', undefined, ts.SymbolFlags.Value, false);
+
+  /** The name an expression is written with: an identifier, a property name or a literal key. */
+  const writtenName = (expression: ts.Expression): string | undefined => {
+    const node = skipOuter(expression);
+    if (ts.isIdentifier(node)) return node.text;
+    if (ts.isPropertyAccessExpression(node)) return node.name.text;
+    if (ts.isElementAccessExpression(node)) {
+      const key = skipOuter(node.argumentExpression);
+      if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return key.text;
+    }
+    return undefined;
+  };
+  /** A call or `new` by the name `RegExp`, or one the checker resolves to `RegExpConstructor`. */
+  const isConstruction = (node: ts.CallExpression | ts.NewExpression): boolean =>
+    writtenName(node.expression) === 'RegExp' || ownerOf(node) === 'RegExpConstructor';
+
+  /** Whether `node` is in a type, where it names no value (a class's `extends` names one). */
+  const inType = (node: ts.Node): boolean => {
+    for (let current = node.parent; current !== undefined; current = current.parent) {
+      if (ts.isExpressionWithTypeArguments(current)) {
+        const clause = current.parent;
+        return !(
+          ts.isHeritageClause(clause) &&
+          clause.token === ts.SyntaxKind.ExtendsKeyword &&
+          ts.isClassLike(clause.parent)
+        );
+      }
+      if (
+        ts.isTypeNode(current) ||
+        ts.isInterfaceDeclaration(current) ||
+        ts.isTypeAliasDeclaration(current)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  /** A reference written with the name `RegExp`, `eval`, `Function` or `Reflect`. */
+  const byName = (name: string, reference: ts.Node): void => {
+    const outer = outermost(reference, false);
+    const parent = outer.parent;
+    if (DYNAMIC_NAMES.has(name)) {
+      problems.push(`${name}, which runs code by name: ${where(parent)}`);
+    } else if (
+      name === 'RegExp' &&
+      !(
+        (ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
+        parent.expression === outer
+      ) &&
+      !(
+        ts.isBinaryExpression(parent) &&
+        parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+        parent.right === outer
+      )
+    ) {
+      problems.push(`the RegExp constructor used as a value: ${where(parent)}`);
+    }
   };
 
   const parts = (type: ts.Type): readonly ts.Type[] => (type.isUnion() ? type.types : [type]);
@@ -568,13 +693,19 @@ function enumerate(): Found {
 
   const construction = (node: ts.CallExpression | ts.NewExpression): Origin => {
     const [patternArgument, flagsArgument] = node.arguments ?? [];
-    const pattern =
-      patternArgument === undefined
-        ? ''
-        : skipOuter(patternArgument).kind === ts.SyntaxKind.RegularExpressionLiteral
-          ? new RegExp(keyOfLiteral(skipOuter(patternArgument).getText()).slice(1, -1)).source
-          : textOf(patternArgument, new Set());
-    const flags = flagsArgument === undefined ? '' : textOf(flagsArgument, new Set());
+    const argument = patternArgument === undefined ? undefined : skipOuter(patternArgument);
+    let pattern: string | undefined = '';
+    // A pattern built from a literal keeps the literal's flags unless the call gives its own.
+    let literalFlags = '';
+    if (argument !== undefined && argument.kind === ts.SyntaxKind.RegularExpressionLiteral) {
+      const text = argument.getText();
+      const last = text.lastIndexOf('/');
+      pattern = text.slice(1, last);
+      literalFlags = text.slice(last + 1);
+    } else if (argument !== undefined) {
+      pattern = textOf(argument, new Set());
+    }
+    const flags = flagsArgument === undefined ? literalFlags : textOf(flagsArgument, new Set());
     const module = moduleName(node.getSourceFile().fileName);
     return pattern !== undefined && flags !== undefined
       ? { module, key: keyOfPattern(pattern, flags) }
@@ -664,7 +795,7 @@ function enumerate(): Found {
       return found;
     }
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
-      if (ownerOf(node) === 'RegExpConstructor' || isRegExpConstructor(node.expression)) {
+      if (isConstruction(node)) {
         if (property.length > 0) throw new Unresolved(`a property of a pattern: ${where(node)}`);
         return [construction(node)];
       }
@@ -776,7 +907,7 @@ function enumerate(): Found {
     }
   };
 
-  /** A call of a method named like a pattern method, whatever its receiver. */
+  /** A call of a method named like a pattern method, on any receiver. */
   const classifyCall = (
     call: ts.CallExpression,
     member: ts.PropertyAccessExpression | ts.ElementAccessExpression,
@@ -798,7 +929,12 @@ function enumerate(): Found {
       return;
     }
     if (name === 'compile') {
-      if (owner === 'RegExp' || owner === undefined) {
+      // The `RegExp` interface's `compile`, or one the checker cannot resolve, recompiles a
+      // pattern at run time; a `compile` declared anywhere else is a site like any other.
+      if (
+        owner === 'RegExp' ||
+        checker.getResolvedSignature(call)?.getDeclaration() === undefined
+      ) {
         problems.push(
           `a pattern recompiled at run time (RegExp.prototype.compile): ${where(call)}`,
         );
@@ -849,6 +985,8 @@ function enumerate(): Found {
       if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) {
         name = key.text;
         nameNode = key;
+        // A literal key names a member as a property name does.
+        if (DYNAMIC_NAMES.has(name) || name === 'RegExp') byName(name, node);
       } else if (
         ts.isPropertyAccessExpression(key) &&
         symbolConstructor !== undefined &&
@@ -893,7 +1031,7 @@ function enumerate(): Found {
     const receiver = checker.getTypeAtLocation(node.expression);
     if (anyOrUnknown(receiver)) {
       problems.push(`a receiver typed any or unknown: ${where(node)}`);
-    } else if (bySymbol || name === 'compile' || textOrPatternMember(receiver, name)) {
+    } else if (bySymbol || textOrPatternMember(receiver, name)) {
       problems.push(`a String or RegExp method used as a value: ${where(node.parent)}`);
     } else {
       notAPattern(nameNode, name);
@@ -917,11 +1055,19 @@ function enumerate(): Found {
         return;
       }
     }
+    // A key written as an identifier is read with the other identifiers.
+    if (
+      name !== undefined &&
+      !ts.isIdentifier(property) &&
+      (DYNAMIC_NAMES.has(name) || name === 'RegExp')
+    ) {
+      byName(name, property);
+    }
     if (name === undefined || !PATTERN_METHODS.has(name)) return;
     const source = checker.getTypeAtLocation(pattern);
     if (anyOrUnknown(source)) {
       problems.push(`a receiver typed any or unknown: ${where(pattern)}`);
-    } else if (name === 'compile' || textOrPatternMember(source, name)) {
+    } else if (textOrPatternMember(source, name)) {
       problems.push(`a String or RegExp method used as a value: ${where(pattern)}`);
     } else {
       notAPattern(property, name);
@@ -947,9 +1093,7 @@ function enumerate(): Found {
         origins.push({ module, key: keyOfLiteral(node.getText()) });
       }
       if (ts.isNewExpression(node) || ts.isCallExpression(node)) {
-        if (ownerOf(node) === 'RegExpConstructor' || isRegExpConstructor(node.expression)) {
-          origins.push(construction(node));
-        }
+        if (isConstruction(node)) origins.push(construction(node));
         if (anyOrUnknown(checker.getTypeAtLocation(node.expression))) {
           problems.push(`a call of a value typed any or unknown: ${where(node)}`);
         }
@@ -978,31 +1122,18 @@ function enumerate(): Found {
           problems.push(`a cast that makes a value callable: ${where(node)}`);
         }
       }
+      // An identifier or a property name, outside a type: a property name stands for its access.
       if (
         ts.isIdentifier(node) &&
-        !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) &&
-        !ts.isTypeReferenceNode(node.parent) &&
-        !ts.isExpressionWithTypeArguments(node.parent) &&
-        !ts.isTypeQueryNode(node.parent)
+        (DYNAMIC_NAMES.has(node.text) || node.text === 'RegExp') &&
+        !inType(node)
       ) {
-        const symbol = symbolOf(node);
-        const dynamic = symbol === undefined ? undefined : dynamicGlobals.get(symbol);
-        if (dynamic !== undefined)
-          problems.push(`${dynamic}, which runs code by name: ${where(node.parent)}`);
-        if (
-          regExpConstructor !== undefined &&
-          symbol === regExpConstructor &&
-          !(
-            ts.isBinaryExpression(node.parent) &&
-            node.parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword
-          ) &&
-          !(
-            (ts.isCallExpression(node.parent) || ts.isNewExpression(node.parent)) &&
-            node.parent.expression === node
-          )
-        ) {
-          problems.push(`the RegExp constructor used as a value: ${where(node.parent)}`);
-        }
+        byName(
+          node.text,
+          ts.isPropertyAccessExpression(node.parent) && node.parent.name === node
+            ? node.parent
+            : node,
+        );
       }
       ts.forEachChild(node, visit);
     };
@@ -1026,7 +1157,44 @@ function enumerate(): Found {
   return { modules: files.map(moduleName), origins, uses, named, unlisted, problems, diagnostics };
 }
 
-const siteKey = (site: Site): string => `${site.module}:${site.line} ${site.name}`;
+const siteKey = (site: Site): string => `${site.module}:${site.line}:${site.column} ${site.name}`;
+
+/** Modules the walk reads in place of `src` in the spec's own cases, by name and line. */
+const SELF_TEST: Readonly<Record<string, readonly string[]>> = {
+  'keys.ts': [
+    "export const spaces = new RegExp(/\\s+/u, 'gu');",
+    'export const letters = new RegExp(/[a-z]+/i);',
+    'declare const host: { RegExp: new (source: string) => object };',
+    "export const pluses = new host.RegExp('x+');",
+  ],
+  'by-name.ts': [
+    'export const Pattern = globalThis.RegExp;',
+    'export const make = globalThis.Function;',
+    "export const run = globalThis['eval'];",
+  ],
+  'compile.ts': [
+    'class FailureTable {',
+    '  compile(phrase: string): number[] {',
+    '    return [...phrase].map(() => 0);',
+    '  }',
+    '}',
+    "export const table = new FailureTable().compile('#');",
+    "export const recompiled = /a/.compile('b');",
+  ],
+  'same-line.ts': [
+    'const first = { test: (text: string) => text.length > 0 };',
+    'const second = { test: (text: string) => text.length > 1 };',
+    "export const both = first.test('a') && second.test('b');",
+  ],
+  'imports-a-spec.ts': ["import { tail } from './tail.spec';", 'export const tailOf = tail;'],
+  'tail.spec.ts': ["export const tail = 'x';"],
+};
+
+/** The column of what follows `before` on a line of a module of `SELF_TEST`. */
+const columnAfter = (module: string, line: number, before: string): number => {
+  const text = SELF_TEST[module]?.[line - 1] ?? '';
+  return text.indexOf(before) + before.length + 1;
+};
 
 describe('the regular expressions of core-functions', () => {
   const found = enumerate();
@@ -1063,5 +1231,67 @@ describe('the regular expressions of core-functions', () => {
   it('lists every site named like a pattern method that holds no pattern, both ways', () => {
     expect(found.unlisted.map(siteKey).sort()).toStrictEqual(NOT_PATTERNS.map(siteKey).sort());
     for (const entry of NOT_PATTERNS) expect(entry.is.length, siteKey(entry)).toBeGreaterThan(10);
+  });
+
+  it('reads cases of its own as its header states', () => {
+    const own = enumerate(
+      Object.fromEntries(
+        Object.entries(SELF_TEST).map(([name, lines]) => [name, lines.join('\n')]),
+      ),
+    );
+    expect(own.diagnostics).toStrictEqual([]);
+    expect(own.modules).toStrictEqual([
+      'self-test/by-name.ts',
+      'self-test/compile.ts',
+      'self-test/imports-a-spec.ts',
+      'self-test/keys.ts',
+      'self-test/same-line.ts',
+    ]);
+    // A construction from a literal with flags keys as the pattern it compiles; one reached by a
+    // property named `RegExp` is a construction whatever the property's type.
+    expect(own.origins.map((origin) => `${origin.module} ${origin.key}`).sort()).toStrictEqual(
+      [
+        'self-test/compile.ts /a/',
+        'self-test/keys.ts /[a-z]+/i',
+        'self-test/keys.ts /[a-z]+/i',
+        'self-test/keys.ts /\\s+/gu',
+        'self-test/keys.ts /\\s+/u',
+        'self-test/keys.ts /x+/',
+      ].sort(),
+    );
+    expect([...own.problems].sort()).toStrictEqual(
+      [
+        'the RegExp constructor used as a value: self-test/by-name.ts:1 Pattern = globalThis.RegExp',
+        'Function, which runs code by name: self-test/by-name.ts:2 make = globalThis.Function',
+        "eval, which runs code by name: self-test/by-name.ts:3 run = globalThis['eval']",
+        "a pattern recompiled at run time (RegExp.prototype.compile): self-test/compile.ts:7 /a/.compile('b')",
+        'a spec file a module imports: core-functions/src/self-test/tail.spec.ts',
+      ].sort(),
+    );
+    // A `compile` declared in the module is a site to list; two sites on one line are two keys.
+    expect(own.unlisted.map(siteKey).sort()).toStrictEqual(
+      [
+        {
+          module: 'self-test/compile.ts',
+          line: 6,
+          column: columnAfter('compile.ts', 6, 'FailureTable().'),
+          name: 'compile',
+        },
+        {
+          module: 'self-test/same-line.ts',
+          line: 3,
+          column: columnAfter('same-line.ts', 3, 'first.'),
+          name: 'test',
+        },
+        {
+          module: 'self-test/same-line.ts',
+          line: 3,
+          column: columnAfter('same-line.ts', 3, 'second.'),
+          name: 'test',
+        },
+      ]
+        .map(siteKey)
+        .sort(),
+    );
   });
 });
