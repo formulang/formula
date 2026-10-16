@@ -598,8 +598,9 @@ parser follows them; see **Modes** under [Conventions](#conventions)):
   runtime's ICU data, so a runtime that upgrades ICU can answer differently;
   the other modes do not depend on ICU.
 - `"pattern"` — every non-empty match of the regular expression in `option`,
-  written raw or as `/pattern/flags` with flags from `imsu` (`g` is implied).
-  The pattern is compiled under the safety rules of
+  written raw or as `/pattern/flags` with flags from `imsu`; `g` is implied,
+  and any other flag, `g` itself included, returns `null` with a `REGEX`
+  warning. The pattern is compiled under the safety rules of
   [MATCH_EXPRESSION](#match_expression), including the 8,000-character input
   limit; those rules do not bound the time a pattern they accept takes
   (**Work**, below).

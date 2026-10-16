@@ -68,6 +68,17 @@ describe('Phrase matching', () => {
       expect(await evalOk('CONTAINS_ANY("homeowner and owner"; LIST("owner"); "word")')).toBe(true);
     });
 
+    it('counts letters, marks and numbers as word characters in word mode, and nothing else', async () => {
+      expect(await evalOk('CONTAINS_ANY("owner1"; LIST("owner"); "word")')).toBe(false);
+      expect(
+        await evalOk('CONTAINS_ANY(value; LIST("owner"); "word")', { value: 'owner\u0301' }),
+      ).toBe(false);
+      expect(await evalOk('CONTAINS_ANY("(owner)_"; LIST("owner"); "word")')).toBe(true);
+      expect(
+        await evalOk('CONTAINS_ANY(value; LIST("owner"); "word")', { value: '\u00A0owner\u2019s' }),
+      ).toBe(true);
+    });
+
     it('finds a word phrase in a run of one letter, which holds it at every position', async () => {
       // Every occurrence but none as a whole word, then one as a whole word after a space.
       const value = 'a'.repeat(4_000);
@@ -215,6 +226,42 @@ describe('Phrase matching', () => {
       expect(
         await evalOk('MISSING_FROM(LIST("don\'t"); value; "loose")', { value: 'I DON\u2019T' }),
       ).toStrictEqual([]);
+    });
+
+    it('folds each documented quote and dash in loose mode, and no other character', async () => {
+      const options = { setup: withOther };
+      const missing = (normalise: string, text: string, item: string) =>
+        evalOk(
+          `MISSING_FROM(other; value; "${normalise}")`,
+          { value: text, other: [item] },
+          options,
+        );
+      const folds: Array<[string, string]> = [
+        ["'", '\u2018\u2019\u201a\u201b\u2039\u203a'],
+        ['"', '\u201c\u201d\u201e\u201f\u00ab\u00bb'],
+        ['-', '\u2010\u2011\u2012\u2013\u2014\u2015\u2212'],
+      ];
+      for (const [plain, typographic] of folds) {
+        for (const char of typographic) {
+          const name = `U+${char.codePointAt(0)?.toString(16).toUpperCase()}`;
+          expect(await missing('loose', `x${char}y`, `x${plain}y`), name).toStrictEqual([]);
+          expect(await missing('exact', `x${char}y`, `x${plain}y`), name).toStrictEqual([
+            `x${plain}y`,
+          ]);
+        }
+      }
+      // Look-alikes outside the table stay as they are.
+      for (const [plain, char] of [
+        ["'", '\uff07'],
+        ["'", '\u2032'],
+        ['"', '\uff02'],
+        ['-', '\ufe58'],
+        ['-', '\u2e3a'],
+      ]) {
+        expect(await missing('loose', `x${char}y`, `x${plain}y`), char).toStrictEqual([
+          `x${plain}y`,
+        ]);
+      }
     });
 
     it('keeps the listed order and skips empty items', async () => {

@@ -88,6 +88,36 @@ describe('Text segmentation', () => {
       ).toStrictEqual(['Don\u2019t', 'E-Mail-Adresse']);
     });
 
+    it.each([
+      ['an apostrophe', "'"],
+      ['a right single quotation mark (U+2019)', '\u2019'],
+      ['a hyphen-minus', '-'],
+      ['a hyphen (U+2010)', '\u2010'],
+      ['a non-breaking hyphen (U+2011)', '\u2011'],
+      ['a soft hyphen (U+00AD)', '\u00ad'],
+    ])('joins two runs on %s, and only between two runs', async (_name, joiner) => {
+      const value = `a${joiner}b x${joiner} ${joiner}y p${joiner}${joiner}q`;
+      expect(await evalOk('WORDS(value; "letters")', { value })).toStrictEqual([
+        `a${joiner}b`,
+        'x',
+        'y',
+        'p',
+        'q',
+      ]);
+    });
+
+    it('joins on no other character, and on . or , only between two digits', async () => {
+      for (const other of ['\u2012', '\u2013', '\u2014', ':', '_', '/', '\u00b7']) {
+        expect(
+          await evalOk('WORDS(value; "letters")', { value: `a${other}b` }),
+          other,
+        ).toStrictEqual(['a', 'b']);
+      }
+      expect(
+        await evalOk('WORDS(value; "letters")', { value: '3.5 3,5 1.2.3 a.b 3.a a,3' }),
+      ).toStrictEqual(['3.5', '3,5', '1.2.3', 'a', 'b', '3', 'a', 'a', '3']);
+    });
+
     it('segments with Intl.Segmenter in locale mode', async () => {
       expect(await evalOk('WORDS("Kund:innen"; "locale"; "de")')).toStrictEqual(['Kund:innen']);
       expect(await evalOk('WORD_COUNT("Don\'t"; "locale"; "en")')).toBe(1);
@@ -142,6 +172,24 @@ describe('Text segmentation', () => {
       expect(
         await errorCodes('WORD_COUNT(value; "pattern"; "a")', { value: 'a'.repeat(8_001) }),
       ).toContain(FormulaErrorCodes.REGEX_INPUT_TOO_LONG);
+    });
+
+    it('admits the pattern flags i, m, s and u, and refuses every other flag', async () => {
+      const words = (value: string, pattern: string) =>
+        evalOk(`WORDS(value; "pattern"; "${pattern}")`, { value });
+      expect(await words('a\nB', '/^[a-z]/imsu')).toStrictEqual(['a', 'B']);
+      expect(await words('a\nb', '/^[a-z]/m')).toStrictEqual(['a', 'b']);
+      expect(await words('a\nb', '/^[a-z]/')).toStrictEqual(['a']);
+      expect(await words('a\nb', '/a.b/s')).toStrictEqual(['a\nb']);
+      expect(await words('a\nb', '/a.b/')).toStrictEqual([]);
+      expect(await words('\u{1F600}', '/./u')).toStrictEqual(['\u{1F600}']);
+      expect(await words('\u{1F600}', '/./')).toStrictEqual(['\uD83D', '\uDE00']);
+      for (const flags of ['g', 'y', 'd', 'v', 'x', 'iy']) {
+        expect(await warningCodes(`WORDS("ab"; "pattern"; "/ab/${flags}")`), flags).toStrictEqual({
+          value: null,
+          codes: ['REGEX'],
+        });
+      }
     });
 
     it('bounds the WORDS list but counts past the bound', async () => {
@@ -275,6 +323,35 @@ describe('Text segmentation', () => {
         'Hello.',
         'World',
       ]);
+    });
+
+    it('ends a sentence at each terminator, the full-width ones in terminators mode only', async () => {
+      const sentences = (mode: string, value: string) =>
+        evalOk(`SENTENCES(value; "${mode}")`, { value });
+      for (const terminator of ['.', '!', '?']) {
+        for (const mode of ['punctuation', 'terminators']) {
+          expect(await sentences(mode, `a${terminator} b`), `${mode} ${terminator}`).toStrictEqual([
+            `a${terminator}`,
+            'b',
+          ]);
+        }
+      }
+      for (const terminator of ['\u3002', '\uFF01', '\uFF1F']) {
+        expect(await sentences('terminators', `a${terminator} b`), terminator).toStrictEqual([
+          `a${terminator}`,
+          'b',
+        ]);
+        expect(await sentences('punctuation', `a${terminator} b`), terminator).toStrictEqual([
+          `a${terminator} b`,
+        ]);
+      }
+      for (const other of ['\u2026', ';', ':']) {
+        for (const mode of ['punctuation', 'terminators']) {
+          expect(await sentences(mode, `a${other} b`), `${mode} ${other}`).toStrictEqual([
+            `a${other} b`,
+          ]);
+        }
+      }
     });
 
     it('never ends a sentence inside or at the end of a keep token', async () => {
