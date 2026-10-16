@@ -13,7 +13,7 @@ import {
   typeWarning,
 } from './argument-readers';
 import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
-import { someOccurrence } from './text-search';
+import { contains, someOccurrence } from './text-search';
 
 /** How `FIRST_CONTAINED` and `CONTAINS_ANY` match a phrase. */
 export type PhraseMatchMode = 'substring' | 'word';
@@ -76,8 +76,8 @@ function containsAsWord(text: string, phrase: string): boolean {
 }
 
 /**
- * The first phrase, in list order, that the text contains; `null` when none does: one native
- * substring search per phrase, or one `"word"` search per phrase.
+ * The first phrase, in list order, that the text contains; `null` when none does: one substring
+ * search or one `"word"` search per phrase, each linear in the lengths of the text and the phrase.
  */
 function firstContained(
   text: string,
@@ -88,7 +88,7 @@ function firstContained(
   const haystack = ignoreCase ? text.toLowerCase() : text;
   for (const phrase of phrases) {
     const needle = ignoreCase ? phrase.toLowerCase() : phrase;
-    const found = match === 'word' ? containsAsWord(haystack, needle) : haystack.includes(needle);
+    const found = match === 'word' ? containsAsWord(haystack, needle) : contains(haystack, needle);
     if (found) return phrase;
   }
   return null;
@@ -178,7 +178,7 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
     const haystack = normalise(text, mode);
     const missing = items.filter((item) => {
       const needle = normalise(item, mode);
-      return needle.length > 0 && !haystack.includes(needle);
+      return needle.length > 0 && !contains(haystack, needle);
     });
     return makeOkList('MISSING_FROM', missing);
   }

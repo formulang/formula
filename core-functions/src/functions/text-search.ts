@@ -38,3 +38,22 @@ export function someOccurrence(
   }
   return false;
 }
+
+/**
+ * The longest needle {@link contains} gives to the runtime's own substring search. V8 builds its
+ * Boyer-Moore tables over a needle's last 250 code units only; a longer needle whose mismatch lies
+ * before them is compared afresh at almost every position, in time proportional to the text's
+ * length times the needle's.
+ */
+const NATIVE_SEARCH_LIMIT = 250;
+
+/**
+ * Whether `needle` occurs in `text`, as `text.includes(needle)` answers (an empty needle occurs
+ * everywhere), in time linear in the lengths of the text and the needle. A needle of at most 250
+ * code units goes to the runtime's own search, whose tables in V8 then cover the whole needle; a
+ * longer one to {@link someOccurrence}.
+ */
+export function contains(text: string, needle: string): boolean {
+  if (needle.length <= NATIVE_SEARCH_LIMIT) return text.includes(needle);
+  return someOccurrence(text, needle, () => true);
+}

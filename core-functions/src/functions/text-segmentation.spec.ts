@@ -377,6 +377,30 @@ describe('Text segmentation', () => {
       expect(await evalOk('LINES(value)', { value: null })).toBe(null);
     });
 
+    it('counts the lines LINES returns, for every break and both modes', async () => {
+      const samples = [
+        '',
+        '\n',
+        'a',
+        'a\n',
+        '\n\na',
+        'a\r\n\r\n',
+        ' \n\t\nb\r',
+        'a\u2028\u2029b\u0085',
+      ];
+      for (const value of samples) {
+        for (const mode of ['non-blank', 'all']) {
+          const lines = (await evalOk(`LINES(value; "${mode}")`, { value })) as string[];
+          expect(
+            await evalOk(`LINE_COUNT(value; "${mode}")`, { value }),
+            JSON.stringify(value),
+          ).toBe(lines.length);
+        }
+      }
+      expect(await evalOk('LINES(value; "all")', { value: '\n\na' })).toStrictEqual(['', '', 'a']);
+      expect(await evalOk('LINES(value; "all")', { value: 'a\r\n\r\n' })).toStrictEqual(['a', '']);
+    });
+
     it('bounds the line list', async () => {
       const { res } = await evalFormula(
         'LINES(value)',

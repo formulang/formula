@@ -1,4 +1,4 @@
-import { someOccurrence } from './text-search';
+import { contains, someOccurrence } from './text-search';
 
 /** Every start of `needle` in `text`, as restarting `indexOf` after each occurrence finds them. */
 function indexOfOccurrences(text: string, needle: string): number[] {
@@ -68,5 +68,33 @@ describe('someOccurrence', () => {
       expect(occurrences(text, needle), name).toStrictEqual(indexOfOccurrences(text, needle));
     }
     expect(occurrences('a'.repeat(2_000), 'a'.repeat(1_000))).toHaveLength(1_001);
+  });
+});
+
+describe('contains', () => {
+  it('answers as includes does, for needles either side of 250 code units', () => {
+    expect(contains('abc', '')).toBe(true);
+    expect(contains('', '')).toBe(true);
+    expect(contains('ab', 'abc')).toBe(false);
+    const random = generator(11);
+    const pick = (alphabet: string, length: number) =>
+      Array.from({ length }, () => alphabet[Math.floor(random() * alphabet.length)]).join('');
+    for (let round = 0; round < 400; round += 1) {
+      // A text that holds the needle about half the time, with near misses around it.
+      const length = 240 + Math.floor(random() * 30);
+      const needle = pick('ab', length);
+      const nearMiss = `${needle.slice(0, 1) === 'a' ? 'b' : 'a'}${needle.slice(1)}`;
+      const text =
+        pick('ab', Math.floor(random() * 300)) +
+        (round % 2 === 0 ? needle : nearMiss) +
+        pick('ab', Math.floor(random() * 300));
+      expect(contains(text, needle), `round ${round}`).toBe(text.includes(needle));
+    }
+    // The shapes V8's own search reads slowly past 250 code units: the mismatch at the start.
+    for (const length of [249, 250, 251, 252, 300, 8_000]) {
+      const needle = `ab${'a'.repeat(length - 2)}`;
+      expect(contains('a'.repeat(20_000), needle), String(length)).toBe(false);
+      expect(contains(`${'a'.repeat(20_000)}${needle}a`, needle), String(length)).toBe(true);
+    }
   });
 });

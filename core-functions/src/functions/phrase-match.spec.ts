@@ -88,6 +88,49 @@ describe('Phrase matching', () => {
       ).toBe(false);
     });
 
+    it('finds a long phrase only where it occurs, its mismatch at its start', async () => {
+      // Either side of the 250 code units the runtime's own substring search covers.
+      const options = { setup: withOther };
+      const text = 'a'.repeat(4_000);
+      for (const length of [250, 251, 300, 2_000]) {
+        const phrase = `ab${'a'.repeat(length - 2)}`;
+        for (const name of ['FIRST_CONTAINED', 'CONTAINS_ANY']) {
+          const found = name === 'CONTAINS_ANY' ? true : phrase;
+          const missing = name === 'CONTAINS_ANY' ? false : null;
+          const source = `${name}(value; other)`;
+          expect(await evalOk(source, { value: text, other: [phrase] }, options), name).toBe(
+            missing,
+          );
+          expect(
+            await evalOk(source, { value: `${text}${phrase}${text}`, other: [phrase] }, options),
+            name,
+          ).toBe(found);
+          expect(
+            await evalOk(
+              `${name}(value; other; "substring"; TRUE)`,
+              { value: `${text}${phrase.toUpperCase()}`, other: [phrase] },
+              options,
+            ),
+            name,
+          ).toBe(found);
+        }
+        expect(
+          await evalOk(
+            'MISSING_FROM(other; value; "exact")',
+            { value: text, other: [phrase] },
+            options,
+          ),
+        ).toStrictEqual([phrase]);
+        expect(
+          await evalOk(
+            'MISSING_FROM(other; value; "loose")',
+            { value: `${text}${phrase.toUpperCase()}`, other: [phrase] },
+            options,
+          ),
+        ).toStrictEqual([]);
+      }
+    });
+
     it('treats an empty list as no match and skips empty phrases', async () => {
       expect(await evalOk('FIRST_CONTAINED("abc"; LIST())')).toBe(null);
       expect(await evalOk('CONTAINS_ANY("abc"; LIST())')).toBe(false);

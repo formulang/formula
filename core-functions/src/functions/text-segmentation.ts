@@ -71,7 +71,7 @@ const TERMINATOR_RUN = /[.!?\u3002\uFF01\uFF1F]+/gu;
 const SENTENCE_CONTENT = /[^\s.!?\u3002\uFF01\uFF1F]/u;
 
 /** The Unicode mandatory line breaks; `\r\n` is one break. */
-const LINE_BREAK = /\r\n|[\n\r\u000B\u000C\u0085\u2028\u2029]/u;
+const LINE_BREAK = /\r\n|[\n\r\u000B\u000C\u0085\u2028\u2029]/gu;
 
 /** `pattern` mode admits the flags `MATCH_EXPRESSION` admits; `g` is implied. */
 const PATTERN_FLAGS = /^[imsu]*$/;
@@ -248,11 +248,19 @@ function sentencePieces(text: string, mode: SentenceSplitMode, keep: readonly st
   return pieces;
 }
 
-function splitLines(text: string, mode: LineSplitMode): string[] {
-  const lines = text.split(LINE_BREAK);
-  // A final line break ends the last line rather than starting an empty one.
-  if (lines[lines.length - 1] === '') lines.pop();
-  return mode === 'all' ? lines : lines.filter((line) => line.trim().length > 0);
+/**
+ * The lines of `text`, one at a time; `non-blank` passes over a line of whitespace only. A final
+ * line break ends the last line rather than starting an empty one.
+ */
+function* linesOf(text: string, mode: LineSplitMode): Generator<string> {
+  let start = 0;
+  for (const match of text.matchAll(LINE_BREAK)) {
+    const line = text.slice(start, match.index);
+    if (mode === 'all' || line.trim().length > 0) yield line;
+    start = match.index + match[0].length;
+  }
+  const last = text.slice(start);
+  if (last.length > 0 && (mode === 'all' || last.trim().length > 0)) yield last;
 }
 
 /**
@@ -444,7 +452,7 @@ export class LinesImplementation extends AbstractEagerBatchImplementation {
     if (typeof text !== 'string') return text;
     const mode = readOptionalMode('LINES', 'mode', args[1], LINE_SPLIT_MODES);
     if (typeof mode !== 'string') return mode;
-    return makeOkList('LINES', boundedListResult(splitLines(text, mode), ctx.limits));
+    return makeOkList('LINES', boundedListResult([...linesOf(text, mode)], ctx.limits));
   }
 }
 
@@ -462,6 +470,6 @@ export class LineCountImplementation extends AbstractEagerBatchImplementation {
     if (typeof text !== 'string') return text;
     const mode = readOptionalMode('LINE_COUNT', 'mode', args[1], LINE_SPLIT_MODES);
     if (typeof mode !== 'string') return mode;
-    return makeOkNumber('LINE_COUNT', splitLines(text, mode).length);
+    return makeOkNumber('LINE_COUNT', countOf(linesOf(text, mode)));
   }
 }
