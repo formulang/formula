@@ -637,68 +637,47 @@ and what bounds the input:
 
 | Function                                       | Work                                                                                                                                                                               | Bounded by                                                                                                                                          |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one listed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                      | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules and the text at most `maxRegexTextLength` (8,000), which do not bound the time (below) |
-| `SENTENCES`                                    | one listed expression over the text, and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                                          | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
-| `LINES`, `LINE_COUNT`                          | one split at a listed expression                                                                                                                                                   | `LINES`: the result at most `maxWildcardOutputLength`                                                                                               |
+| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one fixed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                       | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules and the text at most `maxRegexTextLength` (8,000), which do not bound the time (below) |
+| `SENTENCES`                                    | one fixed expression over the text, and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                                           | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
+| `LINES`, `LINE_COUNT`                          | one split at a fixed expression                                                                                                                                                    | `LINES`: the result at most `maxWildcardOutputLength`                                                                                               |
 | `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, one native substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`): the text's length times the number of phrases in the worst case | `phrases` at most `maxListLength`                                                                                                                   |
 | `MISSING_FROM`                                 | the text normalised once, then per item one native substring search: the text's length times the number of items in the worst case                                                 | `items` at most `maxListLength`                                                                                                                     |
-| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and listed expressions on each piece of text                                                         | the length of `markup`                                                                                                                              |
-| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, listed expressions on each, then one scan of each block's inline text                                                                                     | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
+| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and fixed expressions on each piece of text                                                          | the length of `markup`                                                                                                                              |
+| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, fixed expressions on each, then one scan of each block's inline text                                                                                      | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
 
 This is read from the code: it is what the code claims for its own loops and
-for how often it runs each pattern, and no spec measures the time or the work
-of these functions; nothing checks the complexity of a loop. What a spec checks
-is which regular expressions compile: every one that
-`@formulang/core-functions` compiles is listed, with how it reads its input, in
-`core-functions/src/functions/regex-roster.spec.ts`. The list is a maintainer's
-guard against a pattern added, changed or removed without its listing; the
-project's review owns code written to slip past it. Each listing says how its
-pattern reads its input, so a pattern a formula can drive past the limits is in
-view: [SECURITY.md](../SECURITY.md) counts bypassing resource limits as a
-vulnerability.
+for the patterns it runs, and review owns those claims. No spec measures the
+time or the work of these functions, and none checks the complexity of a loop
+or of a pattern.
 
-The spec reads every module of the package with the TypeScript type checker:
-every regular expression literal; every construction, a call or `new` by the
-name `RegExp`, keyed by what it writes — its pattern and flags folded through
-string and template literals, `+`, `String.raw`, conditionals (a key per
-branch), constants and imports, so that one written in full is keyed as a
-literal, and one with parts a value fills by the function that builds it and
-its text, each such part a hole named by its source; every site named like a
-method that compiles or runs a pattern (`match`, `matchAll`, `search`,
-`replace`, `replaceAll`, `split`, `test`, `exec`, `compile`, or the `Symbol`
-key of one), on any receiver, with each pattern a call runs followed to where
-it comes from; every other reference by the name `RegExp`, `eval`, `Function`
-or `Reflect`, and every `prototype` of `String`, `RegExp` or `Function`; and
-every receiver of a site so named, and every callee, that the checker types
-`any` or `unknown`. A declaration so named is no reference, and a member so
-named on a receiver declared in the repository is a site to list. The spec
-fails on a pattern the list leaves out, on a listed one that is gone or
-changed, and on a site it cannot classify; a site so named that holds no
-pattern is listed by module, line, column and name, and the spec's own cases
-check each of these rules. It does not decide a spelling that hides the
-construct from the type checker (a value made callable through a type
-annotation or a type predicate, an alias typed with its own construct
-signature, code run by any other route such as `node:vm`), what a value
-filling a hole holds, or code outside the package's `src`: a pattern value
-that comes from another package is reported as such, but a helper there that
-compiles a pattern itself, such as one `@formulang/definitions` exports, is not
-read. Review owns those, as it owns the loops.
+Four patterns of 1.0.0 code read their input in more than linear time. Each was
+measured on Node 22.23.3, as the best of three runs on an input built against
+it:
 
-Four listed patterns of 1.0.0 code read their input in more than linear time,
-measured on Node 22.23.3. Two read the formula's own pattern after its length
-check (`maxRegexPatternLength`, 100 by default): the nested-quantifier checks
-`\([^)]*[+*{][^)]*\)[+*{]` and `\([^)]*\|[^)]*\)[+*{]` are cubic in the
-pattern's length, 0.07 ms at 100 code units and 20 ms at 800. The formula's own
-pattern, which the regex functions and the `"pattern"` mode compile through
-1.0.0's `compileSafeRegex`, inherits its rules and their gap: a pattern they
-accept can take polynomial time, and the input limit does not bound it —
-`WORD_COUNT(value; "pattern"; "\\s*\\s*!")` over 8,000 spaces, within the
-default limits, works for minutes (216 seconds) before the wall-time limit,
-which is read when the call returns, reports it. And `ISURL`'s check of a
-`mailto:` address, `^[^\s@]+@[^\s@]+\.[^\s@]+$`, is quadratic in the address
-after `@`, which `ISURL` does not bound: 125 ms at 16,000 code units. The split
-of `/source/flags`, `^\/(.*)\/([a-z]*)$`, is linear: 2.9 ms at 640,000 code
-units.
+- `regex.ts`'s nested-quantifier check, `\([^)]*[+*{][^)]*\)[+*{]`, on `(+`
+  repeated: 0.06 ms at 100 code units, 19 ms at 800. It is cubic in the length
+  of the formula's own pattern, which it reads after the length check
+  (`maxRegexPatternLength`, 100 by default).
+- The alternation check beside it, `\([^)]*\|[^)]*\)[+*{]`, on `(|` repeated:
+  0.05 ms at 100 code units, 17 ms at 800; cubic in the same way.
+- The formula's own pattern, which the regex functions and the `"pattern"`
+  mode compile through 1.0.0's `compileSafeRegex`, inherits its rules and
+  their gap: a pattern they accept can take polynomial time, and
+  `maxRegexTextLength` (8,000) does not bound it.
+  `WORD_COUNT(value; "pattern"; "\\s*\\s*!")` on a run of spaces, under the
+  default limits, takes 0.14 s at 1,000 spaces, 1.1 s at 2,000 and 8.9 s at
+  4,000, and 76 s at 8,000 (one run). The function wall-time limit,
+  `maxFunctionWallTimeMs` (10 s), is read when the call returns, so it reports
+  such a call only after the call has run.
+- `ISURL`'s check of a `mailto:` address, `^[^\s@]+@[^\s@]+\.[^\s@]+$`, on `a@`
+  followed by a run of dots and `@`, which no split fits: 2.5 ms at 2,000 code
+  units, 162 ms at 16,000. It is quadratic in the address, which `ISURL` does
+  not bound: a literal carries at most `maxStringLiteralLength` (8,000) code
+  units, but two literals joined with `&`, a variable's value or a `JOIN`
+  carry more.
+
+The split of `/source/flags`, `^\/(.*)\/([a-z]*)$`, is linear: 2.6 ms at
+640,000 code units.
 
 ### CONCAT
 

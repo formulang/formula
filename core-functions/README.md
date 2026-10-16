@@ -181,18 +181,11 @@ safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
 [docs/functions.md](../docs/functions.md#text) (_Text_, **Work**) gives, for
 each text function, the work it does on its input, read from its code, and
 the limits that bound the input. That cost is what the code claims for its own
-loops and for how often it runs each pattern; no spec checks it, and nothing
-checks the complexity of a loop. What a spec checks is which regular
-expressions compile: `src/functions/regex-roster.spec.ts` lists every one this
-package compiles, with how it reads its input, keyed by what its construction
-writes, and fails when a pattern is added, changed or removed without its
-listing. The list is a maintainer's guard; the project's review owns code
-written to slip past it. Each listing says how its pattern reads its input, so
-a pattern a formula can drive past the limits is in view:
-[SECURITY.md](../SECURITY.md) counts bypassing resource limits as a
-vulnerability. `docs/functions.md` states what the spec reads, the spellings it
-does not decide, and the four listed patterns that read their input in more
-than linear time.
+loops and for the patterns it runs, and review owns those claims: no spec
+checks the complexity of a loop or of a pattern. `docs/functions.md` also
+records, measured, the four patterns of 1.0.0 code that read their input in
+more than linear time, among them the formula's own pattern in `"pattern"`
+mode, which inherits the gap of 1.0.0's safe-regex rules.
 
 ## Register your own handlers
 
