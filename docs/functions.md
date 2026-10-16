@@ -601,7 +601,8 @@ parser follows them; see **Modes** under [Conventions](#conventions)):
   written raw or as `/pattern/flags` with flags from `imsu` (`g` is implied).
   The pattern is compiled under the safety rules of
   [MATCH_EXPRESSION](#match_expression), including the 8,000-character input
-  limit.
+  limit; those rules do not bound the time a pattern they accept takes
+  (**Work**, below).
 
 `option` is accepted only in the `"locale"` and `"pattern"` modes; elsewhere
 any option, the empty text `""` included, returns `null` with a `TYPE`
@@ -634,20 +635,21 @@ their occurrences overlap.
 **Work.** What each text function does with its input, read from its code,
 and what bounds the input:
 
-| Function                                       | Work                                                                                                                                                                               | Bounded by                                                                                                  |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one listed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                      | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules, the text at most `maxRegexTextLength` (8,000) |
-| `SENTENCES`                                    | one listed expression over the text, and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                                          | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                |
-| `LINES`, `LINE_COUNT`                          | one split at a listed expression                                                                                                                                                   | `LINES`: the result at most `maxWildcardOutputLength`                                                       |
-| `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, one native substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`): the text's length times the number of phrases in the worst case | `phrases` at most `maxListLength`                                                                           |
-| `MISSING_FROM`                                 | the text normalised once, then per item one native substring search: the text's length times the number of items in the worst case                                                 | `items` at most `maxListLength`                                                                             |
-| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and listed expressions on each piece of text                                                         | the length of `markup`                                                                                      |
-| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, listed expressions on each, then one scan of each block's inline text                                                                                     | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                     |
+| Function                                       | Work                                                                                                                                                                               | Bounded by                                                                                                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one listed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                      | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules and the text at most `maxRegexTextLength` (8,000), which do not bound the time (below) |
+| `SENTENCES`                                    | one listed expression over the text, and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                                          | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
+| `LINES`, `LINE_COUNT`                          | one split at a listed expression                                                                                                                                                   | `LINES`: the result at most `maxWildcardOutputLength`                                                                                               |
+| `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, one native substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`): the text's length times the number of phrases in the worst case | `phrases` at most `maxListLength`                                                                                                                   |
+| `MISSING_FROM`                                 | the text normalised once, then per item one native substring search: the text's length times the number of items in the worst case                                                 | `items` at most `maxListLength`                                                                                                                     |
+| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and listed expressions on each piece of text                                                         | the length of `markup`                                                                                                                              |
+| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, listed expressions on each, then one scan of each block's inline text                                                                                     | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
 
-This is read from the code; no spec measures the time or the work of these
-functions. What a spec checks is the list of regular expressions, where the
-super-linear risk of text code lies: every one that `@formulang/core-functions`
-compiles is listed, with how it reads its input, in
+This is read from the code: it is what the code claims for its own loops and
+for how often it runs each pattern, and no spec measures the time or the work
+of these functions; nothing checks the complexity of a loop. What a spec checks
+is which regular expressions compile: every one that
+`@formulang/core-functions` compiles is listed, with how it reads its input, in
 `core-functions/src/functions/regex-roster.spec.ts`. The spec reads every
 module with the TypeScript type checker — each literal, each `RegExp`
 construction, and every site named like a method that compiles or runs a
@@ -658,10 +660,15 @@ pattern the list leaves out, on a listed one that is gone, and on a site it
 cannot classify: a receiver typed `any` or `unknown`, a `String` or `RegExp`
 method used as a value, `compile`, a member reached by a key it cannot read. A
 site so named that holds no pattern is listed by module and line.
-Two listed patterns of 1.0.0 functions read their input in more than linear
-time: the formula's own pattern of the regex functions and of the `"pattern"`
-mode, which the text length limit bounds, and `ISURL`'s check of a `mailto:`
-address, quadratic in the address after `@`.
+Two listed patterns of 1.0.0 code read their input in more than linear time.
+The formula's own pattern, which the regex functions and the `"pattern"` mode
+compile through 1.0.0's `compileSafeRegex`, inherits its rules and their gap:
+a pattern they accept can take polynomial time, and the input limit does not
+bound it — `WORD_COUNT(value; "pattern"; "\\s*\\s*!")` over 8,000 spaces,
+within the default limits, works for minutes (216 seconds measured on Node
+22.23.3) before the wall-time limit, which is read when the call returns,
+reports it. And `ISURL`'s check of a `mailto:` address is quadratic in the
+address after `@`.
 
 ### CONCAT
 
