@@ -275,6 +275,78 @@ describe('Markup text', () => {
         'First line second line\nNext paragraph',
       );
     });
+
+    it('removes a backslash before ASCII punctuation and keeps it before anything else', async () => {
+      const punctuation = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+      expect(await markdown([...punctuation].map((char) => `\\${char}`).join(' '))).toBe(
+        [...punctuation].join(' '),
+      );
+      expect(await markdown('C:\\Users\\a1 \\ä')).toBe('C:\\Users\\a1 \\ä');
+      // At the end of a paragraph line, a backslash is a hard line break, and is dropped.
+      expect(await markdown('a\\\nb')).toBe('a b');
+    });
+
+    it('pairs a run of backticks with the next run of as many', async () => {
+      expect(await markdown('``a`b``')).toBe('a`b');
+      expect(await markdown('`` `x` ``')).toBe('`x`');
+      expect(await markdown('a ` b')).toBe('a ` b');
+    });
+
+    it('removes a closing emphasis run with the nearest opening run of its character', async () => {
+      // Whatever their lengths.
+      expect(await markdown('*a** and __b_')).toBe('a and b');
+      // The runs of the other character opened between the two pair no more.
+      expect(await markdown('*a _b* c_')).toBe('a _b c_');
+    });
+
+    it('reads links with one level of nested brackets and parentheses, within bounds', async () => {
+      expect(await markdown('[see [the docs] here](https://x)')).toBe('see [the docs] here');
+      expect(await markdown('[a](https://x/(1)) b')).toBe('a b');
+      expect(await markdown('[a](u "title")')).toBe('a');
+      // Only inline links: a reference link and its definition stay as written.
+      expect(await markdown('[text][ref]\n\n[ref]: https://x')).toBe(
+        '[text][ref]\n[ref]: https://x',
+      );
+      // A backslash-escaped bracket is a bracket all the same: this is no link.
+      expect(await markdown('[a\\]b](u)')).toBe('[a]b](u)');
+      const a = (count: number) => 'a'.repeat(count);
+      const linked: Array<[string, string]> = [
+        [`[${a(1_000)}](u)`, a(1_000)],
+        [`[x [${a(500)}] y](u)`, `x [${a(500)}] y`],
+        [`[a](${a(2_000)})`, 'a'],
+        [`[a](u(${a(500)}))`, 'a'],
+      ];
+      for (const [source, text] of linked) {
+        expect(await markdown(source), source.slice(0, 12)).toBe(text);
+      }
+      for (const source of [
+        `[${a(1_001)}](u)`,
+        `[x [${a(501)}] y](u)`,
+        `[a](${a(2_001)})`,
+        `[a](u(${a(501)}))`,
+      ]) {
+        expect(await markdown(source), source.slice(0, 12)).toBe(source);
+      }
+    });
+
+    it('reads autolinks with a scheme of 2 to 32 characters, and email autolinks', async () => {
+      expect(await markdown('<ab:c> <a1+.-:x> <name@host.de>')).toBe('ab:c a1+.-:x name@host.de');
+      expect(await markdown('<a:b> <1b:c> <ab:c d> <a@b@c>')).toBe('<a:b> <1b:c> <ab:c d> <a@b@c>');
+      const scheme = 'a'.repeat(32);
+      expect(await markdown(`<${scheme}:x>`)).toBe(`${scheme}:x`);
+      expect(await markdown(`<${scheme}a:x>`)).toBe(`<${scheme}a:x>`);
+      const rest = 'x'.repeat(2_000);
+      expect(await markdown(`<ab:${rest}>`)).toBe(`ab:${rest}`);
+      expect(await markdown(`<ab:${rest}x>`)).toBe(`<ab:${rest}x>`);
+      const side = 'a'.repeat(256);
+      expect(await markdown(`<${side}@${side}>`)).toBe(`${side}@${side}`);
+      expect(await markdown(`<${side}a@b>`)).toBe(`<${side}a@b>`);
+      expect(await markdown(`<b@${side}a>`)).toBe(`<b@${side}a>`);
+    });
+
+    it('keeps HTML tags and character references as written', async () => {
+      expect(await markdown('<b>x</b> <br> A &amp; B &#65;')).toBe('<b>x</b> <br> A &amp; B &#65;');
+    });
   });
 
   describe('MARKDOWN_BLOCKS', () => {
@@ -356,6 +428,107 @@ describe('Markup text', () => {
     it('needs a delimiter row to recognise a table', async () => {
       expect(await blocks('a | b\nc | d', 'table-row')).toStrictEqual([]);
       expect(await blocks('a | b\nc | d', 'paragraph')).toStrictEqual(['a | b c | d']);
+    });
+
+    it('reads ATX headings of one to six #s after at most three spaces', async () => {
+      const levels = '# 1\n## 2\n### 3\n#### 4\n##### 5\n###### 6\n####### 7';
+      for (const level of [1, 2, 3, 4, 5, 6]) {
+        expect(await blocks(levels, `heading-${level}`)).toStrictEqual([String(level)]);
+      }
+      expect(await blocks(levels, 'heading')).toStrictEqual(['1', '2', '3', '4', '5', '6']);
+      expect(await blocks(levels, 'paragraph')).toStrictEqual(['####### 7']);
+      // A space, a tab or the end of the line follows the #s; # alone is an empty heading.
+      expect(await blocks('#x\n\n#\tx\n\n#', 'heading')).toStrictEqual(['x', '']);
+      expect(await blocks('#x\n\n#\tx\n\n#', 'paragraph')).toStrictEqual(['#x']);
+      expect(await blocks('   # x', 'heading')).toStrictEqual(['x']);
+      expect(await blocks('    # x', 'heading')).toStrictEqual([]);
+      expect(await blocks('    # x', 'paragraph')).toStrictEqual(['# x']);
+      // A closing run of #s counts only after a space or a tab.
+      expect(await blocks('# C#\n# x ##\n### ###\n# x \\#', 'heading')).toStrictEqual([
+        'C#',
+        'x',
+        '',
+        'x #',
+      ]);
+    });
+
+    it('reads quote markers after at most three spaces, nested ones included', async () => {
+      expect(await blocks('   > x', 'paragraph')).toStrictEqual(['x']);
+      expect(await blocks('    > x', 'paragraph')).toStrictEqual(['> x']);
+      expect(await blocks('>x', 'paragraph')).toStrictEqual(['x']);
+      expect(await blocks('> > ## x', 'heading')).toStrictEqual(['x']);
+      // One space after `>` belongs to the marker; the rest to the line.
+      expect(await blocks('> ```\n>   code\n> ```', 'code')).toStrictEqual(['  code']);
+    });
+
+    it('reads a fence of three or more backticks or tildes, closed by as many of the same', async () => {
+      expect(await blocks('``\ncode\n``', 'code')).toStrictEqual([]);
+      expect(await blocks('``\ncode\n``', 'paragraph')).toStrictEqual(['code']);
+      expect(await blocks('````\na\n```\nb\n````', 'code')).toStrictEqual(['a\n```\nb']);
+      expect(await blocks('```\na\n~~~\n```', 'code')).toStrictEqual(['a\n~~~']);
+      expect(await blocks('```\na\n``` x\n```', 'code')).toStrictEqual(['a\n``` x']);
+      // A backtick fence's info string holds no backtick; a tilde fence's may.
+      expect(await blocks('```a`b', 'code')).toStrictEqual([]);
+      expect(await blocks('```a`b', 'paragraph')).toStrictEqual(['```a`b']);
+      expect(await blocks('~~~ a`b\nx\n~~~', 'code')).toStrictEqual(['x']);
+      // At any indentation; the content lines lose up to as many spaces as the fence is indented.
+      expect(await blocks('    ```\n    a\n      b\n    ```', 'code')).toStrictEqual(['a\n  b']);
+      expect(await blocks('```\na\n      ```   ', 'code')).toStrictEqual(['a']);
+      expect(await blocks('> ```\n> code\n> ```', 'code')).toStrictEqual(['code']);
+    });
+
+    it('reads a thematic break of three or more of one marker, which yields no block', async () => {
+      for (const line of ['---', '***', '___', ' - - -', '   *\t* *']) {
+        expect(await blocks(`a\n${line}\nb`, 'paragraph'), line).toStrictEqual(['a', 'b']);
+      }
+      for (const line of ['--', '**', '-*-', '    ---']) {
+        expect(await blocks(`a\n${line}\nb`, 'paragraph'), line).toStrictEqual([
+          `a ${line.trim()} b`,
+        ]);
+      }
+      expect(await blocks('* * *', 'list-item')).toStrictEqual([]);
+      // No setext headings: an underline is paragraph text or a thematic break.
+      expect(await blocks('Title\n===\nT2\n---', 'heading')).toStrictEqual([]);
+      expect(await blocks('Title\n===\nT2\n---', 'paragraph')).toStrictEqual(['Title === T2']);
+    });
+
+    it('reads a list marker of a bullet or one to nine digits, then a space, a tab or nothing', async () => {
+      expect(await blocks('123456789. x', 'list-item')).toStrictEqual(['x']);
+      expect(await blocks('1234567890. x', 'list-item')).toStrictEqual([]);
+      expect(await blocks('1234567890. x', 'paragraph')).toStrictEqual(['1234567890. x']);
+      expect(await blocks('-x\n\n1.x\n\n+ y\n\n*\tz\n\n1) w', 'list-item')).toStrictEqual([
+        'y',
+        'z',
+        'w',
+      ]);
+      expect(await blocks('-x\n\n1.x', 'paragraph')).toStrictEqual(['-x', '1.x']);
+      expect(await blocks('        - deep', 'list-item')).toStrictEqual(['deep']);
+      expect(await blocks('- a\n  continued\nlazy', 'list-item')).toStrictEqual([
+        'a continued lazy',
+      ]);
+    });
+
+    it('reads a table whose delimiter row has one cell of dashes per header cell', async () => {
+      expect(await blocks('a | b\n:-- | --:', 'table-row')).toStrictEqual(['a b']);
+      expect(await blocks('a | b\n: | -', 'table-row')).toStrictEqual([]);
+      expect(await blocks('| a | b |\n|  | - |', 'table-row')).toStrictEqual([]);
+      expect(await blocks('a | b\n--- | --- | ---', 'table-row')).toStrictEqual([]);
+      expect(await blocks('| a |\n:-:', 'table-row')).toStrictEqual([]);
+      expect(await blocks('| a |\n|:-:', 'table-row')).toStrictEqual(['a']);
+      // Cells past the header's count are dropped; the table runs to a blank line or a block.
+      expect(await blocks('| a |\n|---|\n| 1 | 2 |', 'table-row')).toStrictEqual(['a', '1']);
+      expect(await blocks('| a |\n|---|\nplain\n\npara', 'table-row')).toStrictEqual([
+        'a',
+        'plain',
+      ]);
+      expect(await blocks('| a |\n|---|\n# h\nx', 'table-row')).toStrictEqual(['a']);
+    });
+
+    it('ends a line at a line feed, a carriage return or both, and reads no indented code', async () => {
+      expect(await blocks('# a\r## b\r\n### c', 'heading')).toStrictEqual(['a', 'b', 'c']);
+      expect(await blocks('# a\u2028## b', 'heading')).toStrictEqual(['a ## b']);
+      expect(await blocks('    code', 'code')).toStrictEqual([]);
+      expect(await blocks('    code', 'paragraph')).toStrictEqual(['code']);
     });
 
     it('follows the null convention, refuses an unknown kind and bounds the result', async () => {

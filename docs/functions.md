@@ -1126,7 +1126,29 @@ each line and blank lines dropped. `format` is a required literal:
   are removed; `[text](url)` becomes `text`, `![alt](url)` becomes `alt` and
   `<url>` becomes `url`. A paragraph's lines join into one line and each line
   of a fenced code block stays a line. The document is read as
-  [MARKDOWN_BLOCKS](#markdown_blocks) reads it.
+  [MARKDOWN_BLOCKS](#markdown_blocks) reads it, and its inline markup as
+  follows:
+  - a run of `*` or `_` that can close, by CommonMark's flanking rules, is
+    removed together with the nearest run of the same character before it
+    that can open, whatever their lengths, and the runs of the other character
+    opened between the two pair no more; `snake_case` and a lone `*` stay;
+  - a run of backticks pairs with the next run of as many, one space just
+    inside both ends is dropped, and a run with no partner stays;
+  - a backslash before an ASCII punctuation character (`\*`, `\{`, `\~`) is
+    removed and one before anything else stays; at the end of a paragraph line
+    (a hard line break) it is dropped;
+  - only inline links are read (`[text][ref]` and a `[ref]: url` line stay as
+    written). Link text may hold brackets nested one level deep, and a
+    destination parentheses nested one level deep, in pairs only: an escaped
+    bracket is a bracket all the same. Link text of more than 1,000
+    characters, a destination of more than 2,000 (a nested pair counting as
+    one in both) or a nested pair holding more than 500 is not read as a link;
+  - `<url>` is an autolink when its scheme has 2 to 32 characters (a letter,
+    then letters, digits, `+`, `.` or `-`) and the rest at most 2,000
+    characters, none of them whitespace, `<` or `>`; `<name@host>` is one with
+    at most 256 characters, none of them whitespace, `<`, `>` or `@`, on
+    either side of the `@`;
+  - HTML tags and character references stay as written.
 
 HTML is read in one forward scan and markdown line by line; **Work** under
 [Text](#text) gives what each costs.
@@ -1157,11 +1179,37 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 - for a paragraph, its lines joined by one space;
 - for a fenced code block, its content unchanged.
 
-The reading is a line-based subset of CommonMark with GFM tables: ATX
-headings only (no `===` or `---` underlines), fenced code only (no indented
-code blocks), list items recognised by their marker at any indentation, and
-`>` quote markers read through. The text is read line by line; **Work** under
-[Text](#text) gives what it costs.
+The reading is a line-based subset of CommonMark with GFM tables. A line ends
+at `\n`, `\r` or `\r\n` (U+2028 and U+2029 do not end one, as they do for
+`LINES`), and on each line:
+
+- `>` quote markers are read through: up to three spaces, `>` and one optional
+  space, repeated for each level of nesting;
+- an ATX heading is one to six `#`s after at most three spaces, followed by a
+  space, a tab or the end of the line: `#x` and `####### x` are paragraph
+  text, and `#` alone is an empty heading. A closing run of `#`s counts only
+  after a space or a tab (`# C#` is `C#`). There are no `===` or `---`
+  underlines;
+- a code fence is three or more backticks or tildes at any indentation, and a
+  backtick fence's info string holds no backtick. It closes at a line of at
+  least as many of the same character with only spaces or tabs around them,
+  at any indentation; its content lines lose up to as many leading spaces as
+  the opening fence is indented by, and an unclosed fence runs to the end.
+  There are no indented code blocks;
+- a thematic break is three or more of one of `-`, `*` and `_` after at most
+  three spaces, with spaces or tabs between them allowed; it ends the block
+  before it and yields no block;
+- a list item starts with `-`, `*`, `+`, or one to nine digits and `.` or `)`,
+  at any indentation, followed by a space, a tab or the end of the line (`-x`
+  is paragraph text);
+- a table starts at a row holding `|` whose next line, also holding `|`, is a
+  delimiter row with one cell per header cell, each of dashes with an optional
+  colon at either end; it runs to a blank line or the next heading, list item,
+  fence or thematic break, and a row's cells past the header's count are
+  dropped.
+
+The text is read line by line; **Work** under [Text](#text) gives what it
+costs.
 
 ```ts
 // value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'
