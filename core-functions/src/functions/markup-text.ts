@@ -142,8 +142,11 @@ const LINE_ENDING_ELEMENTS: ReadonlySet<string> = new Set([
 const ASCII_LETTER = /^[A-Za-z]$/;
 const ASCII_UPPER_CASE = /[A-Z]+/g;
 const NOT_HTML_SPACE = /[^\t\n\f\r ]/;
-const CHARACTER_REFERENCE =
-  /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g;
+/**
+ * A numeric reference of any number of digits, leading zeros included, as the HTML tokenizer
+ * reads one; a named one of at most 32 characters, the longest HTML 4 name being 8.
+ */
+const CHARACTER_REFERENCE = /&(?:#([0-9]+)|#[xX]([0-9A-Fa-f]+)|([A-Za-z][A-Za-z0-9]{1,31}));/g;
 const SOURCE_LINE_BREAK = /\r\n|\r|\n/g;
 const REPLACEMENT_CHARACTER = '\uFFFD';
 
@@ -174,6 +177,11 @@ function isHtmlSpace(char: string): boolean {
   return char === ' ' || char === '\t' || char === '\n' || char === '\f' || char === '\r';
 }
 
+/**
+ * The character a numeric reference names, as the HTML tokenizer decodes it: U+FFFD for zero, a
+ * surrogate or a value past U+10FFFF (`Infinity` for a run of digits too long for a number), the
+ * windows-1252 character for 0x80-0x9F where that encoding has one, otherwise the code point.
+ */
 function fromNumericReference(code: number): string {
   const windows1252 = WINDOWS_1252_NUMERIC_REFERENCES.get(code);
   if (windows1252 !== undefined) return windows1252;

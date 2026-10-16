@@ -1098,16 +1098,23 @@ each line and blank lines dropped. `format` is a required literal:
   cannot live in `head` (only `base`, `basefont`, `bgsound`, `link`, `meta`,
   `noframes`, `noscript`, `script`, `style`, `template` and `title` can; the
   content of `noframes`, `noscript` and `template` inside `head` is head
-  content too). `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
+  content too). The content of a dropped element ends at its end tag:
+  `</script`, in any case, followed by a space, a tab, a line feed, a carriage
+  return, a form feed, `/` or `>` (`</scripts>` does not end it).
+  `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
   `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`,
   `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`, `tr`
   and `ul` end a line where they open or close; every other tag is removed.
   Numeric character references and the 252 named references of HTML 4 are
-  decoded as browsers decode them (`&#150;` is an en dash, `&lang;` is
-  U+27E8); a reference needs its closing `;`, and unknown names stay as
-  written. Source line breaks are whitespace, except inside `pre`, where each
-  one ends a line. The result is plain text, not sanitised HTML: `&lt;b&gt;`
-  comes back as `<b>`. Tags, comments and declarations are read as the HTML
+  decoded as browsers decode them: a numeric reference may have any number of
+  digits, leading zeros included; zero, a surrogate or a value past U+10FFFF
+  is U+FFFD; 128 to 159 are the windows-1252 characters where that encoding
+  has one (`&#150;` is an en dash); and `&lang;` is U+27E8. Unlike in a
+  browser, a reference needs its closing `;`, and unknown names stay as
+  written. Source line breaks (`\n`, `\r`, `\r\n`) are whitespace, except
+  inside `pre`, where each one ends a line. The result is plain text, not
+  sanitised HTML: `&lt;b&gt;` comes back as `<b>`. Tags, comments and
+  declarations are read as the HTML
   tokenizer reads them: a quote opens an attribute value only right after
   `=`, so a `>` inside a quoted value does not end the tag, and a `<` that is
   not followed by a letter, `/`, `!` or `?` is text. Markup that ends inside

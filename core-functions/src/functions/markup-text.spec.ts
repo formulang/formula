@@ -70,6 +70,99 @@ describe('Markup text', () => {
       ).toBe('Ohne JavaScript Text');
     });
 
+    it.each([
+      'base',
+      'basefont',
+      'bgsound',
+      'link',
+      'meta',
+      'noframes',
+      'noscript',
+      'script',
+      'style',
+      'template',
+      'title',
+    ])('keeps head open at <%s>, which can live in head', async (name) => {
+      // The noscript after it is head content only while head is open.
+      expect(await html(`<head><${name}></${name}><noscript>N</noscript></head><p>Body`)).toBe(
+        'Body',
+      );
+    });
+
+    it('starts the body at an element that cannot live in head', async () => {
+      for (const name of ['span', 'p', 'div', 'img']) {
+        expect(
+          await html(`<head><${name}></${name}><noscript>N</noscript></head><p>Body`),
+          name,
+        ).toBe('N\nBody');
+      }
+    });
+
+    it.each([
+      'address',
+      'article',
+      'aside',
+      'blockquote',
+      'br',
+      'dd',
+      'div',
+      'dl',
+      'dt',
+      'figcaption',
+      'figure',
+      'footer',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'header',
+      'hr',
+      'li',
+      'main',
+      'nav',
+      'ol',
+      'p',
+      'pre',
+      'section',
+      'table',
+      'td',
+      'th',
+      'tr',
+      'ul',
+    ])('ends a line where <%s> opens and where it closes', async (name) => {
+      expect(await html(`a<${name}>b</${name}>c`)).toBe('a\nb\nc');
+    });
+
+    it('removes every other tag without ending a line', async () => {
+      for (const name of ['span', 'em', 'a', 'b', 'code', 'label', 'small']) {
+        expect(await html(`a<${name}>b</${name}>c`), name).toBe('abc');
+      }
+    });
+
+    it.each([
+      ['a space', ' '],
+      ['a tab', '\t'],
+      ['a line feed', '\n'],
+      ['a carriage return', '\r'],
+      ['a form feed', '\f'],
+      ['a slash', '/'],
+      ['the closing >', ''],
+    ])('ends the content of a dropped element at its end tag followed by %s', async (_n, after) => {
+      for (const name of ['script', 'style', 'title']) {
+        expect(await html(`<${name}>hidden</${name}${after}>shown`), name).toBe('shown');
+      }
+      for (const name of ['noframes', 'noscript', 'template']) {
+        expect(await html(`<head><${name}>hidden</${name}${after}>shown`), name).toBe('shown');
+      }
+    });
+
+    it('does not end dropped content at an end tag with a longer name', async () => {
+      expect(await html('<script>hidden</scripts>still hidden')).toBe('');
+      expect(await html('<style>hidden</style-x>still hidden</style>shown')).toBe('shown');
+    });
+
     it('removes other tags and skips > inside quoted attributes', async () => {
       expect(await html('<p class="x">Hello <b>bold</b> <a title="a > b">link</a></p>')).toBe(
         'Hello bold link',
@@ -103,11 +196,38 @@ describe('Markup text', () => {
       expect(await html('a&#150;b &#8212; &euro;')).toBe('a–b — €');
       expect(await html('x&#0;y')).toBe('x\uFFFDy');
       expect(await html('&unknown; &amp')).toBe('&unknown; &amp');
+      expect(await html('&lang;&thetasym;')).toBe('\u27E8\u03D1');
+    });
+
+    it('decodes a numeric reference as the HTML tokenizer does', async () => {
+      // Any number of digits, leading zeros included.
+      expect(await html('&#00000065;&#x0000041;&#X41;&#1114111;')).toBe('AAA\u{10FFFF}');
+      // Zero, a surrogate and a value past U+10FFFF are U+FFFD, however many digits it takes.
+      for (const reference of [
+        '&#0;',
+        '&#x0000;',
+        '&#55296;',
+        '&#xDFFF;',
+        '&#1114112;',
+        '&#x110000;',
+        '&#11141110;',
+        '&#x1100000;',
+        `&#${'9'.repeat(400)};`,
+        `&#x${'F'.repeat(400)};`,
+      ]) {
+        expect(await html(`[${reference}]`), reference.slice(0, 16)).toBe('[\uFFFD]');
+      }
+      // 128 to 159 are the windows-1252 characters, where that encoding has one.
+      expect(await html('&#128;&#x82;&#150;&#x9F;')).toBe('\u20AC\u201A\u2013\u0178');
+      expect(await html('[&#x81;&#141;]')).toBe('[\u0081\u008D]');
+      // A reference needs its closing semicolon and at least one digit.
+      expect(await html('&#65 &#x41 &#x; &#;')).toBe('&#65 &#x41 &#x; &#;');
     });
 
     it('collapses whitespace within lines, keeps pre line breaks and drops blank lines', async () => {
       expect(await html('<p>one\n   two</p>\n\n<p>  </p><div>three</div>')).toBe('one two\nthree');
       expect(await html('<pre>line 1\n  line 2</pre>')).toBe('line 1\nline 2');
+      expect(await html('<pre>a\r\nb\rc</pre>')).toBe('a\nb\nc');
     });
   });
 
