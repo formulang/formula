@@ -733,8 +733,8 @@ function parsePrimary(
 }
 
 /**
- * What one parse reads once and keeps while it binds the tree: the admitted values of the
- * parameters it checks literals against, each list read once (`AdmittedLists`), and where the
+ * What one parse reads and keeps while it binds the tree: the admitted values of the parameters
+ * it checks literals against, each list read on its first check (`AdmittedLists`), and where the
  * NO_MATCHING_OVERLOAD errors among its errors start, indexed as they are reported, each error
  * once (`overloadMissAt`).
  */

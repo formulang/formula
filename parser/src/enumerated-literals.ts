@@ -112,10 +112,11 @@ export type LiteralTarget = {
 };
 
 /**
- * The admitted values one parse reads, each read once, and the targets they make, each made once,
- * all keyed by the definition's signature id and the parameter's position, so a fresh copy of a
- * definition, as a registry may hand out on every lookup, shares them: a parameter's list, on the
- * first check against it (`list(def)`, the `read` of `literalCheckAt` for that definition); the
+ * The admitted values one parse reads and the targets they make, each made once, all keyed by the
+ * definition's signature id and the parameter's position, so a fresh copy of a definition, as a
+ * registry may hand out on every lookup, shares them: a parameter's list, read on the first check
+ * against it, twice (to check that it is a list of texts, and into a set; `list(def)`, the `read`
+ * of `literalCheckAt` for that definition); the
  * target of a literal written at a parameter (`written`); and the target of a literal passed on to
  * a callable (`passed`), by the parameters the position resolves to for the definitions of the
  * callable's name, never by the position itself, so every position a variadic parameter takes

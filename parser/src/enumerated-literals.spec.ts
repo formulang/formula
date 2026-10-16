@@ -464,7 +464,7 @@ describe('admitted lists', () => {
       through === 'written' ? `CODE(1; "${literal}")` : `EACH(LIST(1); "CODE"; "${literal}")`,
     ).join('; ')})`;
 
-  it('reads a list once per parse, and tests each literal in one lookup', () => {
+  it('reads a list twice on its first check in a parse, and tests each literal in one lookup', () => {
     // Forty checks within the default limits, against lists of 1,000, 5,000 and 20,000 values,
     // smallest first: reading a list per check, or a list per value, fails at the first size.
     for (const k of [1_000, 5_000, 20_000]) {
@@ -472,8 +472,8 @@ describe('admitted lists', () => {
         const label = `${k} values, ${through}`;
         const { list, reads } = countedList(k);
         const registry = registryWithCode(list);
-        // Taken: the list is read once, to check it is a list of texts and to build its set (2k),
-        // and each of the forty checks is one lookup.
+        // Taken: the first check reads the list twice, to check it is a list of texts and to build
+        // its set (2k), and each of the forty checks is one lookup.
         reads.count = 0;
         const accepted = observed(registry, checks(40, `code${k - 1}`, through), {});
         expect(accepted.codes, label).toStrictEqual([]);
@@ -492,7 +492,7 @@ describe('admitted lists', () => {
     }
   }, 60_000);
 
-  it('works out the values two overloads list in common once per parse', () => {
+  it('works out the values two overloads list in common once, on the first refusal', () => {
     // CODE's two overloads list code0 ... code<k-1> and code1 ... code<k>: a literal passed on to
     // CODE must be one of code1 ... code<k-1>, which either overload lists.
     for (const k of [1_000, 5_000]) {
@@ -500,8 +500,8 @@ describe('admitted lists', () => {
       const registry = registryWithCode(codes(k), codes(k, 1));
       const parse = (count: number, literal: string) =>
         observed(registry, checks(count, literal, 'EACH'), {});
-      // Reading both lists is linear in the lists, once per parse; every further check is one
-      // lookup in each of the two.
+      // The first check reads both lists, each twice; every further check is one lookup in each
+      // of the two.
       const one = parse(1, `code${k - 1}`);
       expect(one.work.units.admitted, label).toBeLessThanOrEqual(10 * k);
       const forty = parse(40, `code${k - 1}`);
@@ -646,10 +646,11 @@ describe('admitted lists', () => {
 
   /**
    * The core registry with PICK on four subject types, each variadic mode listing code0 ...
-   * code<size - 1>, and a name for every set of two or more of the overloads, which each of them
-   * takes as an alias, so each name reaches its own set of lists; and `items`, of any type.
+   * code<size - 1> or, `disjoint`, `size` values no other overload lists, and a name for every set
+   * of two or more of the overloads, which each of them takes as an alias, so each name reaches its
+   * own set of lists; and `items`, of any type.
    */
-  function registryWithAliasedPicks(size: number) {
+  function registryWithAliasedPicks(size: number, disjoint = false) {
     const registry = createRegistry();
     registerCoreFormulaDefinitions(registry);
     registry.registerVariable({
@@ -677,7 +678,7 @@ describe('admitted lists', () => {
             type: FormulaTypes.text(false),
             literalOnly: true,
             variadic: true,
-            literalValues: codes(size),
+            literalValues: codes(size, disjoint ? index * size : 0),
           },
         ],
         returnType: FormulaTypes.boolean(true),
@@ -708,7 +709,9 @@ describe('admitted lists', () => {
    * walk states, each written directly and passed on one and two levels down, within the default
    * limits: n = 200 arguments, lists of k = 20,000 values. `lists` is the length of the lists the
    * registry declares; `least` the length of the shortest list a parse of the shape reads;
-   * `refusals` how many literals each formula refuses.
+   * `refusals` how many literals each formula refuses; `setLists` the length of the lists of
+   * every set of two or more listing parameters its refusals reach, summed: the values working out
+   * what such a set lists in common reads.
    */
   const k = 20_000;
   const n = 200;
@@ -725,6 +728,7 @@ describe('admitted lists', () => {
   const everyName = (call: (name: string) => string) =>
     `LIST(${ALIAS_NAMES.map((name) => call(name)).join('; ')})`;
   const calls = (call: string) => `LIST(${Array.from({ length: 25 }, () => call).join('; ')})`;
+  const refusedFive = ['z1', 'z2', 'z3', 'z4', 'z5'].map((value) => `"${value}"`).join('; ');
   const WORK_SHAPES = [
     {
       shape: 'a variadic mode two overloads list, every argument taken',
@@ -732,6 +736,7 @@ describe('admitted lists', () => {
       lists: 2 * k,
       least: k,
       refusals: 0,
+      setLists: 0,
       forms: forms(literals(n, 'code1'), 'PICK'),
     },
     {
@@ -740,6 +745,7 @@ describe('admitted lists', () => {
       lists: 2 * k,
       least: k,
       refusals: 1,
+      setLists: 2 * k,
       forms: forms(literals(n, 'code1', 'zzz'), 'PICK'),
     },
     {
@@ -748,6 +754,7 @@ describe('admitted lists', () => {
       lists: k + 1,
       least: k,
       refusals: 1,
+      setLists: 0,
       forms: pickNForms,
     },
     {
@@ -756,6 +763,7 @@ describe('admitted lists', () => {
       lists: 20 * 4_999,
       least: 4_999,
       refusals: 0,
+      setLists: 0,
       forms: forms(literals(n, 'code100'), 'MANY'),
     },
     {
@@ -764,6 +772,7 @@ describe('admitted lists', () => {
       lists: 4 * k,
       least: k,
       refusals: 0,
+      setLists: 0,
       forms: [
         { level: 'written', source: everyName((name) => `${name}(items; "code1")`) },
         {
@@ -777,11 +786,32 @@ describe('admitted lists', () => {
       ],
     },
     {
+      shape:
+        'eleven names, each refusing five values, reaching its own set of four overloads that share no value',
+      registry: () => registryWithAliasedPicks(k, true),
+      lists: 4 * k,
+      least: k,
+      refusals: ALIAS_NAMES.length * 5,
+      setLists: ALIASED_SETS.reduce((sum, set) => sum + set.length * k, 0),
+      forms: [
+        { level: 'written', source: everyName((name) => `${name}(items; ${refusedFive})`) },
+        {
+          level: 'one level down',
+          source: everyName((name) => `EACH(items; "${name}"; ${refusedFive})`),
+        },
+        {
+          level: 'two levels down',
+          source: everyName((name) => `EACH(LIST(items); "EACH"; "${name}"; ${refusedFive})`),
+        },
+      ],
+    },
+    {
       shape: 'a registry handing out fresh definitions, a variadic mode two overloads list',
       registry: () => copying(registryWithVariadicPick(codes(k), codes(k, 1))),
       lists: 2 * k,
       least: k,
       refusals: 0,
+      setLists: 0,
       forms: forms(literals(n, 'code1'), 'PICK'),
     },
     {
@@ -790,6 +820,7 @@ describe('admitted lists', () => {
       lists: k + 1,
       least: k,
       refusals: 1,
+      setLists: 0,
       forms: pickNForms,
     },
     {
@@ -798,6 +829,7 @@ describe('admitted lists', () => {
       lists: 2 * k,
       least: k,
       refusals: 0,
+      setLists: 0,
       forms: [
         { level: 'written', source: calls('PICK(1; "code1")') },
         { level: 'one level down', source: calls('EACH(LIST(1); "PICK"; "code1")') },
@@ -809,13 +841,18 @@ describe('admitted lists', () => {
     },
   ];
 
-  /** 4 x (the length of the lists + the characters the refusals in `errors` print). */
-  const bound = (lists: number, errors: readonly { message: string }[]) =>
-    4 * (lists + errors.reduce((sum, error) => sum + error.message.length, 0));
+  /**
+   * 4 x (the length of the lists + the characters the refusals in `errors` print) + 2 x the length
+   * of the lists of every set of two or more listing parameters a refusal reaches: working out what
+   * a set lists in common reads its first list and looks each value up in the further lists until
+   * one leaves it out, at most twice the set's lists.
+   */
+  const bound = (lists: number, errors: readonly { message: string }[], setLists: number) =>
+    4 * (lists + errors.reduce((sum, error) => sum + error.message.length, 0)) + 2 * setLists;
 
   it.each(WORK_SHAPES)(
     'reads admitted values in work bounded by the lists and what the refusals print: $shape',
-    ({ registry: registryFor, lists, least, refusals, forms: sources }) => {
+    ({ registry: registryFor, lists, least, refusals, setLists, forms: sources }) => {
       // At every variadic position and every report of a refusal, the units of admitted values a
       // parse reads stay within the bound.
       const registry = registryFor();
@@ -825,7 +862,7 @@ describe('admitted lists', () => {
         // Not vacuous: the parse read a list, and a check passed on was walked.
         expect(work.units.admitted, level).toBeGreaterThanOrEqual(least);
         if (level !== 'written') expect(walksOf(work).length, level).toBeGreaterThan(0);
-        expect(work.units.admitted, level).toBeLessThanOrEqual(bound(lists, rule.errors));
+        expect(work.units.admitted, level).toBeLessThanOrEqual(bound(lists, rule.errors, setLists));
       }
     },
     60_000,

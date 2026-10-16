@@ -49,8 +49,9 @@ export function admittedValues(param: FunctionParamDefinition): readonly string[
  * the list, a variadic `literalOnly` parameter that lists admitted values (one that lists none is
  * checked at its first argument only, as 1.0.0 checks it). `read` answers what a parameter admits,
  * undefined where it lists nothing: `admittedValues`, or the same values as a reader holds them (a
- * parser reads each list once per parse). Whether the argument is given at all is the caller's
- * part: an optional parameter may be left out, and a callable may be passed fewer arguments.
+ * parser keeps each list it reads for the parse). Whether the argument is given at all is the
+ * caller's part: an optional parameter may be left out, and a callable may be passed fewer
+ * arguments.
  */
 export function literalCheckAt<Admitted>(
   params: readonly FunctionParamDefinition[],
