@@ -648,11 +648,16 @@ This is read from the code; no spec measures the time or the work of these
 functions. What a spec checks is the list of regular expressions, where the
 super-linear risk of text code lies: every one that `@formulang/core-functions`
 compiles is listed, with how it reads its input, in
-`core-functions/src/functions/regex-roster.spec.ts`. The spec finds them with the
-TypeScript type checker on every module — each literal, each `RegExp`
-construction, each string that `match`, `matchAll` or `search` compiles, and
-every pattern a call runs, followed to where it comes from — and fails on one
-the list leaves out, on a listed one that is gone, and on one it cannot follow.
+`core-functions/src/functions/regex-roster.spec.ts`. The spec reads every
+module with the TypeScript type checker — each literal, each `RegExp`
+construction, and every site named like a method that compiles or runs a
+pattern (`match`, `matchAll`, `search`, `replace`, `replaceAll`, `split`,
+`test`, `exec`, `compile`, or the `Symbol` key of one), whatever its receiver,
+with each pattern a call runs followed to where it comes from — and fails on a
+pattern the list leaves out, on a listed one that is gone, and on a site it
+cannot classify: a receiver typed `any` or `unknown`, a `String` or `RegExp`
+method used as a value, `compile`, a member reached by a key it cannot read. A
+site so named that holds no pattern is listed by module and line.
 Two listed patterns of 1.0.0 functions read their input in more than linear
 time: the formula's own pattern of the regex functions and of the `"pattern"`
 mode, which the text length limit bounds, and `ISURL`'s check of a `mailto:`

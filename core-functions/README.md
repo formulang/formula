@@ -182,8 +182,9 @@ safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
 each text function, the work it does on its input, read from its code, and
 the limits that bound the input. Their super-linear risk is regular
 expressions: `src/functions/regex-roster.spec.ts` lists every one this package
-compiles, with how it reads its input, and fails when a module compiles one
-the list leaves out.
+compiles, with how it reads its input; it finds every site that compiles or
+runs one by the name of the method, whatever the receiver, and fails on a
+pattern the list leaves out and on a site it cannot classify.
 
 ## Register your own handlers
 
