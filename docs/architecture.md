@@ -394,7 +394,7 @@ export abstract class AbstractEagerBatchImplementation<
 }
 ```
 
-The base class is internal to `@formulang/core-functions` — the package's public entry point exports only `createCoreFormulaRuntime` (and the `FormulaRuntime` type). Embedders writing custom functions implement `FunctionImplementation` directly or copy this ~20-line pattern; see [extending.md](extending.md#31-the-eager-batch-pattern).
+The base class is internal to `@formulang/core-functions` — the package's public entry point exports `createCoreFormulaRuntime` and the `FormulaRuntime` type, and the text tokenisers `splitWords` and `splitSentences` with their mode types `WordSplitMode` and `SentenceSplitMode`; nothing else. Embedders writing custom functions implement `FunctionImplementation` directly or copy this ~20-line pattern; see [extending.md](extending.md#31-the-eager-batch-pattern).
 
 **Expected-cast hints.** The runner propagates `expectedCast` hints downward: comparison operators push `number?` at their operands (`expectedCastForComparison`), a single-argument function that declares `casts` (like `COUNT`) pushes its return type at its argument, and every other argument receives the declared parameter type as its hint. Implementations receive the hint via `BatchEvaluationCall.expectedCast` / `ctx.expectedReturnType` and may use it to coerce; it also participates in cache keys.
 

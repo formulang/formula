@@ -244,7 +244,7 @@ export class UpperImplementation extends AbstractEagerBatchImplementation {
 }
 ```
 
-Note that `@formulang/core-functions` publicly exports only `createCoreFormulaRuntime` (and the `FormulaRuntime` type) — the base class and per-function helpers (`asText`, `assumedTextLength`, ...) are internal. For custom functions in your own codebase, either copy the ~20-line base class or implement `evaluateMultiple` directly, as the worked example in section 9 does. `BaseFunctionConfig` (`{ signatureId: string }`) and `FunctionImplementationClass` from `@formulang/definitions` give you the class-shaped contract.
+Note that `@formulang/core-functions` publicly exports only `createCoreFormulaRuntime`, the `FormulaRuntime` type and the text tokenisers `splitWords` and `splitSentences` with their mode types `WordSplitMode` and `SentenceSplitMode` — the base class and per-function helpers (`asText`, `assumedTextLength`, ...) are internal. For custom functions in your own codebase, either copy the ~20-line base class or implement `evaluateMultiple` directly, as the worked example in section 9 does. `BaseFunctionConfig` (`{ signatureId: string }`) and `FunctionImplementationClass` from `@formulang/definitions` give you the class-shaped contract.
 
 ### 3.2 Cost estimation
 
