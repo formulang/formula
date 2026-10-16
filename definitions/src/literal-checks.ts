@@ -8,7 +8,10 @@ import type { FunctionParamDefinition } from './registry';
  * type a string literal fits by both of the parser's checks of an argument's type: choosing among
  * the overloads (`argumentSelects`) and checking the call once it binds (`argumentFits`). All
  * three read this one rule for a definition, so a list registration takes is checked in a call
- * of that definition written in the formula and wherever a literal is passed on to it, and a
+ * of that definition written in the formula, and in a literal the walk passes on to it from the
+ * literal-only callable parameter of a higher-order function the parser knows by name, through
+ * callables named by string literals, within the walk's bound; a literal that reaches it any
+ * other way is not checked (docs/language.md, "When a mode is checked", lists those ways). A
  * string literal's own type never keeps the parser from reading the list. Which definitions a
  * literal meets is the parser's: a call written directly binds the overload its types select,
  * and a literal passed on meets every definition of the name that lists values at its
