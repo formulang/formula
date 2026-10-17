@@ -23,7 +23,7 @@ import {
   textCost,
   typeWarning,
 } from './argument-readers';
-import { asNumber, isEmptyValue, isWordCharacterAt, isWordCharacterBefore } from './helpers';
+import { asNumber, isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { compileSafeRegex, type RegexCompileFailure } from './regex';
 import { someOccurrence } from './text-search';
 
@@ -314,6 +314,23 @@ export function splitSentences(
   return sentencePieces(text, mode, keep);
 }
 
+/** Reads `mode?` and `option?` of a word function; an output when the call answers null. */
+function readWordModeAndOption(
+  fn: string,
+  rawMode: unknown,
+  hasOption: boolean,
+  rawOption: unknown,
+): { mode: WordSplitMode; option: string | null } | { output: FormulaNodeOutput } {
+  const mode = readOptionalMode(fn, 'mode', rawMode, WORD_SPLIT_MODES);
+  if (typeof mode !== 'string') return { output: mode };
+  // An omitted or null option is no option. Any other value is one, the empty text included:
+  // refused outside the locale and pattern modes, an empty tag or pattern inside them.
+  if (!hasOption || rawOption == null) return { mode, option: null };
+  if (typeof rawOption !== 'string')
+    return { output: typeWarning(fn, `${fn} option must be text`) };
+  return { mode, option: rawOption };
+}
+
 /** Reads `(text, mode?, option?)` of a word function; an output when the call answers null. */
 function readWordCall(
   fn: string,
@@ -324,14 +341,9 @@ function readWordCall(
 ): { call: WordCall } | { output: FormulaNodeOutput } {
   const text = readText(fn, rawText);
   if (typeof text !== 'string') return { output: text };
-  const mode = readOptionalMode(fn, 'mode', rawMode, WORD_SPLIT_MODES);
-  if (typeof mode !== 'string') return { output: mode };
-  // An omitted or null option is no option. Any other value is one, the empty text included:
-  // refused outside the locale and pattern modes, an empty tag or pattern inside them.
-  if (!hasOption || rawOption == null) return { call: { text, mode, option: null } };
-  if (typeof rawOption !== 'string')
-    return { output: typeWarning(fn, `${fn} option must be text`) };
-  return { call: { text, mode, option: rawOption } };
+  const read = readWordModeAndOption(fn, rawMode, hasOption, rawOption);
+  if ('output' in read) return read;
+  return { call: { text, ...read } };
 }
 
 /** Collects words, refusing more than the output limit allows. */
@@ -393,15 +405,18 @@ export class LeadingWordsImplementation extends AbstractEagerBatchImplementation
   }
 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
-    const read = readWordCall('LEADING_WORDS', args[0], args[2], args.length >= 4, args[3]);
-    if ('output' in read) return read.output;
+    // The arguments in order: text, count, mode, option.
+    const text = readText('LEADING_WORDS', args[0]);
+    if (typeof text !== 'string') return text;
     const rawCount = args[1];
-    if (isEmptyValue(rawCount)) return makeOkNull('LEADING_WORDS');
+    if (rawCount == null) return makeOkNull('LEADING_WORDS');
     const count = asNumber(rawCount);
     if (count === null || !Number.isInteger(count) || count < 1) {
       return typeWarning('LEADING_WORDS', 'LEADING_WORDS count must be a positive whole number');
     }
-    const { text, mode, option } = read.call;
+    const read = readWordModeAndOption('LEADING_WORDS', args[2], args.length >= 4, args[3]);
+    if ('output' in read) return read.output;
+    const { mode, option } = read;
     const scan = scanWords('LEADING_WORDS', text, mode, option, ctx.limits);
     if ('refusal' in scan) return nullWithWarning('LEADING_WORDS', scan.refusal);
     const words: string[] = [];
@@ -429,9 +444,7 @@ export class SentencesImplementation extends AbstractEagerBatchImplementation {
     if (typeof text !== 'string') return text;
     const mode = readOptionalMode('SENTENCES', 'mode', args[1], SENTENCE_SPLIT_MODES);
     if (typeof mode !== 'string') return mode;
-    const keep = isEmptyValue(args[2])
-      ? []
-      : readTextList('SENTENCES', 'keep', args[2], ctx.limits);
+    const keep = args[2] == null ? [] : readTextList('SENTENCES', 'keep', args[2], ctx.limits);
     if (!Array.isArray(keep)) return keep;
     const pieces = sentencePieces(text, mode, keep);
     return makeOkList('SENTENCES', boundedListResult(pieces, ctx.limits));

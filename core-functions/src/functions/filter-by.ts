@@ -62,20 +62,31 @@ export class FilterByImplementation implements FunctionImplementation {
       const hasOpValue = call.args.length >= 4;
       const opValue = hasOpValue ? (await call.args[3]?.output())?.value : undefined;
 
-      if (target == null || keys == null) {
+      // The arguments in order, each in full: null, then the type, then the bound.
+      const typeRefusal = withWarnings(makeOkNull('FILTER_BY', meta), [
+        { code: 'TYPE', message: 'FILTER_BY expects (list, keys, operator)' },
+      ]);
+      if (target == null) {
         outs.push(makeOkNull('FILTER_BY', meta));
         continue;
       }
-      if (!Array.isArray(target) || !Array.isArray(keys) || typeof opName !== 'string') {
-        outs.push(
-          withWarnings(makeOkNull('FILTER_BY', meta), [
-            { code: 'TYPE', message: 'FILTER_BY expects (list, keys, operator)' },
-          ]),
-        );
+      if (!Array.isArray(target)) {
+        outs.push(typeRefusal);
         continue;
       }
-      if (target.length > ctx.limits.maxListLength || keys.length > ctx.limits.maxListLength) {
-        throw listTooLarge();
+      if (target.length > ctx.limits.maxListLength) throw listTooLarge();
+      if (keys == null) {
+        outs.push(makeOkNull('FILTER_BY', meta));
+        continue;
+      }
+      if (!Array.isArray(keys)) {
+        outs.push(typeRefusal);
+        continue;
+      }
+      if (keys.length > ctx.limits.maxListLength) throw listTooLarge();
+      if (typeof opName !== 'string') {
+        outs.push(typeRefusal);
+        continue;
       }
       if (target.length !== keys.length) {
         outs.push(

@@ -260,9 +260,9 @@ function readList(raw: unknown, ctx: FormulaExecutionContext): unknown[] | null 
   return raw;
 }
 
-/** An empty value answers null; any other non-list value null with `TYPE`. */
+/** `null` answers null; any other value that is not a list, the empty text included, null with `TYPE`. */
 function notAList(fn: string, raw: unknown): FormulaNodeOutput {
-  return isEmptyValue(raw) ? makeOkNull(fn) : typeWarning(fn, `${fn} expects a list`);
+  return raw == null ? makeOkNull(fn) : typeWarning(fn, `${fn} expects a list`);
 }
 
 /** A list holding a list or an object answers null with `TYPE`: only scalars are compared. */
@@ -338,13 +338,13 @@ export class TakeImplementation extends AbstractEagerBatchImplementation {
     const list = readList(args[0], ctx);
     if (list === null) return notAList('TAKE', args[0]);
     const rawCount = args[1];
-    if (isEmptyValue(rawCount)) return makeOkNull('TAKE');
+    if (rawCount == null) return makeOkNull('TAKE');
     const count = asNumber(rawCount);
     if (count === null || !Number.isInteger(count) || count < 0) {
       return typeWarning('TAKE', 'TAKE count must be a whole number of 0 or more');
     }
     const rawStart = args.length >= 3 ? args[2] : null;
-    const start = isEmptyValue(rawStart) ? 1 : asNumber(rawStart);
+    const start = rawStart == null ? 1 : asNumber(rawStart);
     if (start === null || !Number.isInteger(start) || start < 1) {
       return typeWarning('TAKE', 'TAKE start must be a whole number of 1 or more');
     }
@@ -364,13 +364,14 @@ export class IndexOfImplementation extends AbstractEagerBatchImplementation {
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
     const list = readList(args[0], ctx);
     if (list === null) return notAList('INDEX_OF', args[0]);
-    const value = args[1];
-    // A list, the empty one included, is neither a value to look for nor a member to find: the
-    // equality below would compare it with a number by its length.
-    if (Array.isArray(value) || list.some((item) => Array.isArray(item))) {
+    // A list, the empty one included, is neither a member to find nor a value to look for: the
+    // equality below would compare it with a number by its length. The list comes first.
+    if (list.some((item) => Array.isArray(item))) {
       return typeWarning('INDEX_OF', 'INDEX_OF does not compare lists');
     }
-    if (isEmptyValue(value)) return makeOkNull('INDEX_OF');
+    const value = args[1];
+    if (Array.isArray(value)) return typeWarning('INDEX_OF', 'INDEX_OF does not compare lists');
+    if (value == null || value === '') return makeOkNull('INDEX_OF');
     // The coerced equality of INCLUDES and `=`.
     const index = list.findIndex((item) => equalsUnknownType(item, value) === true);
     return index < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', index + 1);

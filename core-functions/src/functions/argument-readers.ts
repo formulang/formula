@@ -5,7 +5,7 @@ import {
   makeOkNull,
   withWarnings,
 } from '@formulang/definitions';
-import { assumedTextLength, isEmptyValue } from './helpers';
+import { assumedTextLength } from './helpers';
 
 /** Whether `value` is one of the literal `values`. */
 export function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
@@ -55,15 +55,19 @@ export function readRequiredMode<M extends string>(
   return isOneOf(modes, raw) ? raw : modeRefusal(fn, param, modes);
 }
 
-/** Reads a text argument: an empty value answers null, a non-text value null with `TYPE`. */
+/**
+ * Reads a text argument: `null` answers null, and any value that is not text, the empty list
+ * included, null with `TYPE`. The empty text is a text.
+ */
 export function readText(fn: string, raw: unknown): string | FormulaNodeOutput {
   if (typeof raw === 'string') return raw;
-  return isEmptyValue(raw) ? makeOkNull(fn) : typeWarning(fn, `${fn} expects text`);
+  return raw == null ? makeOkNull(fn) : typeWarning(fn, `${fn} expects text`);
 }
 
 /**
- * Reads a list of texts, bounded by `maxListLength`. Empty entries are dropped; a non-list
- * value or a non-text entry answers null with `TYPE`.
+ * Reads a list of texts that is not `null`, bounded by `maxListLength`: any other value, the
+ * empty text included, answers null with `TYPE`. Entries that are `null` or the empty text are
+ * dropped; an entry of another type, the empty list included, answers null with `TYPE`.
  */
 export function readTextList(
   fn: string,
@@ -77,7 +81,7 @@ export function readTextList(
   for (const item of raw) {
     if (typeof item === 'string') {
       if (item.length > 0) texts.push(item);
-    } else if (!isEmptyValue(item)) {
+    } else if (item != null) {
       return typeWarning(fn, `${fn} ${param} must be a list of text`);
     }
   }

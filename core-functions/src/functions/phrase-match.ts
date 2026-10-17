@@ -139,7 +139,7 @@ function readPhraseCall(
 ): { call: PhraseCall } | { output: FormulaNodeOutput } {
   const text = readText(fn, args[0]);
   if (typeof text !== 'string') return { output: text };
-  if (args[1] == null || args[1] === '') return { output: makeOkNull(fn) };
+  if (args[1] == null) return { output: makeOkNull(fn) };
   const phrases = readTextList(fn, 'phrases', args[1], ctx.limits);
   if (!Array.isArray(phrases)) return { output: phrases };
   const match = readOptionalMode(fn, 'match', args[2], PHRASE_MATCH_MODES);
@@ -200,7 +200,7 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
   }
 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
-    if (args[0] == null || args[0] === '') return makeOkNull('MISSING_FROM');
+    if (args[0] == null) return makeOkNull('MISSING_FROM');
     const items = readTextList('MISSING_FROM', 'items', args[0], ctx.limits);
     if (!Array.isArray(items)) return items;
     const text = readText('MISSING_FROM', args[1]);
