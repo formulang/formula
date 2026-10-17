@@ -637,18 +637,30 @@ linear in the lengths of the text and of the token or phrase however often
 their occurrences overlap. Each phrase in `"substring"` mode, and each item of
 `MISSING_FROM`, is found with one substring search, linear in the same
 lengths. A phrase of up to 250 code units goes to the runtime's own search,
-whose tables in V8 cover such a phrase whole. A longer one is looked for by its
-last 250 code units, with the same search, and each place where they occur is
-checked for the rest of the phrase; once those checks have cost four times the
-lengths of the text and the phrase, the search goes on with Knuth-Morris-Pratt.
+whose tables in V8 cover such a phrase whole. A longer one first has its last
+250 code units looked for with that search: where they do not occur, neither
+does the phrase, and where they first occur the whole phrase is compared once.
+When those 250 code units repeat with a period of at most 63 (a run of one
+letter, say), another window of 250 code units of the phrase, whose period is
+longer, is looked for in the same way. The rest of the text is then read by a
+scan that shifts by the pair of code units under the phrase's last two,
+compares the phrase from its start where those two agree, and goes on with
+Knuth-Morris-Pratt matching where the next place would start inside the units
+it compared: it makes at most six comparisons for each code unit of the text.
 V8's own search alone reads a longer phrase whose mismatch lies before its last
 250 code units in time proportional to the text's length times the phrase's.
-Measured on Node 22.23.3 under the default limits, best of three: on 1,000,000
-code units of prose (random letters and spaces), `MISSING_FROM` with
-`normalise` `"exact"` and 1,000 absent items of 300 code units takes 209 ms, as
-V8's own search does (205 ms); on 100,000 code units of `a`, `FIRST_CONTAINED`
-with ten phrases of 8,000 code units, `"ab"` followed by `a`s, takes 14 ms,
-where V8's own search takes 3.9 s.
+Measured on Node 22.23.3 under the default limits, best of three, with V8's own
+search in brackets: on 1,000,000 code units of prose (random letters and
+spaces), `MISSING_FROM` with `normalise` `"exact"` and 1,000 absent items of
+300 code units takes 214 ms (207 ms); on a document of 5,000 entries of 300
+code units that each end with the same 250-unit note, 1,000 absent items that
+end with that note take 134 ms (1.0 s); on 100,000 code units of `a`,
+`FIRST_CONTAINED` with ten phrases of 8,000 code units, `"ab"` followed by
+`a`s, takes 5 ms (3.9 s). Where V8 finds a phrase's first code unit rarely and
+rejects each such place at the next unit, its search is the faster: on 100,000
+code units that repeat a 250-unit block holding the letter `c` once, at its
+start, `FIRST_CONTAINED` with 1,000 phrases of `c` and the block 32 times takes
+25 ms (6.6 ms).
 
 **Work.** What each text function does with its input, read from its code,
 and what bounds the input:
@@ -671,8 +683,9 @@ linear in the length of the text or list the function reads, and that length is
 bounded only by what the runtime bounds:
 `maxStringLiteralLength` bounds literals, not a text the formula computes, so a
 `SUBSTITUTE` of a `SUBSTITUTE` in a 10,533-character source makes 25,000,000
-code units, on which `FIRST_CONTAINED` with 43 phrases of 8,002 code units runs
-12 s before it reports `WALL_TIME_LIMIT_EXCEEDED`.
+code units, on which `FIRST_CONTAINED` with 43 phrases of 8,002 code units takes
+0.97 s, as long as 43 phrases of 250 code units whose first character the text
+holds take (1.0 s); building the text alone, `LEN`, takes 0.17 s.
 
 Four patterns of 1.0.0 code read their input in more than linear time. Each was
 measured on Node 22.23.3 on an input built against it, as the best of three
