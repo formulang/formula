@@ -643,8 +643,11 @@ describe('Text segmentation', () => {
         splitSentences('Wir helfen z. B. Handwerkern.', 'punctuation', ['z. B.']),
       ).toHaveLength(1);
       expect(() => splitSentences('a', 'locale' as never)).toThrow(TypeError);
-      // A keep entry that is not text throws, where SENTENCES answers null with TYPE.
-      expect(() => splitSentences('a. b.', 'punctuation', [1 as never])).toThrow(TypeError);
+      // A keep entry that is not text throws, where SENTENCES answers null with TYPE, a String
+      // object included, which the search could otherwise read.
+      for (const token of [1, new String('Dr.')]) {
+        expect(() => splitSentences('Dr. A.', 'punctuation', [token as never])).toThrow(TypeError);
+      }
     });
 
     it('comes from the package entry, and is not bounded by maxWildcardOutputLength', () => {
