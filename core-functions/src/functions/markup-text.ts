@@ -340,7 +340,8 @@ function endOfHiddenContent(markup: string, name: string, from: number): number 
  */
 function htmlToPlainText(markup: string): string {
   const out: string[] = [];
-  let inPre = false;
+  // How many `pre` elements are open: a line break ends a line inside any of them.
+  let preDepth = 0;
   let head: HeadState = 'before';
   let index = 0;
 
@@ -350,7 +351,9 @@ function htmlToPlainText(markup: string): string {
     if (head !== 'after' && NOT_HTML_SPACE.test(raw)) head = 'after';
     const decoded = decodeCharacterReferences(raw);
     out.push(
-      inPre ? decoded.replace(SOURCE_LINE_BREAK, '\n') : decoded.replace(WHITESPACE_RUN, ' '),
+      preDepth > 0
+        ? decoded.replace(SOURCE_LINE_BREAK, '\n')
+        : decoded.replace(WHITESPACE_RUN, ' '),
     );
   };
 
@@ -404,7 +407,7 @@ function htmlToPlainText(markup: string): string {
       index = endOfHiddenContent(markup, tag.name, tag.end);
       continue;
     }
-    if (tag.name === 'pre') inPre = !tag.closing;
+    if (tag.name === 'pre') preDepth = tag.closing ? Math.max(0, preDepth - 1) : preDepth + 1;
     if (LINE_ENDING_ELEMENTS.has(tag.name)) out.push('\n');
   }
   return plainLines(out.join('').split('\n'));

@@ -305,6 +305,13 @@ describe('Markup text', () => {
       expect(await html('<pre>a&#13;b&#10;c</pre>')).toBe('a\nb\nc');
       expect(await html('<p>a&#13;b&#10;c</p>')).toBe('a b c');
     });
+
+    it('keeps line breaks until the outermost pre closes', async () => {
+      expect(await html('<pre><pre>a</pre>b\nc</pre>d\ne')).toBe('a\nb\nc\nd e');
+      expect(await html('<pre>a\n<pre>b\nc</pre>d\ne</pre>f\n g')).toBe('a\nb\nc\nd\ne\nf g');
+      // A closing tag with no open pre changes nothing.
+      expect(await html('</pre>a\nb<pre>c\nd</pre>')).toBe('a b\nc\nd');
+    });
   });
 
   describe('PLAIN_TEXT from markdown', () => {
