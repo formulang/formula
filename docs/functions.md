@@ -1171,15 +1171,26 @@ each line and blank lines dropped. `format` is a required literal:
   of a fenced code block stays a line. The document is read as
   [MARKDOWN_BLOCKS](#markdown_blocks) reads it, and its inline markup as
   follows:
-  - a run of `*` or `_` that can close, by CommonMark's flanking rules, is
-    removed together with the nearest run of the same character before it
+  - emphasis: a run of `*` or `_` is left-flanking when the character after
+    it is not whitespace and is not punctuation, or is punctuation and the
+    character before the run is whitespace or punctuation; it is
+    right-flanking in the mirror case (whitespace is JavaScript's `\s` or the
+    text's edge, punctuation a character of Unicode's P or S categories). A
+    `*` run can open when it is left-flanking and close when it is
+    right-flanking; a `_` run can open when it is left-flanking and either not
+    right-flanking or after punctuation, and close when it is right-flanking
+    and either not left-flanking or before punctuation. A run that can close
+    is removed together with the nearest run of the same character before it
     that can open, whatever their lengths, and the runs of the other character
-    opened between the two pair no more; `snake_case` and a lone `*` stay;
-  - a run of backticks pairs with the next run of as many, one space just
-    inside both ends is dropped, and a run with no partner stays;
+    opened between the two pair no more; a run that pairs with none stays, so
+    `snake_case` and a lone `*` stay;
+  - a run of backticks pairs with the next run of exactly as many; the code
+    span between them keeps its text, less one space at each end when it has
+    a space at both ends and holds more than whitespace, and a run with no
+    partner stays;
   - a backslash before an ASCII punctuation character (`\*`, `\{`, `\~`) is
-    removed and one before anything else stays; at the end of a paragraph line
-    (a hard line break) it is dropped;
+    removed, except inside a code span, and one before anything else stays;
+    at the end of a paragraph line (a hard line break) it is dropped;
   - only inline links are read (`[text][ref]` and a `[ref]: url` line stay as
     written). Link text may hold brackets nested one level deep, and a
     destination parentheses nested one level deep, in pairs only: an escaped
@@ -1192,6 +1203,9 @@ each line and blank lines dropped. `format` is a required literal:
     at most 256 characters, none of them whitespace, `<`, `>` or `@`, on
     either side of the `@`;
   - HTML tags and character references stay as written.
+
+  What these rules and `MARKDOWN_BLOCKS`' do not state about the result is
+  unspecified.
 
 HTML is read in one forward scan and markdown line by line; **Work** under
 [Text](#text) gives what each costs.
@@ -1213,8 +1227,8 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 
 - for a heading, its text without the opening and closing `#`s;
 - for a list item, its text and continuation lines — nested items are items
-  of their own, and a bare marker with no text is no item. As in CommonMark,
-  an item interrupts a paragraph only when it has text and, if ordered, starts
+  of their own, and a bare marker with no text is no item. An item
+  interrupts a paragraph only when it has text and, if ordered, starts
   at 1: a wrapped line opening with `2025.` continues its paragraph;
 - for a table row, its non-empty cells joined by one space — every row except
   the delimiter row, the header row included, and a table needs its delimiter
@@ -1222,9 +1236,10 @@ literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
 - for a paragraph, its lines joined by one space;
 - for a fenced code block, its content unchanged.
 
-The reading is a line-based subset of CommonMark with GFM tables. A line ends
-at `\n`, `\r` or `\r\n` (U+2028 and U+2029 do not end one, as they do for
-`LINES`), and on each line:
+The text is read line by line, by these rules alone; there are no setext
+headings, indented code blocks, HTML blocks or link reference definitions. A
+line ends at `\n`, `\r` or `\r\n` (U+2028 and U+2029 do not end one, as they
+do for `LINES`), and on each line:
 
 - `>` quote markers are read through: up to three spaces, `>` and one optional
   space, repeated for each level of nesting;
@@ -1237,8 +1252,8 @@ at `\n`, `\r` or `\r\n` (U+2028 and U+2029 do not end one, as they do for
   backtick fence's info string holds no backtick. It closes at a line of at
   least as many of the same character with only spaces or tabs around them,
   at any indentation; its content lines lose up to as many leading spaces as
-  the opening fence is indented by, and an unclosed fence runs to the end.
-  There are no indented code blocks;
+  there are spaces and tabs before the opening fence, and an unclosed fence
+  runs to the end. There are no indented code blocks;
 - a thematic break is three or more of one of `-`, `*` and `_` after at most
   three spaces, with spaces or tabs between them allowed; it ends the block
   before it and yields no block;
@@ -1249,10 +1264,10 @@ at `\n`, `\r` or `\r\n` (U+2028 and U+2029 do not end one, as they do for
   delimiter row with one cell per header cell, each of dashes with an optional
   colon at either end; it runs to a blank line or the next heading, list item,
   fence or thematic break, and a row's cells past the header's count are
-  dropped.
+  dropped. Inside a cell `\|` is a pipe, the last cell's included.
 
-The text is read line by line; **Work** under [Text](#text) gives what it
-costs.
+What these rules do not state about the result is unspecified. **Work** under
+[Text](#text) gives what the reading costs.
 
 ```ts
 // value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'

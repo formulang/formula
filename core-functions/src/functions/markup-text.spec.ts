@@ -356,6 +356,11 @@ describe('Markup text', () => {
       expect(await markdown('``a`b``')).toBe('a`b');
       expect(await markdown('`` `x` ``')).toBe('`x`');
       expect(await markdown('a ` b')).toBe('a ` b');
+      // One space at each end is dropped when both ends have one and the span holds more.
+      expect(await markdown('a`` b ``c')).toBe('abc');
+      expect(await markdown('a`` b``c')).toBe('a bc');
+      expect(await markdown('a`  `b')).toBe('a b');
+      expect(await markdown('a``  b  ``c')).toBe('a b c');
     });
 
     it('removes a closing emphasis run with the nearest opening run of its character', async () => {
@@ -363,6 +368,35 @@ describe('Markup text', () => {
       expect(await markdown('*a** and __b_')).toBe('a and b');
       // The runs of the other character opened between the two pair no more.
       expect(await markdown('*a _b* c_')).toBe('a _b c_');
+    });
+
+    it('lets an underscore inside a word neither open nor close, as the flanking rules say', async () => {
+      expect(await markdown('foo_bar_')).toBe('foo_bar_');
+      expect(await markdown('_foo_bar')).toBe('_foo_bar');
+      expect(await markdown('_foo_bar_')).toBe('foo_bar');
+      // An asterisk inside a word can do both.
+      expect(await markdown('foo*bar*')).toBe('foobar');
+    });
+
+    it('classifies emphasis runs by the characters on either side', async () => {
+      // Whitespace after a run, or before it, keeps it from opening, or from closing.
+      expect(await markdown('x * a* b *c *')).toBe('x * a* b *c *');
+      expect(await markdown('*\u00A0a*')).toBe('* a*');
+      // Punctuation after a run lets it open only after whitespace, punctuation or the start,
+      // and in the mirror case close.
+      expect(await markdown('*"a"*')).toBe('"a"');
+      expect(await markdown('a*"b"*')).toBe('a*"b"*');
+      expect(await markdown('"*"a"*"')).toBe('""a""');
+      // Symbols count as punctuation.
+      expect(await markdown('a*\u20ACb\u20AC*')).toBe('a*\u20ACb\u20AC*');
+      // An underscore run that could open and close opens after punctuation, closes before it.
+      expect(await markdown('"_"a_')).toBe('""a');
+      expect(await markdown('_a"_"')).toBe('a""');
+    });
+
+    it('keeps each line of a fenced code block a line, and a backslash inside a code span', async () => {
+      expect(await markdown('```\na\n  b c\n```\nafter')).toBe('a\nb c\nafter');
+      expect(await markdown('a `\\*` b')).toBe('a \\* b');
     });
 
     it('reads links with one level of nested brackets and parentheses, within bounds', async () => {
@@ -516,6 +550,7 @@ describe('Markup text', () => {
         '',
         'x #',
       ]);
+      expect(await blocks('# x\t##\n# y\t#\t', 'heading')).toStrictEqual(['x', 'y']);
     });
 
     it('reads quote markers after at most three spaces, nested ones included', async () => {
@@ -523,8 +558,9 @@ describe('Markup text', () => {
       expect(await blocks('    > x', 'paragraph')).toStrictEqual(['> x']);
       expect(await blocks('>x', 'paragraph')).toStrictEqual(['x']);
       expect(await blocks('> > ## x', 'heading')).toStrictEqual(['x']);
-      // One space after `>` belongs to the marker; the rest to the line.
-      expect(await blocks('> ```\n>   code\n> ```', 'code')).toStrictEqual(['  code']);
+      // One space after `>` belongs to the marker and the rest to the line: in a fence opened
+      // with no indentation, the content keeps every space but that one.
+      expect(await blocks('>```\n> a\n>  b\n>c\n>```', 'code')).toStrictEqual(['a\n b\nc']);
     });
 
     it('reads a fence of three or more backticks or tildes, closed by as many of the same', async () => {
@@ -539,8 +575,15 @@ describe('Markup text', () => {
       expect(await blocks('~~~ a`b\nx\n~~~', 'code')).toStrictEqual(['x']);
       // At any indentation; the content lines lose up to as many spaces as the fence is indented.
       expect(await blocks('    ```\n    a\n      b\n    ```', 'code')).toStrictEqual(['a\n  b']);
+      // A tab before the fence counts as a space does; only leading spaces are removed.
+      expect(await blocks(' \t```\n   a\n\tb\n```', 'code')).toStrictEqual([' a\n\tb']);
       expect(await blocks('```\na\n      ```   ', 'code')).toStrictEqual(['a']);
       expect(await blocks('> ```\n> code\n> ```', 'code')).toStrictEqual(['code']);
+      // Tabs count as spaces or tabs around a closing fence.
+      expect(await blocks('```\na\n```\t\nb', 'code')).toStrictEqual(['a']);
+      expect(await blocks('```\na\n```\t\nb', 'paragraph')).toStrictEqual(['b']);
+      expect(await blocks('```\na\n\t```\nb', 'code')).toStrictEqual(['a']);
+      expect(await blocks('```\na\n\t```\nb', 'paragraph')).toStrictEqual(['b']);
     });
 
     it('reads a thematic break of three or more of one marker, which yields no block', async () => {
@@ -588,6 +631,19 @@ describe('Markup text', () => {
         'plain',
       ]);
       expect(await blocks('| a |\n|---|\n# h\nx', 'table-row')).toStrictEqual(['a']);
+      // A list item, a fence or a thematic break ends it too.
+      expect(await blocks('| a |\n|---|\n- item', 'table-row')).toStrictEqual(['a']);
+      expect(await blocks('| a |\n|---|\n- item', 'list-item')).toStrictEqual(['item']);
+      expect(await blocks('| a |\n|---|\n```\ncode\n```', 'table-row')).toStrictEqual(['a']);
+      expect(await blocks('| a |\n|---|\n```\ncode\n```', 'code')).toStrictEqual(['code']);
+      expect(await blocks('| a |\n|---|\n---\nb', 'table-row')).toStrictEqual(['a']);
+      expect(await blocks('| a |\n|---|\n---\nb', 'paragraph')).toStrictEqual(['b']);
+      // A row's empty cells are left out.
+      expect(await blocks('| a |  | b |\n|---|---|---|', 'table-row')).toStrictEqual(['a b']);
+      // `\|` is a pipe inside a cell, the last cell's included.
+      expect(await blocks('| a \\| b | c \\|\n|---|---|', 'table-row')).toStrictEqual([
+        'a | b c |',
+      ]);
     });
 
     it('ends a line at a line feed, a carriage return or both, and reads no indented code', async () => {
