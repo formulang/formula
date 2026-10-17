@@ -70,4 +70,4 @@ Also present: root `README.md` (project overview), `SECURITY.md` (security model
 1. Add a signature id in `definitions/src/builtin-signature-ids.ts` and the portable definition (name, params, return type, purity — plus an operator registration if it has an operator form) in `definitions/src/register-core-definitions.ts`.
 2. Implement it in `core-functions/src/functions/<name>.ts` (most implementations extend `AbstractEagerBatchImplementation`) and register the implementation under its signature id in `core-functions/src/functions/register-primitive-implementations.ts`.
 3. Add a co-located `<name>.spec.ts` next to the implementation.
-4. Document the function in `docs/functions.md`.
+4. Document the function in `docs/functions.md`: its signature, one bullet per rule with `evalOk`/`evalErrors` examples under each, and one closing `Unspecified:` sentence. `core-functions/src/functions/function-docs.spec.ts` runs every example on that page and fails on a rule bullet without one, for every function the 1.0.0 baseline does not name.
