@@ -40,20 +40,42 @@ export function someOccurrence(
 }
 
 /**
- * The longest needle {@link contains} gives to the runtime's own substring search. V8 builds its
- * Boyer-Moore tables over a needle's last 250 code units only; a longer needle whose mismatch lies
+ * The longest needle {@link contains} gives whole to the runtime's own substring search. V8 builds
+ * its Boyer-Moore tables over a needle's last 250 code units only: up to that length they cover the
+ * whole needle and the search is linear in the text, while a longer needle whose mismatch lies
  * before them is compared afresh at almost every position, in time proportional to the text's
  * length times the needle's.
  */
 const NATIVE_SEARCH_LIMIT = 250;
 
 /**
+ * The work {@link contains} spends on the candidates of a longer needle, as a multiple of the
+ * text's and the needle's lengths, before it leaves the search to {@link someOccurrence}.
+ */
+const CANDIDATE_BUDGET = 4;
+
+/**
  * Whether `needle` occurs in `text`, as `text.includes(needle)` answers (an empty needle occurs
- * everywhere), in time linear in the lengths of the text and the needle. A needle of at most 250
- * code units goes to the runtime's own search, whose tables in V8 then cover the whole needle; a
- * longer one to {@link someOccurrence}.
+ * everywhere), in time linear in the lengths of the text and the needle.
+ *
+ * A needle of at most 250 code units goes to the runtime's own search. A longer one is looked for
+ * by its last 250 code units, with the runtime's own search, and each place where they occur is
+ * checked for the rest of the needle. Each such candidate is charged the needle's length; once the
+ * charges pass four times the lengths of the text and the needle, the search is left to
+ * {@link someOccurrence}, which is linear whatever the text holds. In ordinary text the last 250
+ * code units of an absent needle occur rarely, if at all, so the search costs what the runtime's
+ * own search costs.
  */
 export function contains(text: string, needle: string): boolean {
   if (needle.length <= NATIVE_SEARCH_LIMIT) return text.includes(needle);
-  return someOccurrence(text, needle, () => true);
+  const headLength = needle.length - NATIVE_SEARCH_LIMIT;
+  const head = needle.slice(0, headLength);
+  const tail = needle.slice(headLength);
+  let budget = CANDIDATE_BUDGET * (text.length + needle.length);
+  for (let at = text.indexOf(tail, headLength); at >= 0; at = text.indexOf(tail, at + 1)) {
+    if (text.startsWith(head, at - headLength)) return true;
+    budget -= needle.length;
+    if (budget < 0) return someOccurrence(text, needle, () => true);
+  }
+  return false;
 }

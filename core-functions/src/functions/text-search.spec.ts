@@ -97,4 +97,21 @@ describe('contains', () => {
       expect(contains(`${'a'.repeat(20_000)}${needle}a`, needle), String(length)).toBe(true);
     }
   });
+
+  it('checks each place where the last 250 code units of a longer needle occur', () => {
+    const tail = 'x'.repeat(250);
+    const needle = `head${tail}`;
+    // The tail occurs three times after a wrong head before the needle occurs.
+    const misses = `nope${tail}-hea${tail}-bead${tail}-`;
+    expect(contains(`${misses}${needle}`, needle)).toBe(true);
+    expect(contains(misses, needle)).toBe(false);
+    // The tail of this needle occurs at every position of a run: each place is a candidate,
+    // whichever position the needle starts at.
+    const longNeedle = `b${'a'.repeat(300)}`;
+    for (const shift of [0, 1, 2, 3, 249]) {
+      const run = 'a'.repeat(5_000 + shift);
+      expect(contains(`${run}${longNeedle}`, longNeedle), String(shift)).toBe(true);
+      expect(contains(`${run}b${'a'.repeat(299)}`, longNeedle), String(shift)).toBe(false);
+    }
+  });
 });
