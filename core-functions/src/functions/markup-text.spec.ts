@@ -42,7 +42,7 @@ describe('Markup text', () => {
       expect(await html('<!DOCTYPE html><?xml version="1.0"?><p>Doc</p>')).toBe('Doc');
     });
 
-    it('ends head at </head> or where the body starts, as HTML does', async () => {
+    it('ends head at </head> or where the body starts', async () => {
       const head =
         '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Angebot</title>';
       const body = '<body><h1>Hallo</h1><p>Text</p>';
@@ -96,6 +96,31 @@ describe('Markup text', () => {
           name,
         ).toBe('N\nBody');
       }
+    });
+
+    it('ends head at </head>, </body>, </html> or </br>, and at no other end tag', async () => {
+      for (const end of ['</head>', '</body>', '</html>', '</br>', '</HEAD>']) {
+        expect(await html(`<head>${end}<noscript>N</noscript>`), end).toBe('N');
+      }
+      for (const end of ['</p>', '</div>', '</title>', '</noscript>']) {
+        expect(await html(`<head>${end}<noscript>N</noscript>`), end).toBe('');
+      }
+    });
+
+    it('starts the body at text written with anything but HTML whitespace', async () => {
+      expect(await html('<head>text<noscript>N</noscript>')).toBe('textN');
+      expect(await html('<head> \n\t\r\f<noscript>N</noscript>')).toBe('');
+      expect(await html('<head> <noscript>N</noscript>')).toBe('N');
+      expect(await html('<head>&#32;<noscript>N</noscript>')).toBe('N');
+      // Nor at an html start tag.
+      expect(await html('<head><html><noscript>N</noscript>')).toBe('');
+    });
+
+    it('starts the body whether head opened or not, and opens no head after it', async () => {
+      expect(await html('</body><noscript>N</noscript>')).toBe('N');
+      expect(await html('</p><noscript>N</noscript>')).toBe('');
+      expect(await html('x<head><noscript>N</noscript>')).toBe('xN');
+      expect(await html('<p>x</p><meta><noscript>N</noscript>')).toBe('x\nN');
     });
 
     it.each([
@@ -161,7 +186,41 @@ describe('Markup text', () => {
     it('does not end dropped content at an end tag with a longer name', async () => {
       expect(await html('<script>hidden</scripts>still hidden')).toBe('');
       expect(await html('<style>hidden</style-x>still hidden</style>shown')).toBe('shown');
+      // Nor at anything else inside it: a comment opener changes nothing.
+      expect(await html('<script><!--<script></script>x--></script>shown')).toBe('x-->shown');
     });
+
+    it.each([
+      ['a space', ' '],
+      ['a tab', '\t'],
+      ['a line feed', '\n'],
+      ['a carriage return', '\r'],
+      ['a form feed', '\f'],
+      ['a slash', '/'],
+    ])('ends a tag name at %s', async (_name, after) => {
+      expect(await html(`a<p${after}>b</p${after}>c`)).toBe('a\nb\nc');
+    });
+
+    it('opens a quoted value only after an attribute name and =, spaces allowed', async () => {
+      expect(await html('<a title = "x>y">z</a>')).toBe('z');
+      expect(await html("<a title= 'x>y'>z</a>")).toBe('z');
+      expect(await html('<a ="x>y">z')).toBe('y">z');
+      expect(await html('<a b=c>d>e')).toBe('d>e');
+    });
+
+    it('drops other markup up to the next >, and keeps any other < as text', async () => {
+      expect(await html('a</1 b=">">c')).toBe('a">c');
+      expect(await html('a</ b>c')).toBe('ac');
+      expect(await html('a<!x>b<?y>c')).toBe('abc');
+      expect(await html('a<1>b <+c')).toBe('a<1>b <+c');
+    });
+
+    it.each(['textarea', 'xmp', 'iframe', 'noembed', 'plaintext'])(
+      'reads the content of <%s> as markup like any other',
+      async (name) => {
+        expect(await html(`a<${name}><b>x</b> &lt;y&gt;</${name}>z`)).toBe('ax <y>z');
+      },
+    );
 
     it('removes other tags and skips > inside quoted attributes', async () => {
       expect(await html('<p class="x">Hello <b>bold</b> <a title="a > b">link</a></p>')).toBe(
@@ -171,7 +230,7 @@ describe('Markup text', () => {
       expect(await html("<a title='a > b' href=x>link</a>")).toBe('link');
     });
 
-    it('reads tags as the HTML tokenizer does: a quote opens a value only after =', async () => {
+    it('opens a quoted value only after =, and drops </> and each form of comment', async () => {
       expect(await html('<a title=">" x">link</a>')).toBe('link');
       expect(await html('<a " > b">text')).toBe('b">text');
       expect(await html('<a/b>c<br/>d')).toBe('c\nd');
@@ -180,11 +239,14 @@ describe('Markup text', () => {
       expect(await html('<!-->A<!--->B<!-- c --!>C')).toBe('ABC');
     });
 
-    it('drops a tag, comment or dropped element that the markup ends inside', async () => {
+    it('drops a tag, comment, other markup or dropped content the markup ends inside', async () => {
       expect(await evalOk('PLAIN_TEXT("Hello <b"; "html")')).toBe('Hello');
       expect(await html('<p>A</p><p title="x>B')).toBe('A');
       expect(await html('<p>A</p><script>if (a < b) {')).toBe('A');
       expect(await html('<p>A</p><!DOCTYPE')).toBe('A');
+      expect(await html('a<?x b')).toBe('a');
+      expect(await html('a</1 b')).toBe('a');
+      expect(await html('a<!')).toBe('a');
       // A `<` or `</` at the very end starts no tag.
       expect(await html('a<')).toBe('a<');
       expect(await html('a</')).toBe('a</');
@@ -199,7 +261,7 @@ describe('Markup text', () => {
       expect(await html('&lang;&thetasym;')).toBe('\u27E8\u03D1');
     });
 
-    it('decodes a numeric reference as the HTML tokenizer does', async () => {
+    it('decodes a numeric reference of one digit or more to its character', async () => {
       // Any number of digits, leading zeros included.
       expect(await html('&#00000065;&#x0000041;&#X41;&#1114111;')).toBe('AAA\u{10FFFF}');
       // Zero, a surrogate and a value past U+10FFFF are U+FFFD, however many digits it takes.
@@ -228,6 +290,10 @@ describe('Markup text', () => {
       expect(await html('<p>one\n   two</p>\n\n<p>  </p><div>three</div>')).toBe('one two\nthree');
       expect(await html('<pre>line 1\n  line 2</pre>')).toBe('line 1\nline 2');
       expect(await html('<pre>a\r\nb\rc</pre>')).toBe('a\nb\nc');
+      // The no-break space is whitespace; inside pre, a line break a reference gives ends a line.
+      expect(await html('a&nbsp;&nbsp; b')).toBe('a b');
+      expect(await html('<pre>a&#13;b&#10;c</pre>')).toBe('a\nb\nc');
+      expect(await html('<p>a&#13;b&#10;c</p>')).toBe('a b c');
     });
   });
 
@@ -749,6 +815,75 @@ describe('Markup text', () => {
       expect(WINDOWS_1252_NUMERIC_REFERENCES.size).toBe(27);
       expect(WINDOWS_1252_NUMERIC_REFERENCES.get(0x96)).toBe('–');
       expect(WINDOWS_1252_NUMERIC_REFERENCES.has(0x81)).toBe(false);
+    });
+
+    /** Reads `name hex name hex ...` pairs into [name, character] entries. */
+    const pairs = (table: string): Array<[string, string]> => {
+      const words = table.trim().split(/\s+/u);
+      return Array.from({ length: words.length / 2 }, (_, i) => [
+        words[2 * i],
+        String.fromCodePoint(Number.parseInt(words[2 * i + 1], 16)),
+      ]);
+    };
+    /** What PLAIN_TEXT gives a character: whitespace collapses to one space. */
+    const shown = (char: string) => (/\s/u.test(char) ? ' ' : char);
+
+    it('decodes each of the 252 HTML 4 names to the character of the WHATWG table', async () => {
+      // From the WHATWG named character reference table (as Python's html.entities.html5
+      // holds it), for the names of HTML 4 (html.entities.name2codepoint).
+      const expected = pairs(`
+Aacute C1 aacute E1 Acirc C2 acirc E2 acute B4 AElig C6 aelig E6 Agrave C0 agrave E0
+alefsym 2135 Alpha 391 alpha 3B1 amp 26 and 2227 ang 2220 Aring C5 aring E5 asymp 2248 Atilde C3
+atilde E3 Auml C4 auml E4 bdquo 201E Beta 392 beta 3B2 brvbar A6 bull 2022 cap 2229 Ccedil C7
+ccedil E7 cedil B8 cent A2 Chi 3A7 chi 3C7 circ 2C6 clubs 2663 cong 2245 copy A9 crarr 21B5
+cup 222A curren A4 Dagger 2021 dagger 2020 dArr 21D3 darr 2193 deg B0 Delta 394 delta 3B4
+diams 2666 divide F7 Eacute C9 eacute E9 Ecirc CA ecirc EA Egrave C8 egrave E8 empty 2205
+emsp 2003 ensp 2002 Epsilon 395 epsilon 3B5 equiv 2261 Eta 397 eta 3B7 ETH D0 eth F0 Euml CB
+euml EB euro 20AC exist 2203 fnof 192 forall 2200 frac12 BD frac14 BC frac34 BE frasl 2044
+Gamma 393 gamma 3B3 ge 2265 gt 3E hArr 21D4 harr 2194 hearts 2665 hellip 2026 Iacute CD
+iacute ED Icirc CE icirc EE iexcl A1 Igrave CC igrave EC image 2111 infin 221E int 222B Iota 399
+iota 3B9 iquest BF isin 2208 Iuml CF iuml EF Kappa 39A kappa 3BA Lambda 39B lambda 3BB lang 27E8
+laquo AB lArr 21D0 larr 2190 lceil 2308 ldquo 201C le 2264 lfloor 230A lowast 2217 loz 25CA
+lrm 200E lsaquo 2039 lsquo 2018 lt 3C macr AF mdash 2014 micro B5 middot B7 minus 2212 Mu 39C
+mu 3BC nabla 2207 nbsp A0 ndash 2013 ne 2260 ni 220B not AC notin 2209 nsub 2284 Ntilde D1
+ntilde F1 Nu 39D nu 3BD Oacute D3 oacute F3 Ocirc D4 ocirc F4 OElig 152 oelig 153 Ograve D2
+ograve F2 oline 203E Omega 3A9 omega 3C9 Omicron 39F omicron 3BF oplus 2295 or 2228 ordf AA
+ordm BA Oslash D8 oslash F8 Otilde D5 otilde F5 otimes 2297 Ouml D6 ouml F6 para B6 part 2202
+permil 2030 perp 22A5 Phi 3A6 phi 3C6 Pi 3A0 pi 3C0 piv 3D6 plusmn B1 pound A3 Prime 2033
+prime 2032 prod 220F prop 221D Psi 3A8 psi 3C8 quot 22 radic 221A rang 27E9 raquo BB rArr 21D2
+rarr 2192 rceil 2309 rdquo 201D real 211C reg AE rfloor 230B Rho 3A1 rho 3C1 rlm 200F
+rsaquo 203A rsquo 2019 sbquo 201A Scaron 160 scaron 161 sdot 22C5 sect A7 shy AD Sigma 3A3
+sigma 3C3 sigmaf 3C2 sim 223C spades 2660 sub 2282 sube 2286 sum 2211 sup 2283 sup1 B9 sup2 B2
+sup3 B3 supe 2287 szlig DF Tau 3A4 tau 3C4 there4 2234 Theta 398 theta 3B8 thetasym 3D1
+thinsp 2009 THORN DE thorn FE tilde 2DC times D7 trade 2122 Uacute DA uacute FA uArr 21D1
+uarr 2191 Ucirc DB ucirc FB Ugrave D9 ugrave F9 uml A8 upsih 3D2 Upsilon 3A5 upsilon 3C5 Uuml DC
+uuml FC weierp 2118 Xi 39E xi 3BE Yacute DD yacute FD yen A5 Yuml 178 yuml FF Zeta 396 zeta 3B6
+zwj 200D zwnj 200C
+`);
+      expect(expected).toHaveLength(252);
+      const decoded = (await html(
+        `x|${expected.map(([name]) => `&${name};`).join('|')}|x`,
+      )) as string;
+      expect(decoded.split('|').slice(1, -1)).toStrictEqual(
+        expected.map(([, char]) => shown(char)),
+      );
+      // Names are case-sensitive: an upper-case spelling HTML 4 does not list stays as written.
+      expect(await html('&AMP; &Amp; &LT;')).toBe('&AMP; &Amp; &LT;');
+    });
+
+    it('decodes each numeric reference from 128 to 159 as the WHATWG table maps it', async () => {
+      // As Python's html.unescape gives &#n;, which follows the WHATWG remapping table.
+      const expected = pairs(`
+80 20AC 81 81 82 201A 83 192 84 201E 85 2026 86 2020 87 2021 88 2C6 89 2030 8A 160 8B 2039
+8C 152 8D 8D 8E 17D 8F 8F 90 90 91 2018 92 2019 93 201C 94 201D 95 2022 96 2013 97 2014 98 2DC
+99 2122 9A 161 9B 203A 9C 153 9D 9D 9E 17E 9F 178
+`);
+      expect(expected).toHaveLength(32);
+      const markup = expected.map(([hex]) => `&#${Number.parseInt(hex, 16)};`).join('|');
+      const decoded = (await html(`x|${markup}|x`)) as string;
+      expect(decoded.split('|').slice(1, -1)).toStrictEqual(
+        expected.map(([, char]) => shown(char)),
+      );
     });
   });
 

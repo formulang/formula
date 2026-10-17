@@ -1104,34 +1104,65 @@ await evalOk('MISSING_FROM(LIST("\\"hallo\\""); value; "loose")', { value: 'Er s
 The text of `markup`, one line per block, with whitespace collapsed within
 each line and blank lines dropped. `format` is a required literal:
 
-- `"html"` — comments and the content of `script`, `style`, `title` and `head`
-  are dropped. `head` ends at `</head>` or, as HTML lets that end tag be
-  omitted, where the body starts: at `<body>`, at text, or at any element that
-  cannot live in `head` (only `base`, `basefont`, `bgsound`, `link`, `meta`,
-  `noframes`, `noscript`, `script`, `style`, `template` and `title` can; the
-  content of `noframes`, `noscript` and `template` inside `head` is head
-  content too). The content of a dropped element ends at its end tag:
-  `</script`, in any case, followed by a space, a tab, a line feed, a carriage
-  return, a form feed, `/` or `>` (`</scripts>` does not end it).
-  `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
-  `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`,
-  `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`, `tr`
-  and `ul` end a line where they open or close; every other tag is removed.
-  Numeric character references and the 252 named references of HTML 4 are
-  decoded as browsers decode them: a numeric reference may have any number of
-  digits, leading zeros included; zero, a surrogate or a value past U+10FFFF
-  is U+FFFD; 128 to 159 are the windows-1252 characters where that encoding
-  has one (`&#150;` is an en dash); and `&lang;` is U+27E8. Unlike in a
-  browser, a reference needs its closing `;`, and unknown names stay as
-  written. Source line breaks (`\n`, `\r`, `\r\n`) are whitespace, except
-  inside `pre`, where each one ends a line. The result is plain text, not
-  sanitised HTML: `&lt;b&gt;` comes back as `<b>`. Tags, comments and
-  declarations are read as the HTML
-  tokenizer reads them: a quote opens an attribute value only right after
-  `=`, so a `>` inside a quoted value does not end the tag, and a `<` that is
-  not followed by a letter, `/`, `!` or `?` is text. Markup that ends inside
-  a tag, a comment or a dropped element loses that unterminated part, as it
-  does in a browser: `PLAIN_TEXT("Hello <b"; "html")` is `"Hello"`.
+- `"html"` — the markup is read in one pass, by these rules:
+  - **Tags.** `<` followed by an ASCII letter starts a tag, and `</` followed
+    by an ASCII letter an end tag. The name runs to a space, a tab, a line
+    feed, a carriage return, a form feed, `/` or `>`, and its ASCII letters
+    are read in either case. The tag ends at the next `>` outside a quoted
+    attribute value; a quote opens a value only after an attribute name and
+    `=`, with spaces allowed around the `=`, so `<a title="a > b">` is one
+    tag, and `<a " > b">` ends at its first `>`.
+  - **Other markup.** `<!--` starts a comment, which ends at `-->` or `--!>`,
+    or at once for `<!-->` and `<!--->`. Any other `<!` or `<?`, and `</`
+    followed by anything but an ASCII letter or `>`, runs to the next `>`.
+    All of these are dropped, and so is `</>`. Any other `<`, and `<` or `</`
+    at the end of the markup, is text.
+  - **Dropped content.** The content of `script`, `style` and `title` is
+    dropped, and, while `head` is open, the content of `noframes`, `noscript`
+    and `template`. It ends at the element's end tag: `</script`, in any
+    letter case, followed by a space, a tab, a line feed, a carriage return,
+    a form feed, `/` or `>`. `</scripts>` does not end it, nor does anything
+    else inside it, `<!--` included.
+  - **`head`.** `head` opens at `<head>` or at a start tag of an element that
+    can live in it (`base`, `basefont`, `bgsound`, `link`, `meta`,
+    `noframes`, `noscript`, `script`, `style`, `template` and `title`),
+    unless the body has started, and nothing in it reaches the result. The
+    body starts, whether `head` opened or not, at `</head>`, `</body>`,
+    `</html>` or `</br>`, at a start tag of any other element but `html`, or
+    at text written with anything but spaces, tabs, line feeds, carriage
+    returns and form feeds (`&nbsp;` and `&#32;` included); no other end tag
+    starts it.
+  - **Lines.** `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
+    `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`,
+    `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`,
+    `tr` and `ul` end a line where they open or close; every other tag is
+    removed. Whitespace (JavaScript's `\s`, the no-break space included)
+    collapses to one space within a line, and blank lines are dropped. A line
+    break in the source (`\n`, `\r` or `\r\n`) is whitespace, except inside
+    `pre`, where each one ends a line.
+  - **References.** A numeric reference, decimal (`&#150;`) or hexadecimal
+    (`&#x96;`, `&#X96;`), has one digit or more, leading zeros included, with
+    no upper bound. Zero, a surrogate or a value past U+10FFFF gives U+FFFD;
+    128 to 159 give the windows-1252 character where that encoding has one
+    (`&#150;` is an en dash) and stay C1 controls where it has none
+    (`&#129;`); any other value gives its code point. The 252 named
+    references of HTML 4 (`&amp;`, `&nbsp;`, `&euro;` and the rest) give the
+    characters the HTML standard's table maps them to: `&lang;` and `&rang;`
+    are U+27E8 and U+27E9, not HTML 4's U+2329 and U+232A. A reference needs
+    its closing `;`, and any other name stays as written, `&AMP;` included.
+  - **Unterminated markup.** Markup that ends inside a tag, a comment, other
+    markup or dropped content loses that part:
+    `PLAIN_TEXT("Hello <b"; "html")` is `"Hello"`.
+  - **Not handled.** `textarea`, `xmp`, `iframe`, `noembed` and `plaintext`
+    have no rule of their own: their content is read as markup like any
+    other, its tags removed and its references decoded, where a browser keeps
+    it as text. `<!--` inside `script` does not change where the script
+    ends. Inside `pre`, a carriage return or line feed that a reference gives
+    (`&#13;`, `&#10;`) ends a line as one in the source does.
+
+  The result is plain text, not sanitised HTML: `&lt;b&gt;` comes back as
+  `<b>`. What these rules do not state about the result is unspecified.
+
 - `"markdown"` — ATX heading markers, `>` quote markers, list markers (`-`,
   `*`, `+`, `1.`, `1)`), table pipes and the delimiter row, code fences,
   emphasis (`*`, `_`, `**`, `__`), inline-code backticks and backslash escapes
