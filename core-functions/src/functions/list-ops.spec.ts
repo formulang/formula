@@ -306,6 +306,12 @@ describe('List ops', () => {
           value: [day({ note: 'a' }), day({ note: 'b' }), '2024-01-02'],
         }),
       ).toStrictEqual([2, 1]);
+      // A date and a datetime with the same ISO text are two values.
+      expect(
+        await evalOk('GROUP_COUNTS(value)', {
+          value: [day({}), { __formula_object_kind: 'datetime', iso: '2024-01-02' }, day({})],
+        }),
+      ).toStrictEqual([2, 1]);
     });
 
     it('answers null with TYPE for a list holding a list or an object', async () => {

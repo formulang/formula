@@ -1500,7 +1500,7 @@ await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] }); // 2
 `FILTER_BY(list: list<T>, keys: list<any>, operator: callable, operatorValue?: any) -> list<T>`
 
 Keeps the items of `list` whose key — the item at the same position in
-`keys` — satisfies the named `operator`, called as `(key)` or, when
+`keys` — the named `operator` answers `TRUE` for, called as `(key)` or, when
 `operatorValue` is given, `(key, operatorValue)`. `list` and `keys` must have
 the same length; otherwise the result is `null` with a `TYPE` warning. The
 operator is validated at parse time as for `FILTER`, and called as `FILTER`

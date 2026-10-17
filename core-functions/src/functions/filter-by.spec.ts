@@ -178,6 +178,20 @@ describe('FILTER_BY', () => {
       expect(runtime.invoked).toStrictEqual(Array(4).fill('CHECK_NUMBER/v1'));
     });
 
+    it('keeps an item only where the operator answers TRUE, as FILTER does', async () => {
+      // Only CHECK(list<text>) has an implementation, so it runs, and answers a text: no item is
+      // kept, though the text is not empty.
+      const runtime = checkRuntime(['CHECK_LIST/v1']);
+      expect(
+        await run(runtime, 'FILTER_BY(LIST("p"; "q"); value; "CHECK")', ['yes', 'no']),
+      ).toStrictEqual({ parse: [], value: [], warnings: [] });
+      expect(await run(runtime, 'FILTER(value; "CHECK")', ['yes', 'no'])).toStrictEqual({
+        parse: [],
+        value: [],
+        warnings: [],
+      });
+    });
+
     it('answers null with a TYPE warning when no definition has an implementation', async () => {
       const runtime = checkRuntime([]);
       expect(
