@@ -599,49 +599,39 @@ Embedders that count outside a formula import the same tokenisers from
 
 **Bounds.** Each function's section states the bounds it applies:
 `maxWildcardOutputLength` (5,000) to a list it returns and `maxListLength`
-(1,000) to a list it reads, both raising `LIST_TOO_LARGE` as `FLAT` does. Each
-`keep` token, and each phrase in `"word"` mode, is found with one
-Knuth-Morris-Pratt search, in time linear in the lengths of the text and of the
-token or phrase however often their occurrences overlap. Each phrase in `"substring"` mode, and each item of
-`MISSING_FROM`, is found with one substring search, linear in the same
-lengths. A phrase of up to 250 code units goes to the runtime's own search,
-whose tables in V8 cover such a phrase whole. A longer one first has its last
-250 code units looked for with that search: where they do not occur, neither
-does the phrase, and where they first occur the whole phrase is compared once.
-When those 250 code units repeat with a period of at most 63 (a run of one
-letter, say), another window of 250 code units of the phrase, whose period is
-longer, is looked for in the same way. The rest of the text is then read by a
-scan that shifts by the pair of code units under the phrase's last two,
-compares the phrase from its start where those two agree, and goes on with
-Knuth-Morris-Pratt matching where the next place would start inside the units
-it compared: it makes at most six comparisons for each code unit of the text.
-V8's own search alone reads a longer phrase whose mismatch lies before its last
-250 code units in time proportional to the text's length times the phrase's.
-Measured on Node 22.23.3 under the default limits, best of three, with V8's own
-search in brackets: on 1,000,000 code units of prose (random letters and
-spaces), `MISSING_FROM` with `normalise` `"exact"` and 1,000 absent items of
-300 code units takes 214 ms (207 ms); on a document of 5,000 entries of 300
-code units that each end with the same 250-unit note, 1,000 absent items that
-end with that note take 134 ms (1.0 s); on 100,000 code units of `a`,
-`FIRST_CONTAINED` with ten phrases of 8,000 code units, `"ab"` followed by
-`a`s, takes 5 ms (3.9 s). Where V8 finds a phrase's first code unit rarely and
-rejects each such place at the next unit, its search is the faster: on 100,000
-code units that repeat a 250-unit block holding the letter `c` once, at its
-start, `FIRST_CONTAINED` with 1,000 phrases of `c` and the block 32 times takes
-25 ms (6.6 ms).
+(1,000) to a list it reads, both raising `LIST_TOO_LARGE` as `FLAT` does. A
+phrase of `FIRST_CONTAINED` or `CONTAINS_ANY`, and an item of `MISSING_FROM`,
+is at most 250 code units long as it is searched for, and a longer one raises
+`PHRASE_TOO_LONG`: in `"substring"` mode, and in `MISSING_FROM`, it goes to the
+runtime's own substring search, whose tables V8 builds over a needle's last 250
+code units, so that up to that length they cover the whole phrase, while a
+longer phrase whose mismatch lies before them would be compared afresh at
+almost every place in the text. In `"word"` mode a phrase, and in `SENTENCES`
+a `keep` token, is found with one Knuth-Morris-Pratt search, in time linear in
+the lengths of the text and of the phrase or token however often their
+occurrences overlap. Measured on Node 22.23.3 under the default limits, best of
+three: on 1,000,000 code units of prose (random letters and spaces),
+`FIRST_CONTAINED` with 1,000 absent phrases of 250 code units takes 20 ms, and
+`MISSING_FROM` with `"exact"` 21 ms; on 5,000 entries of 300 code units that
+each end with the same 250-unit note, 1,000 absent items of 250 code units that
+end with all of the note but its first unit take 29 ms; on 1,000,000 code units
+of `a`, 1,000 phrases of `"b"` and 249 `a`s take 19 ms, and 1,000 phrases of
+249 `a`s and `"b"` 5.1 s, the text's length times the number of phrases; in
+`"word"` mode, 1,000 phrases of 250 `a`s, each found at every place of that
+text, run 54 s and report `WALL_TIME_LIMIT_EXCEEDED`.
 
 **Work.** What each text function does with its input, read from its code,
 and what bounds the input:
 
-| Function                                       | Work                                                                                                                                                                                                                                                           | Bounded by                                                                                                                                          |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one fixed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                                                                                                   | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules and the text at most `maxRegexTextLength` (8,000), which do not bound the time (below) |
-| `SENTENCES`                                    | one fixed expression over the text (in `"terminators"` mode a second on each piece), and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                                                                      | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
-| `LINES`, `LINE_COUNT`                          | one scan for the line breaks with a fixed expression, each line trimmed in `"non-blank"` mode; `LINE_COUNT` counts the lines as it finds them                                                                                                                  | `LINES`: the result at most `maxWildcardOutputLength`                                                                                               |
-| `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, one substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`), each linear in the lengths of the text and the phrase: the text's length times the number of phrases, plus the phrases' lengths, in the worst case | `phrases` at most `maxListLength`                                                                                                                   |
-| `MISSING_FROM`                                 | the text normalised once, then per item its normalisation and one substring search, linear in the lengths of the text and the item: the text's length times the number of items, plus the items' lengths, in the worst case                                    | `items` at most `maxListLength`                                                                                                                     |
-| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and fixed expressions on each piece of text                                                                                                                                      | the length of `markup`                                                                                                                              |
-| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, fixed expressions on each, then one scan of each block's inline text                                                                                                                                                                  | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
+| Function                                       | Work                                                                                                                                                                                                                  | Bounded by                                                                                                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one fixed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                                                          | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules and the text at most `maxRegexTextLength` (8,000), which do not bound the time (below) |
+| `SENTENCES`                                    | one fixed expression over the text (in `"terminators"` mode a second on each piece), and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                             | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
+| `LINES`, `LINE_COUNT`                          | one scan for the line breaks with a fixed expression, each line trimmed in `"non-blank"` mode; `LINE_COUNT` counts the lines as it finds them                                                                         | `LINES`: the result at most `maxWildcardOutputLength`                                                                                               |
+| `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, the runtime's own substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`): the text's length times the number of phrases, plus the phrases' lengths, in the worst case | `phrases` at most `maxListLength`, each at most 250 code units as searched for                                                                      |
+| `MISSING_FROM`                                 | the text normalised once, then per item its normalisation and the runtime's own substring search: the text's length times the number of items, plus the items' lengths, in the worst case                             | `items` at most `maxListLength`, each at most 250 code units once normalised                                                                        |
+| `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and fixed expressions on each piece of text                                                                                             | the length of `markup`                                                                                                                              |
+| `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, fixed expressions on each, then one scan of each block's inline text                                                                                                                         | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
 
 This is read from the code: it is what the code claims for its own loops and
 for the patterns it runs, and review owns those claims. No spec measures the
@@ -650,10 +640,11 @@ or of a pattern. Each cost but that of the formula's own pattern (below) is
 linear in the length of the text or list the function reads, and that length is
 bounded only by what the runtime bounds:
 `maxStringLiteralLength` bounds literals, not a text the formula computes, so a
-`SUBSTITUTE` of a `SUBSTITUTE` in a 10,533-character source makes 25,000,000
-code units, on which `FIRST_CONTAINED` with 43 phrases of 8,002 code units takes
-0.97 s, as long as 43 phrases of 250 code units whose first character the text
-holds take (1.0 s); building the text alone, `LEN`, takes 0.17 s.
+`SUBSTITUTE` of a `SUBSTITUTE` of a 1,000-unit literal, 1,394 characters of
+source, makes 25,000,000 code units: building them alone, `LEN`, takes 0.19 s,
+and `FIRST_CONTAINED` on them with 43 phrases of 249 `a`s and `"b"`, in a
+12,339-character formula, 5.6 s, and with 43 phrases of 250 `b`s, whose first
+character the text lacks, 0.25 s.
 
 Four patterns of 1.0.0 code read their input in more than linear time. Each was
 measured on Node 22.23.3 on an input built against it, as the best of three
@@ -1338,6 +1329,21 @@ Unspecified: nothing; these rules decide every text and mode.
   await evalErrors('FIRST_CONTAINED("abc"; value)', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
   ```
 
+- A phrase longer than 250 code units as it is searched for, lower-cased when `ignoreCase` is
+  `TRUE`, raises `PHRASE_TOO_LONG`, wherever it stands in the list.
+
+  ```ts
+  await evalOk('LEN(FIRST_CONTAINED(value; LIST(value)))', { value: 'a'.repeat(250) }); // 250
+  await evalErrors('FIRST_CONTAINED(value; LIST(value))', { value: 'a'.repeat(251) }); // ["PHRASE_TOO_LONG"]
+  await evalErrors('FIRST_CONTAINED("a"; LIST("a"; value))', { value: 'a'.repeat(251) }); // ["PHRASE_TOO_LONG"]
+  await evalOk('FIRST_CONTAINED("x"; LIST(value); "substring"; TRUE)', {
+    value: '\u0130'.repeat(125),
+  }); // null
+  await evalErrors('FIRST_CONTAINED("x"; LIST(value); "substring"; TRUE)', {
+    value: '\u0130'.repeat(126),
+  }); // ["PHRASE_TOO_LONG"]
+  ```
+
 Unspecified: nothing; these rules decide every text, list and option.
 
 ### CONTAINS_ANY
@@ -1345,8 +1351,8 @@ Unspecified: nothing; these rules decide every text, list and option.
 `CONTAINS_ANY(text: text, phrases: list<text>, match?: text, ignoreCase?: boolean) -> boolean`
 
 - Whether [FIRST_CONTAINED](#first_contained) finds a phrase with the same arguments: `TRUE` where
-  it answers a phrase, `FALSE` where it finds none, an empty list included, and `null`, with the
-  same warning, where it returns `null` for its arguments.
+  it answers a phrase, `FALSE` where it finds none, an empty list included, `null`, with the same
+  warning, where it returns `null` for its arguments, and the same error where it raises one.
 
   ```ts
   await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))'); // true
@@ -1357,6 +1363,8 @@ Unspecified: nothing; these rules decide every text, list and option.
   await evalOk('CONTAINS_ANY(value; LIST("a"))', { value: null }); // null
   await evalOk('CONTAINS_ANY(value; LIST("a"))', { value: 5 }); // null with a TYPE warning
   await evalErrors('CONTAINS_ANY("abc"; value)', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
+  await evalOk('CONTAINS_ANY(value; LIST(value))', { value: 'a'.repeat(250) }); // true
+  await evalErrors('CONTAINS_ANY(value; LIST(value))', { value: 'a'.repeat(251) }); // ["PHRASE_TOO_LONG"]
   ```
 
 Unspecified: nothing; these rules decide every text, list and option.
@@ -1431,6 +1439,17 @@ Unspecified: nothing; these rules decide every text, list and option.
 
   ```ts
   await evalErrors('MISSING_FROM(value; "abc")', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
+  ```
+
+- An item longer than 250 code units once normalised raises `PHRASE_TOO_LONG`.
+
+  ```ts
+  await evalOk('MISSING_FROM(LIST(value); value; "exact")', { value: 'a'.repeat(250) }); // []
+  await evalErrors('MISSING_FROM(LIST(value); value; "exact")', { value: 'a'.repeat(251) }); // ["PHRASE_TOO_LONG"]
+  await evalOk('MISSING_FROM(LIST(value); "a b")', { value: 'a' + ' '.repeat(300) + 'b' }); // []
+  await evalErrors('MISSING_FROM(LIST(value); "a b"; "exact")', {
+    value: 'a' + ' '.repeat(300) + 'b',
+  }); // ["PHRASE_TOO_LONG"]
   ```
 
 Unspecified: nothing; these rules decide every list, text and mode.

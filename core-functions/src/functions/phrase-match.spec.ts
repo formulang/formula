@@ -113,7 +113,7 @@ describe('Phrase matching', () => {
     it('finds a word phrase in a run of one letter, which holds it at every position', async () => {
       // Every occurrence but none as a whole word, then one as a whole word after a space.
       const value = 'a'.repeat(4_000);
-      const phrase = 'a'.repeat(2_000);
+      const phrase = 'a'.repeat(250);
       const options = { setup: withOther };
       for (const name of ['FIRST_CONTAINED', 'CONTAINS_ANY']) {
         const source = `${name}(value; other; "word")`;
@@ -131,10 +131,10 @@ describe('Phrase matching', () => {
     });
 
     it('finds a long phrase only where it occurs, its mismatch at its start', async () => {
-      // Either side of the 250 code units the runtime's own substring search covers.
+      // Up to the 250 code units the runtime's own substring search covers whole.
       const options = { setup: withOther };
       const text = 'a'.repeat(4_000);
-      for (const length of [250, 251, 300, 2_000]) {
+      for (const length of [200, 249, 250]) {
         const phrase = `ab${'a'.repeat(length - 2)}`;
         for (const name of ['FIRST_CONTAINED', 'CONTAINS_ANY']) {
           const found = name === 'CONTAINS_ANY' ? true : phrase;
@@ -170,6 +170,63 @@ describe('Phrase matching', () => {
             options,
           ),
         ).toStrictEqual([]);
+      }
+    });
+
+    it('refuses a phrase longer than 250 code units as searched for, wherever it is in the list', async () => {
+      const options = { setup: withOther };
+      const at = (length: number) => 'a'.repeat(length);
+      for (const name of ['FIRST_CONTAINED', 'CONTAINS_ANY']) {
+        for (const match of ['substring', 'word']) {
+          const source = `${name}(value; other; "${match}")`;
+          expect(
+            await evalOk(source, { value: at(250), other: [at(250)] }, options),
+            `${name} ${match}`,
+          ).toBe(name === 'CONTAINS_ANY' ? true : at(250));
+          for (const other of [[at(251)], ['a', at(251)], [at(251), 'a'], [at(2_000)]]) {
+            const { parsed, compiled, res } = await evalFormula(
+              source,
+              { value: at(250), other },
+              options,
+            );
+            expect(
+              collectAllErrors(parsed, compiled, res.errors).map((error) => error.code),
+              `${name} ${match} ${other.map((phrase) => phrase.length).join(',')}`,
+            ).toStrictEqual([FormulaErrorCodes.PHRASE_TOO_LONG]);
+          }
+        }
+        // With ignoreCase the phrase counts lower-cased: U+0130 lower-cases to two code units.
+        const ignoring = `${name}(value; other; "substring"; TRUE)`;
+        expect(
+          await evalOk(ignoring, { value: 'x', other: ['İ'.repeat(125)] }, options),
+          name,
+        ).toBe(name === 'CONTAINS_ANY' ? false : null);
+        const { parsed, compiled, res } = await evalFormula(
+          ignoring,
+          { value: 'x', other: ['İ'.repeat(126)] },
+          options,
+        );
+        expect(
+          collectAllErrors(parsed, compiled, res.errors).map((error) => error.code),
+          name,
+        ).toStrictEqual([FormulaErrorCodes.PHRASE_TOO_LONG]);
+      }
+      // MISSING_FROM counts an item once normalised: collapsed whitespace can bring it within.
+      const spaced = `a${' '.repeat(300)}b`;
+      expect(
+        await evalOk('MISSING_FROM(other; value)', { value: 'a b', other: [spaced] }, options),
+      ).toStrictEqual([]);
+      for (const source of ['MISSING_FROM(other; value; "exact")', 'MISSING_FROM(other; value)']) {
+        const other = source.includes('exact') ? [spaced] : [at(251)];
+        const { parsed, compiled, res } = await evalFormula(
+          source,
+          { value: 'a b', other },
+          options,
+        );
+        expect(
+          collectAllErrors(parsed, compiled, res.errors).map((error) => error.code),
+          source,
+        ).toStrictEqual([FormulaErrorCodes.PHRASE_TOO_LONG]);
       }
     });
 
@@ -312,9 +369,9 @@ describe('Phrase matching', () => {
     });
 
     it('finds an item in a run of one letter only where the item occurs', async () => {
-      // The run holds the item's half-length run at every position, but never followed by `b`.
+      // The run holds the item's run at every position, but never followed by `b`.
       const value = 'a'.repeat(4_000);
-      const item = `${'a'.repeat(2_000)}b`;
+      const item = `${'a'.repeat(249)}b`;
       const options = { setup: withOther };
       expect(
         await evalOk('MISSING_FROM(other; value)', { value, other: [item] }, options),

@@ -830,6 +830,7 @@ when a formula is generated or pathological.
 | List size (EACH/FILTER/wildcard/REDUCE input; the lists of `TAKE`, `INDEX_OF`, `FILTER_BY`, `DISTINCT`, `GROUP_COUNTS`; `keep`, `phrases`, `items`) | 1,000 items       | `LIST_TOO_LARGE`            |
 | Wildcard output size                                                                                                                                | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
 | List results (`FLAT`, `WORDS`, `SENTENCES`, `LINES`, `MARKDOWN_BLOCKS`)                                                                             | 5,000 items       | `LIST_TOO_LARGE`            |
+| Phrase length (`FIRST_CONTAINED` and `CONTAINS_ANY` phrases, `MISSING_FROM` items, as searched for; fixed, not a host limit)                        | 250 code units    | `PHRASE_TOO_LONG`           |
 | Regex pattern length                                                                                                                                | 100 characters    | `REGEX_UNSAFE`              |
 | Regex input length                                                                                                                                  | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
 

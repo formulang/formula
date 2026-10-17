@@ -3,7 +3,14 @@ import type {
   FormulaExecutionContext,
   FormulaNodeOutput,
 } from '@formulang/definitions';
-import { makeOkBoolean, makeOkList, makeOkNull, makeOkText } from '@formulang/definitions';
+import {
+  FormulaErrorCodes,
+  FormulaRuntimeError,
+  makeOkBoolean,
+  makeOkList,
+  makeOkNull,
+  makeOkText,
+} from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import {
   readOptionalMode,
@@ -13,7 +20,27 @@ import {
   typeWarning,
 } from './argument-readers';
 import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
-import { contains, someOccurrence } from './text-search';
+import { someOccurrence } from './text-search';
+
+/**
+ * The longest phrase, in code units as searched for, that the phrase functions take. Each phrase
+ * goes to the runtime's own substring search, which V8 builds its Boyer-Moore tables for over a
+ * needle's last 250 code units: up to that length they cover the whole phrase, while a longer one
+ * whose mismatch lies before them is compared afresh at almost every place in the text. A longer
+ * phrase is refused, as an over-long regular expression is.
+ */
+const LONGEST_PHRASE = 250;
+
+/** Refuses the phrases when one, as searched for, is longer than `LONGEST_PHRASE`. */
+function checkPhraseLengths(fn: string, needles: readonly string[]): void {
+  if (needles.some((needle) => needle.length > LONGEST_PHRASE)) {
+    throw new FormulaRuntimeError(
+      FormulaErrorCodes.PHRASE_TOO_LONG,
+      `${fn} takes phrases of at most ${LONGEST_PHRASE} code units`,
+      'security',
+    );
+  }
+}
 
 /** How `FIRST_CONTAINED` and `CONTAINS_ANY` match a phrase. */
 export type PhraseMatchMode = 'substring' | 'word';
@@ -76,20 +103,22 @@ function containsAsWord(text: string, phrase: string): boolean {
 }
 
 /**
- * The first phrase, in list order, that the text contains; `null` when none does: one substring
- * search or one `"word"` search per phrase, each linear in the lengths of the text and the phrase.
+ * The first phrase, in list order, that the text contains; `null` when none does: per phrase, the
+ * runtime's substring search (`"substring"`) or one `"word"` search. `needles` are the phrases as
+ * searched for, lower-cased when `ignoreCase` is set.
  */
 function firstContained(
   text: string,
   phrases: readonly string[],
+  needles: readonly string[],
   match: PhraseMatchMode,
   ignoreCase: boolean,
 ): string | null {
   const haystack = ignoreCase ? text.toLowerCase() : text;
-  for (const phrase of phrases) {
-    const needle = ignoreCase ? phrase.toLowerCase() : phrase;
-    const found = match === 'word' ? containsAsWord(haystack, needle) : contains(haystack, needle);
-    if (found) return phrase;
+  for (let index = 0; index < phrases.length; index++) {
+    const needle = needles[index];
+    const found = match === 'word' ? containsAsWord(haystack, needle) : haystack.includes(needle);
+    if (found) return phrases[index];
   }
   return null;
 }
@@ -97,6 +126,7 @@ function firstContained(
 type PhraseCall = {
   text: string;
   phrases: string[];
+  needles: string[];
   match: PhraseMatchMode;
   ignoreCase: boolean;
 };
@@ -118,7 +148,10 @@ function readPhraseCall(
   if (rawIgnoreCase != null && typeof rawIgnoreCase !== 'boolean') {
     return { output: typeWarning(fn, `${fn} ignoreCase must be a boolean`) };
   }
-  return { call: { text, phrases, match, ignoreCase: rawIgnoreCase === true } };
+  const ignoreCase = rawIgnoreCase === true;
+  const needles = ignoreCase ? phrases.map((phrase) => phrase.toLowerCase()) : phrases;
+  checkPhraseLengths(fn, needles);
+  return { call: { text, phrases, needles, match, ignoreCase } };
 }
 
 export class FirstContainedImplementation extends AbstractEagerBatchImplementation {
@@ -133,8 +166,8 @@ export class FirstContainedImplementation extends AbstractEagerBatchImplementati
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
     const read = readPhraseCall('FIRST_CONTAINED', args, ctx);
     if ('output' in read) return read.output;
-    const { text, phrases, match, ignoreCase } = read.call;
-    const phrase = firstContained(text, phrases, match, ignoreCase);
+    const { text, phrases, needles, match, ignoreCase } = read.call;
+    const phrase = firstContained(text, phrases, needles, match, ignoreCase);
     return phrase === null ? makeOkNull('FIRST_CONTAINED') : makeOkText('FIRST_CONTAINED', phrase);
   }
 }
@@ -151,8 +184,8 @@ export class ContainsAnyImplementation extends AbstractEagerBatchImplementation 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
     const read = readPhraseCall('CONTAINS_ANY', args, ctx);
     if ('output' in read) return read.output;
-    const { text, phrases, match, ignoreCase } = read.call;
-    const phrase = firstContained(text, phrases, match, ignoreCase);
+    const { text, phrases, needles, match, ignoreCase } = read.call;
+    const phrase = firstContained(text, phrases, needles, match, ignoreCase);
     return makeOkBoolean('CONTAINS_ANY', phrase !== null);
   }
 }
@@ -175,11 +208,12 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
     const mode = readOptionalMode('MISSING_FROM', 'normalise', args[2], PHRASE_NORMALISATIONS);
     if (typeof mode !== 'string') return mode;
 
+    const needles = items.map((item) => normalise(item, mode));
+    checkPhraseLengths('MISSING_FROM', needles);
     const haystack = normalise(text, mode);
-    const missing = items.filter((item) => {
-      const needle = normalise(item, mode);
-      return needle.length > 0 && !contains(haystack, needle);
-    });
+    const missing = items.filter(
+      (_item, index) => needles[index].length > 0 && !haystack.includes(needles[index]),
+    );
     return makeOkList('MISSING_FROM', missing);
   }
 }
