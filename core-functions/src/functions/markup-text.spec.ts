@@ -110,7 +110,7 @@ describe('Markup text', () => {
     it('starts the body at text written with anything but HTML whitespace', async () => {
       expect(await html('<head>text<noscript>N</noscript>')).toBe('textN');
       expect(await html('<head> \n\t\r\f<noscript>N</noscript>')).toBe('');
-      expect(await html('<head> <noscript>N</noscript>')).toBe('N');
+      expect(await html('<head>\u00A0<noscript>N</noscript>')).toBe('N');
       expect(await html('<head>&#32;<noscript>N</noscript>')).toBe('N');
       // Nor at an html start tag.
       expect(await html('<head><html><noscript>N</noscript>')).toBe('');
@@ -206,6 +206,14 @@ describe('Markup text', () => {
       expect(await html("<a title= 'x>y'>z</a>")).toBe('z');
       expect(await html('<a ="x>y">z')).toBe('y">z');
       expect(await html('<a b=c>d>e')).toBe('d>e');
+      // Inside an unquoted value a quote is an ordinary character.
+      expect(await html('<a b=c"x>y">z')).toBe('y">z');
+    });
+
+    it('reads the ASCII letters of a tag name in either case, and folds no other letter', async () => {
+      expect(await html('<head><LINK><noscript>N</noscript>')).toBe('');
+      // U+212A KELVIN SIGN lower-cases to k, but a tag name folds ASCII letters only.
+      expect(await html('<head><lin\u212A><noscript>N</noscript>')).toBe('N');
     });
 
     it('drops other markup up to the next >, and keeps any other < as text', async () => {
@@ -213,6 +221,8 @@ describe('Markup text', () => {
       expect(await html('a</ b>c')).toBe('ac');
       expect(await html('a<!x>b<?y>c')).toBe('abc');
       expect(await html('a<1>b <+c')).toBe('a<1>b <+c');
+      // A letter that is not ASCII starts no tag.
+      expect(await html('a<\u00E9>b')).toBe('a<\u00E9>b');
     });
 
     it.each(['textarea', 'xmp', 'iframe', 'noembed', 'plaintext'])(
@@ -348,8 +358,11 @@ describe('Markup text', () => {
         [...punctuation].join(' '),
       );
       expect(await markdown('C:\\Users\\a1 \\ä')).toBe('C:\\Users\\a1 \\ä');
-      // At the end of a paragraph line, a backslash is a hard line break, and is dropped.
+      // At the end of a paragraph line, a backslash is a hard line break, and is dropped; at the
+      // end of the paragraph's last line it is none, and stays.
       expect(await markdown('a\\\nb')).toBe('a b');
+      expect(await markdown('a\\\nb\\')).toBe('a b\\');
+      expect(await blocks('a\\', 'paragraph')).toStrictEqual(['a\\']);
     });
 
     it('pairs a run of backticks with the next run of as many', async () => {
@@ -368,6 +381,8 @@ describe('Markup text', () => {
       expect(await markdown('*a** and __b_')).toBe('a and b');
       // The runs of the other character opened between the two pair no more.
       expect(await markdown('*a _b* c_')).toBe('a _b c_');
+      // The nearest opening run, not the farthest.
+      expect(await markdown('*a *b*')).toBe('*a b');
     });
 
     it('lets an underscore inside a word neither open nor close, as the flanking rules say', async () => {
@@ -387,6 +402,8 @@ describe('Markup text', () => {
       expect(await markdown('*"a"*')).toBe('"a"');
       expect(await markdown('a*"b"*')).toBe('a*"b"*');
       expect(await markdown('"*"a"*"')).toBe('""a""');
+      // After punctuation and before a letter, a run cannot close.
+      expect(await markdown('*"a"*b')).toBe('*"a"*b');
       // Symbols count as punctuation.
       expect(await markdown('a*\u20ACb\u20AC*')).toBe('a*\u20ACb\u20AC*');
       // An underscore run that could open and close opens after punctuation, closes before it.
@@ -638,6 +655,10 @@ describe('Markup text', () => {
       expect(await blocks('| a |\n|---|\n```\ncode\n```', 'code')).toStrictEqual(['code']);
       expect(await blocks('| a |\n|---|\n---\nb', 'table-row')).toStrictEqual(['a']);
       expect(await blocks('| a |\n|---|\n---\nb', 'paragraph')).toStrictEqual(['b']);
+      // A table starts inside a paragraph too, and ends it.
+      const inParagraph = 'intro\n| a | b |\n|---|---|\n| 1 | 2 |';
+      expect(await blocks(inParagraph, 'table-row')).toStrictEqual(['a b', '1 2']);
+      expect(await blocks(inParagraph, 'paragraph')).toStrictEqual(['intro']);
       // A row's empty cells are left out.
       expect(await blocks('| a |  | b |\n|---|---|---|', 'table-row')).toStrictEqual(['a b']);
       // `\|` is a pipe inside a cell, the last cell's included.

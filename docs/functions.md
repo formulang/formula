@@ -1225,7 +1225,8 @@ each line and blank lines dropped. `format` is a required literal:
     partner stays;
   - a backslash before an ASCII punctuation character (`\*`, `\{`, `\~`) is
     removed, except inside a code span, and one before anything else stays;
-    at the end of a paragraph line (a hard line break) it is dropped;
+    at the end of a paragraph line other than the last (a hard line break) it
+    is dropped;
   - only inline links are read (`[text][ref]` and a `[ref]: url` line stay as
     written). Link text may hold brackets nested one level deep, and a
     destination parentheses nested one level deep, in pairs only: an escaped
@@ -1297,9 +1298,10 @@ do for `LINES`), and on each line:
   is paragraph text);
 - a table starts at a row holding `|` whose next line, also holding `|`, is a
   delimiter row with one cell per header cell, each of dashes with an optional
-  colon at either end; it runs to a blank line or the next heading, list item,
-  fence or thematic break, and a row's cells past the header's count are
-  dropped. Inside a cell `\|` is a pipe, the last cell's included.
+  colon at either end, and ends a paragraph it starts in; it runs to a blank
+  line or the next heading, list item, fence or thematic break, and a row's
+  cells past the header's count are dropped. Inside a cell `\|` is a pipe, the
+  last cell's included.
 
 What these rules do not state about the result is unspecified. **Work** under
 [Text](#text) gives what the reading costs.
