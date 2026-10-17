@@ -653,8 +653,13 @@ describe('Text segmentation', () => {
     it('comes from the package entry, and is not bounded by maxWildcardOutputLength', () => {
       expect(entry.splitWords).toBe(splitWords);
       expect(entry.splitSentences).toBe(splitSentences);
-      expect(splitWords('a '.repeat(5_001))).toHaveLength(5_001);
-      expect(splitSentences('a. '.repeat(5_001))).toHaveLength(5_001);
+      // A result past the bound comes back whole, where WORDS and SENTENCES raise LIST_TOO_LARGE.
+      let words: string[] = [];
+      let sentences: string[] = [];
+      expect(() => (words = splitWords('a '.repeat(5_001)))).not.toThrow();
+      expect(() => (sentences = splitSentences('a. '.repeat(5_001)))).not.toThrow();
+      expect(words).toHaveLength(5_001);
+      expect(sentences).toHaveLength(5_001);
     });
   });
 
