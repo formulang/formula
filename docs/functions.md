@@ -1641,9 +1641,9 @@ Unspecified: nothing; these rules decide every list, text and mode.
 
 - In `"markdown"`, for link text of at most 1,000 code units, a destination of at most 2,000 and
   nested pairs of at most 500, an inline link `[text](url)` gives `text` and an image
-  `![alt](url)` gives `alt`; `[text][ref]` and a `[ref]: url` line stay as written. Link text may
-  hold brackets nested one level deep, and a destination parentheses nested one level deep, in
-  pairs; an escaped bracket is a bracket all the same.
+  `![alt](url)` gives `alt`; `[text][ref]` and a `[ref]: url` line are no links and are read as
+  text, brackets included. Link text may hold brackets nested one level deep, and a destination
+  parentheses nested one level deep, in pairs; an escaped bracket is a bracket all the same.
 
   ```ts
   await evalOk('PLAIN_TEXT("[Link](https://x) and ![Bild](b.png)"; "markdown")'); // "Link and Bild"
@@ -1651,13 +1651,13 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT("[a [b [c]] d](u)"; "markdown")'); // "[a [b [c]] d](u)"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '[a \\[b] c](u) [r]: https://x' }); // "a [b] c [r]: https://x"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '[a \\[b c](u)' }); // "[a [b c](u)"
+  await evalOk('PLAIN_TEXT("[*a*][r]"; "markdown")'); // "[a][r]"
   ```
 
 - In `"markdown"`, up to 2,000 code units after the scheme's `:` and 256 on each side of an
   address's `@`, `<url>` gives `url` when its scheme is a letter followed by letters, digits, `+`,
   `.` or `-`, 2 to 32 characters in all, and the rest after its `:` holds no whitespace, `<` or
-  `>`; `<name@host>` gives `name@host` when neither side holds whitespace, `<`, `>` or `@`; any
-  other such `<…>` stays as written.
+  `>`; `<name@host>` gives `name@host` when neither side holds whitespace, `<`, `>` or `@`.
 
   ```ts
   await evalOk('PLAIN_TEXT("<https://x.de> <HTTP://y.de> <a@b.de> <x> <ab:c d>"; "markdown")'); // "https://x.de HTTP://y.de a@b.de <x> <ab:c d>"
@@ -1734,6 +1734,7 @@ unspecified.
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```js\nconst a = 1;\n```' }); // ["const a = 1;"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '  ~~~\n  a\n   b\n  ~~~~' }); // ["a\n b"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\nx\n``\n```' }); // ["x\n``"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\nx\n\t```' }); // ["x"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\na' }); // ["a"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '``` a`b\nx' }); // ["``` a`b x"]
   ````
@@ -1791,8 +1792,8 @@ unspecified.
 
 - A paragraph is a run of lines that start no other block, and its block is those lines joined
   by one space. There are no indented code blocks, HTML blocks or link reference definitions:
-  their lines are paragraph text. A line whose `#`, `>`, fence or thematic-break marker follows a
-  tab is no part of this rule; the closing sentence leaves it unspecified.
+  their lines are paragraph text. A line whose `#`, `>`, opening fence or thematic-break marker
+  follows a tab is no part of this rule; the closing sentence leaves it unspecified.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\nb\n\nc' }); // ["a b", "c"]
@@ -1815,7 +1816,7 @@ unspecified.
   await evalErrors('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'x\n\n'.repeat(5001) }); // ["LIST_TOO_LARGE"]
   ```
 
-Unspecified: a `#`, `>`, fence or thematic-break marker preceded by a tab.
+Unspecified: a `#`, `>`, opening fence or thematic-break marker preceded by a tab.
 
 ---
 
