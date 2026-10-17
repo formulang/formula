@@ -636,14 +636,19 @@ phrase in `"word"` mode, is found with one Knuth-Morris-Pratt search, in time
 linear in the lengths of the text and of the token or phrase however often
 their occurrences overlap. Each phrase in `"substring"` mode, and each item of
 `MISSING_FROM`, is found with one substring search, linear in the same
-lengths: a phrase of up to 250 code units by the runtime's own search, whose
-tables in V8 cover such a phrase whole, and a longer one by Knuth-Morris-Pratt.
-V8's tables cover only a phrase's last 250 code units, so its own search reads
-a longer phrase whose mismatch lies before them in time proportional to the
-text's length times the phrase's: on 100,000 code units of `a`, ten phrases
-of 8,000 code units, `"ab"` followed by `a`s, take 2.2 s that way and 7.6 ms
-with Knuth-Morris-Pratt (`FIRST_CONTAINED` under the default limits, Node
-22.23.3, best of three).
+lengths. A phrase of up to 250 code units goes to the runtime's own search,
+whose tables in V8 cover such a phrase whole. A longer one is looked for by its
+last 250 code units, with the same search, and each place where they occur is
+checked for the rest of the phrase; once those checks have cost four times the
+lengths of the text and the phrase, the search goes on with Knuth-Morris-Pratt.
+V8's own search alone reads a longer phrase whose mismatch lies before its last
+250 code units in time proportional to the text's length times the phrase's.
+Measured on Node 22.23.3 under the default limits, best of three: on 1,000,000
+code units of prose (random letters and spaces), `MISSING_FROM` with
+`normalise` `"exact"` and 1,000 absent items of 300 code units takes 209 ms, as
+V8's own search does (205 ms); on 100,000 code units of `a`, `FIRST_CONTAINED`
+with ten phrases of 8,000 code units, `"ab"` followed by `a`s, takes 14 ms,
+where V8's own search takes 3.9 s.
 
 **Work.** What each text function does with its input, read from its code,
 and what bounds the input:
@@ -661,7 +666,13 @@ and what bounds the input:
 This is read from the code: it is what the code claims for its own loops and
 for the patterns it runs, and review owns those claims. No spec measures the
 time or the work of these functions, and none checks the complexity of a loop
-or of a pattern.
+or of a pattern. Each cost but that of the formula's own pattern (below) is
+linear in the length of the text or list the function reads, and that length is
+bounded only by what the runtime bounds:
+`maxStringLiteralLength` bounds literals, not a text the formula computes, so a
+`SUBSTITUTE` of a `SUBSTITUTE` in a 10,533-character source makes 25,000,000
+code units, on which `FIRST_CONTAINED` with 43 phrases of 8,002 code units runs
+12 s before it reports `WALL_TIME_LIMIT_EXCEEDED`.
 
 Four patterns of 1.0.0 code read their input in more than linear time. Each was
 measured on Node 22.23.3 on an input built against it, as the best of three
@@ -679,11 +690,16 @@ runs where no single run is named:
   check reads `[^)]*`, so it misses a quantifier outside a nested group, as in
   `((a+))+$` and `(?:(a+))+$`. `MATCH_EXPRESSION` in 1.0.0 accepts them too.
   Under the default limits, `WORD_COUNT(value; "pattern"; "((a+))+$")` on `a`s
-  followed by `b` takes 12 ms at 20 code units, 199 ms at 24 and 2.9 s at 28
-  (one run), as `MATCH_EXPRESSION` does; with the text written as a
-  29-character literal,
-  `WORD_COUNT("aaaaaaaaaaaaaaaaaaaaaaaaaaaab"; "pattern"; "(?:(a+))+$")` takes
-  3.2 s (one run). The rules also accept patterns that take polynomial time:
+  followed by one `b`, once the same pattern has run before in the process,
+  takes 14 ms at 21 code units, 220 ms at 25, 1.8 s at 28 and 3.5 s at 29 (one
+  run each): each character doubles it. The first run of such a pattern in a
+  process goes through V8's regular-expression interpreter and is six to
+  seven times slower: at 29 code units it takes 24 s and then reports
+  `WALL_TIME_LIMIT_EXCEEDED`. `MATCH_EXPRESSION(value; "((a+))+$")` takes the
+  same (3.5 s, and 24 s on a first run), and so does a formula of literals
+  alone, `WORD_COUNT("aaaaaaaaaaaaaaaaaaaaaaaaaaaab"; "pattern"; "(?:(a+))+$")`
+  (3.6 s, and 22 s on a first run). The rules also accept patterns that take
+  polynomial time:
   `WORD_COUNT(value; "pattern"; "\\s*\\s*!")` on a run of spaces takes 0.14 s
   at 1,000 spaces, 1.1 s at 2,000, 8.9 s at 4,000 and 76 s at 8,000 (one
   run). `maxRegexPatternLength` (100) and `maxRegexTextLength` (8,000) bound

@@ -180,13 +180,14 @@ safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
 
 [docs/functions.md](../docs/functions.md#text) (_Text_, **Work**) gives, for
 each text function, the work it does on its input, read from its code, and
-the limits that bound the input. That cost is what the code claims for its own
-loops and for the patterns it runs, and review owns those claims: no spec
-checks the complexity of a loop or of a pattern. `docs/functions.md` also
-records, measured, the four patterns of 1.0.0 code that read their input in
-more than linear time, among them the formula's own pattern in `"pattern"`
-mode, whose safe-regex rules, inherited from 1.0.0, accept some patterns that
-backtrack exponentially.
+what bounds the input: a text the formula computes is bounded only by what the
+runtime bounds, as no formula limit applies to its length. That cost is what
+the code claims for its own loops and for the patterns it runs, and review owns
+those claims: no spec checks the complexity of a loop or of a pattern.
+`docs/functions.md` also records, measured, the four patterns of 1.0.0 code
+that read their input in more than linear time, among them the formula's own
+pattern in `"pattern"` mode, whose safe-regex rules, inherited from 1.0.0,
+accept some patterns that backtrack exponentially.
 
 ## Register your own handlers
 
