@@ -332,11 +332,12 @@ function endOfHiddenContent(markup: string, name: string, from: number): number 
 }
 
 /**
- * The text of an HTML document, read in one forward pass: comments, other markup and the content
- * of `script`, `style`, `title` and `head` dropped, the line-ending elements ending a line, every
- * other tag removed, character references decoded, whitespace collapsed within each line (inside
- * `pre`, each line break ends a line) and blank lines dropped. A tag, comment, other markup or
- * dropped content that the markup ends inside is dropped with the rest of the markup.
+ * The text of an HTML document, read in one forward pass: comments, other markup, the content of
+ * `script`, `style` and `title`, and in the head that of `noscript`, `noframes` and `template`
+ * dropped, the line-ending elements ending a line, every other tag removed, character references
+ * decoded, whitespace collapsed within each line (inside `pre`, each line break, a decoded one
+ * included, ends a line) and blank lines dropped. A tag, comment, other markup or dropped content
+ * that the markup ends inside is dropped with the rest of the markup.
  */
 function htmlToPlainText(markup: string): string {
   const out: string[] = [];

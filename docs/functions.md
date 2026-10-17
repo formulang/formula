@@ -996,11 +996,12 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("a b"; "locale"; "zz")'); // null with a TYPE warning
   ```
 
-- `"pattern"`: every non-empty match of the regular expression in `option`, left to right. An
-  option that starts with `/` and ends with `/` and lower-case letters (or none) is read as
-  `/pattern/flags`, split at its last `/`: each flag is one of `i`, `m`, `s` and `u`, at most
-  once, and `g` is implied, so any other letter, `g` included, or a flag written twice returns
-  `null` with a `REGEX` warning. Any other option is the pattern as written, its slashes included.
+- `"pattern"`: every non-empty match of the regular expression in `option`, left to right. Of the
+  options that hold no line terminator, one that starts with `/` and ends with `/` and lower-case
+  letters (or none) is read as `/pattern/flags`, split at its last `/`: each flag is one of `i`,
+  `m`, `s` and `u`, at most once, and `g` is implied, so any other letter, `g` included, or a flag
+  written twice returns `null` with a `REGEX` warning; any other is the pattern as written, its
+  slashes included.
 
   ```ts
   await evalOk('WORDS(LOWER("Für 50$ – sofort!"); "pattern"; "[A-Za-z0-9$\']+")'); // ["f", "r", "50$", "sofort"]
@@ -1159,10 +1160,11 @@ Unspecified: in `"pattern"` mode, an option that holds a line terminator, as for
   ```
 
 - `keep` lists tokens that never end a sentence: a split that falls inside an occurrence of a
-  listed token, or at its end, does not happen. Every token counts, and their occurrences may
-  overlap. An occurrence counts only at a word boundary: a token that starts with a letter, mark
-  or number must not follow one (`"ca."` inside `Africa.` does not count), and a token that
-  starts with anything else always counts. Tokens match case-sensitively; empty ones are skipped.
+  listed token that neither starts nor ends with whitespace, or at its end, does not happen.
+  Every such token counts, and their occurrences may overlap. An occurrence counts only at a word
+  boundary: a token that starts with a letter, mark or number must not follow one (`"ca."` inside
+  `Africa.` does not count), and a token that starts with anything else always counts. Tokens
+  match case-sensitively; empty ones are skipped.
 
   ```ts
   await evalOk('SENTENCES("Wir helfen z. B. Handwerkern.")'); // ["Wir helfen z.", "B.", "Handwerkern."]
@@ -1445,8 +1447,10 @@ Unspecified: nothing; these rules decide every list, text and mode.
   ```
 
 - In `"html"`, a tag runs from `<` followed by an ASCII letter, or `</` followed by one, to the
-  first `>` that is not inside a quoted attribute value (`name="…"` or `name='…'`), and is removed
-  with its attributes. Tag names are read in either letter case.
+  first `>` that is not inside a quoted attribute value, and is removed with its attributes. A
+  quoted value is one in double or single quotes that directly follows an attribute name and `=`,
+  spaces allowed around the `=` (`name="…"`, `name = '…'`); a quote anywhere else is an ordinary
+  character. Tag names are read in either letter case.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "html")', {
@@ -1455,6 +1459,9 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b=c d="x>y">z' }); // "z"
   await evalOk('PLAIN_TEXT(value; "html")', { value: "<a title='a > b'>x</a>" }); // "x"
   await evalOk('PLAIN_TEXT("<P>a</P><DIV>b</DIV>"; "html")'); // "a\nb"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title = "a > b">x</a>' }); // "x"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a "b>c">d' }); // "c\">d"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b=="x>y">z' }); // "y\">z"
   ```
 
 - In `"html"`, a `<` followed by anything but an ASCII letter, `/`, `!` or `?`, or at the end of
@@ -1464,13 +1471,17 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT("1 < 2 and a <3 <"; "html")'); // "1 < 2 and a <3 <"
   ```
 
-- In `"html"`, a comment, from `<!--` to the next `-->`, is dropped, and so is any other `<!` or
-  `<?` up to the next `>`, as a document type or a processing instruction is.
+- In `"html"`, a comment is dropped: from `<!--` to the next `-->` or `--!>` after it, `<!-->` and
+  `<!--->` being whole comments. So is any other `<!` or `<?` up to the next `>`, as a document
+  type or a processing instruction is.
 
   ```ts
   await evalOk('PLAIN_TEXT("a<!-- x -->b"; "html")'); // "ab"
   await evalOk('PLAIN_TEXT("a<!-- x --->b"; "html")'); // "ab"
   await evalOk('PLAIN_TEXT("a<!-- <p>x</p> -->b"; "html")'); // "ab"
+  await evalOk('PLAIN_TEXT("a<!-->b-->c"; "html")'); // "ab-->c"
+  await evalOk('PLAIN_TEXT("a<!--->b"; "html")'); // "ab"
+  await evalOk('PLAIN_TEXT("a<!-- x --!>b<!-- y --!z -->c"; "html")'); // "abc"
   await evalOk('PLAIN_TEXT(value; "html")', {
     value: "<!DOCTYPE html><?xml version='1.0'?><p>x</p>",
   }); // "x"
@@ -1485,17 +1496,28 @@ Unspecified: nothing; these rules decide every list, text and mode.
   ); // "abcd"
   await evalOk('PLAIN_TEXT("a<SCRIPT>x</SCRIPT>b"; "html")'); // "ab"
   await evalOk('PLAIN_TEXT(value; "html")', { value: "a<script>'</p>'</script>b" }); // "ab"
+  await evalOk('PLAIN_TEXT("a<script><!--<script></script>-->b</script>c"; "html")'); // "a-->bc"
   ```
 
-- In `"html"`, between `<head>` and `</head>`, the elements that belong in a head (`base`,
+- In `"html"`, the content of `noscript`, `noframes` and `template` is dropped, up to the
+  element's end tag as for `script`, while the document is in its head: from its start until
+  text other than spaces, tabs, line breaks and form feeds, a character reference included, the
+  start tag of an element other than `html`, `head` and those that belong in a head (`base`,
   `basefont`, `bgsound`, `link`, `meta`, `noframes`, `noscript`, `script`, `style`, `template`
-  and `title`) give nothing.
+  and `title`), or one of the end tags `</head>`, `</body>`, `</html>` and `</br>`. After that
+  their content is text.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "html")', {
     value:
       '<html><head><title>T</title><meta charset="utf-8"><noscript>N</noscript></head><body><p>B</p></body></html>',
   }); // "B"
+  await evalOk('PLAIN_TEXT("<noscript>N</noscript>x"; "html")'); // "x"
+  await evalOk('PLAIN_TEXT("</p><noscript>N</noscript>x"; "html")'); // "x"
+  await evalOk('PLAIN_TEXT("<head></head><noscript>N</noscript>"; "html")'); // "N"
+  await evalOk('PLAIN_TEXT("<p>a</p><noscript>N</noscript>"; "html")'); // "a\nN"
+  await evalOk('PLAIN_TEXT("<head>x<noscript>N</noscript></head>"; "html")'); // "xN"
+  await evalOk('PLAIN_TEXT("&nbsp;<head><noscript>N</noscript></head>x"; "html")'); // "Nx"
   ```
 
 - In `"html"`, `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`, `dl`, `dt`,
@@ -1510,15 +1532,16 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT(value; "html")', { value: 'a\n  b\t c' }); // "a b c"
   ```
 
-- In `"html"`, inside `pre`, a nested `pre` included, each line break in the markup (`\n`, `\r`
-  or `\r\n`) ends a line; whitespace still collapses within those lines, and blank ones are
-  dropped.
+- In `"html"`, inside `pre`, a nested `pre` included, each line break (`\n`, `\r` or `\r\n`),
+  written in the markup or given by a character reference, ends a line; whitespace still
+  collapses within those lines, and blank ones are dropped.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre>a\nb</pre>c\nd' }); // "a\nb\nc d"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre>a</pre>b\nc' }); // "a\nb c"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre><pre>a</pre>b\nc</pre>d\ne' }); // "a\nb\nc\nd e"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre>a  b\n\n  c</pre>' }); // "a b\nc"
+  await evalOk('PLAIN_TEXT("<pre>a&#10;b&#13;c</pre>d&#10;e"; "html")'); // "a\nb\nc\nd e"
   ```
 
 - In `"html"`, a numeric reference, decimal (`&#150;`) or hexadecimal (`&#x96;`, `&#X96;`), with
@@ -1594,13 +1617,15 @@ Unspecified: nothing; these rules decide every list, text and mode.
 
 - In `"markdown"`, a run of backticks pairs with the next run of exactly as many, and the code
   span between them keeps its text as written, less one space at each end when it starts and
-  ends with a space and holds more than whitespace; a run with no partner stays.
+  ends with a space and holds more than whitespace; other whitespace at its ends, a tab or a
+  no-break space, stays. A run with no partner stays.
 
   ```ts
   await evalOk('PLAIN_TEXT("Use `a*b*c` here"; "markdown")'); // "Use a*b*c here"
   await evalOk('PLAIN_TEXT("`` a ` b ``"; "markdown")'); // "a ` b"
   await evalOk('PLAIN_TEXT("x` a `y"; "markdown")'); // "xay"
   await evalOk('PLAIN_TEXT("`x"; "markdown")'); // "`x"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a`\tx\t`b c`\u00A0y\u00A0`d' }); // "a x b c y d"
   ```
 
 - In `"markdown"`, a backslash before an ASCII punctuation character is removed, except inside a
@@ -1614,10 +1639,11 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a\\\nb\\' }); // "a b\\"
   ```
 
-- In `"markdown"`, an inline link `[text](url)` gives `text` and an image `![alt](url)` gives
-  `alt`; `[text][ref]` and a `[ref]: url` line stay as written. Link text may hold brackets nested
-  one level deep, and a destination parentheses nested one level deep, in pairs; an escaped
-  bracket is a bracket all the same.
+- In `"markdown"`, for link text of at most 1,000 code units, a destination of at most 2,000 and
+  nested pairs of at most 500, an inline link `[text](url)` gives `text` and an image
+  `![alt](url)` gives `alt`; `[text][ref]` and a `[ref]: url` line stay as written. Link text may
+  hold brackets nested one level deep, and a destination parentheses nested one level deep, in
+  pairs; an escaped bracket is a bracket all the same.
 
   ```ts
   await evalOk('PLAIN_TEXT("[Link](https://x) and ![Bild](b.png)"; "markdown")'); // "Link and Bild"
@@ -1627,9 +1653,11 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '[a \\[b c](u)' }); // "[a [b c](u)"
   ```
 
-- In `"markdown"`, `<url>` gives `url` when its scheme is a letter followed by letters, digits,
-  `+`, `.` or `-`, 2 to 32 characters in all, and the rest after its `:` holds no whitespace, `<`
-  or `>`; `<name@host>` gives `name@host` when neither side holds whitespace, `<`, `>` or `@`.
+- In `"markdown"`, up to 2,000 code units after the scheme's `:` and 256 on each side of an
+  address's `@`, `<url>` gives `url` when its scheme is a letter followed by letters, digits, `+`,
+  `.` or `-`, 2 to 32 characters in all, and the rest after its `:` holds no whitespace, `<` or
+  `>`; `<name@host>` gives `name@host` when neither side holds whitespace, `<`, `>` or `@`; any
+  other such `<…>` stays as written.
 
   ```ts
   await evalOk('PLAIN_TEXT("<https://x.de> <HTTP://y.de> <a@b.de> <x> <ab:c d>"; "markdown")'); // "https://x.de HTTP://y.de a@b.de <x> <ab:c d>"
@@ -1642,29 +1670,28 @@ Unspecified: nothing; these rules decide every list, text and mode.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 5 }); // null with a TYPE warning
   ```
 
-Unspecified: in `"html"`, the content of `textarea`, `xmp`, `iframe`, `noembed` and `plaintext`,
-markup before `<body>` with no `<head>` start tag, any other markup or text written between
-`<head>` and `</head>`, a quote in a tag that does not follow an attribute name and `=`, `</`
-followed by anything but an ASCII letter, a comment written `<!-->` or `<!--->` or ending in
-`--!>`, `<!--` inside `script`, and a line break that a reference gives inside `pre`; in
-`"markdown"`, HTML tags and character references, a code span that starts or ends with a tab,
-link text of more than 1,000 code units, a destination of more than 2,000 or a nested pair of
-more than 500, an autolink of more than 2,000 code units after its scheme or more than 256 on a
-side of an address's `@`, and what `MARKDOWN_BLOCKS` leaves unspecified.
+Unspecified: in `"html"`, `</` followed by anything but an ASCII letter; in `"markdown"`, HTML
+tags and character references, link text of more than 1,000 code units, a destination of more
+than 2,000 or a nested pair of more than 500, an autolink of more than 2,000 code units after
+its scheme or more than 256 on a side of an address's `@`, and what `MARKDOWN_BLOCKS` leaves
+unspecified.
 
 ### MARKDOWN_BLOCKS
 
 `MARKDOWN_BLOCKS(text: text, kind: text) -> list<text>`
 
 - The blocks of one `kind`, in document order, each without its markers and with its inline
-  markup removed as [PLAIN_TEXT](#plain_text) removes it. `kind` is required: `"heading"` (every
-  level), `"heading-1"` … `"heading-6"`, `"list-item"`, `"table-row"`, `"paragraph"` or `"code"`.
+  markup removed as [PLAIN_TEXT](#plain_text) removes it; in every block but a code block,
+  whitespace (JavaScript's `\s`) is then collapsed to one space and the text trimmed. `kind` is
+  required: `"heading"` (every level), `"heading-1"` … `"heading-6"`, `"list-item"`,
+  `"table-row"`, `"paragraph"` or `"code"`.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading-2")', { value: '# A\n## B\n## C' }); // ["B", "C"]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# A\n## B\n## C' }); // ["A", "B", "C"]
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '- **bold** [l](u)' }); // ["bold l"]
   await evalOk('MARKDOWN_BLOCKS(""; "paragraph")'); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '#  a\u00A0\t b  ' }); // ["a b"]
   ```
 
 - The text is read line by line, and a line ends at `\n`, `\r` or `\r\n`; U+2028 and U+2029 end
@@ -1689,12 +1716,13 @@ side of an address's `@`, and what `MARKDOWN_BLOCKS` leaves unspecified.
   ```
 
 - `>` quote markers are read through: up to three spaces, `>` and one optional space, again for
-  each level of nesting.
+  each level of nesting. A tab after `>` is no part of the marker: it stays in the line.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '> > zitat\n>weiter' }); // ["zitat weiter"]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '   > # h' }); // ["h"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '    > x' }); // ["> x"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '>~~~\n>\tcode\n>~~~' }); // ["\tcode"]
   ```
 
 - A code fence is three or more backticks or tildes after any number of spaces, and a backtick
@@ -1763,7 +1791,8 @@ side of an address's `@`, and what `MARKDOWN_BLOCKS` leaves unspecified.
 
 - A paragraph is a run of lines that start no other block, and its block is those lines joined
   by one space. There are no indented code blocks, HTML blocks or link reference definitions:
-  their lines are paragraph text.
+  their lines are paragraph text. A line whose `#`, `>`, fence or thematic-break marker follows a
+  tab is no part of this rule; the closing sentence leaves it unspecified.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\nb\n\nc' }); // ["a b", "c"]
@@ -1786,8 +1815,7 @@ side of an address's `@`, and what `MARKDOWN_BLOCKS` leaves unspecified.
   await evalErrors('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'x\n\n'.repeat(5001) }); // ["LIST_TOO_LARGE"]
   ```
 
-Unspecified: a `#`, `>`, fence or thematic-break marker preceded by a tab, and a tab directly
-after `>`.
+Unspecified: a `#`, `>`, fence or thematic-break marker preceded by a tab.
 
 ---
 
