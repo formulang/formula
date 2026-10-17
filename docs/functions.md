@@ -963,6 +963,8 @@ The words of `text`, in order, found by the [text segmentation](#text) mode:
 `"locale"`, `"pattern"`, and `option` carries the language tag or the pattern
 of the last two. An empty text yields `[]`.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('WORDS("  Kennst du   das? ")'); // ["Kennst", "du", "das?"]
 await evalOk('WORDS("Für 3,5 Mio. Kund:innen"; "letters")'); // ["Für", "3,5", "Mio", "Kund", "innen"]
@@ -977,6 +979,8 @@ await evalOk('WORDS(LOWER("Für 50$ – sofort!"); "pattern"; "[A-Za-z0-9$\']+")
 The number of words `WORDS` finds with the same arguments; `""` counts `0`.
 No list is built, so a long text is countable past the list-result limit.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('WORD_COUNT("  Kennst du   das? ")'); // 3
 await evalOk('WORD_COUNT("Don\'t re-enter the e-mail, oder?"; "letters")'); // 5
@@ -990,6 +994,8 @@ await evalOk('WORD_COUNT(""; "whitespace")'); // 0
 The first `count` words joined by one space, or `null` when the text has fewer
 words. A `count` that is not a positive whole number returns `null` with a
 `TYPE` warning. `mode` and `option` work as for `WORDS`.
+
+Anything about the result that this page does not state is unspecified.
 
 ```ts
 await evalOk('LEADING_WORDS("eins zwei  drei vier"; 2)'); // "eins zwei"
@@ -1015,6 +1021,8 @@ mode splits as Python's `re.split(r"(?<=[.!?])\s+", text.strip())` does, with
 JavaScript's whitespace: U+FEFF separates sentences, U+0085 and U+001C–U+001F
 do not.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('SENTENCES("Hi. Ok!  Next? end")'); // ["Hi.", "Ok!", "Next?", "end"]
 await evalOk('SENTENCES("3.5 Uhr. Gut."; "terminators")'); // ["3.", "5 Uhr.", "Gut."]
@@ -1030,6 +1038,8 @@ The lines of `text` as written (not trimmed). A line ends at `\r\n`, `\n`,
 last line instead of starting an empty one. `mode` is `"non-blank"` (default),
 which drops lines that are empty after trimming, or `"all"`.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('LINES(value)', { value: 'a\n\n b' }); // ["a", " b"]
 await evalOk('LINES(value; "all")', { value: 'a\n\n b' }); // ["a", "", " b"]
@@ -1040,6 +1050,8 @@ await evalOk('LINES(value; "all")', { value: 'a\n\n b' }); // ["a", "", " b"]
 `LINE_COUNT(text: text, mode?: text) -> number`
 
 The number of lines `LINES` returns with the same arguments; `""` counts `0`.
+
+Anything about the result that this page does not state is unspecified.
 
 ```ts
 await evalOk('LINE_COUNT(value)', { value: 'a\r\nb\rc' }); // 3
@@ -1058,6 +1070,8 @@ or numbers (or are the edges of the text). `ignoreCase` (default `FALSE`)
 compares after lower-casing both sides as `LOWER` does; the answer is the
 phrase as listed. Empty phrases are skipped.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('FIRST_CONTAINED("Gut, oder? Richtig?"; LIST("Richtig?"; "oder?"))'); // "Richtig?"
 await evalOk('FIRST_CONTAINED("KENNST DU DAS?"; LIST("kennst du das?"); "substring"; TRUE)'); // "kennst du das?"
@@ -1071,6 +1085,8 @@ await evalOk('FIRST_CONTAINED("Der Geschäftsführer"; LIST("führer"); "word")'
 Whether `FIRST_CONTAINED` finds a phrase with the same arguments; an empty
 list yields `false`. It is a separate name rather than a `CONTAINS` list
 overload because an overload could not carry `match` and `ignoreCase`.
+
+Anything about the result that this page does not state is unspecified.
 
 ```ts
 await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))'); // true
@@ -1089,6 +1105,8 @@ written; `"loose"` also lower-cases them and folds typographic quotes
 (`‘ ’ ‚ ‛ ‹ ›` to `'`, `“ ” „ ‟ « »` to `"`) and dashes (U+2010 to U+2015 and
 the minus sign U+2212 to `-`). Items that are empty after normalising are
 skipped.
+
+Anything about the result that this page does not state is unspecified.
 
 ```ts
 await evalOk('MISSING_FROM(LIST("liefern schnell"; "billig"); value)', {
@@ -1426,6 +1444,8 @@ await evalOk('INCLUDES(LIST("a"); "b")'); // false
 exist. A negative or fractional `count` or `start`, or a `start` below `1`,
 returns `null` with a `TYPE` warning.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('TAKE(LIST(1; 2; 3); 2)'); // [1, 2]
 await evalOk('TAKE(LIST(1; 2; 3); 2; 3)'); // [3]
@@ -1446,6 +1466,8 @@ the same value object. So on the dates `DISTINCT` keeps, `INDEX_OF` answers as
 as another object, such as a second occurrence in input data. A list that holds a
 list, the empty list included, or a list `value` returns `null` with a `TYPE`
 warning.
+
+Anything about the result that this page does not state is unspecified.
 
 ```ts
 await evalOk('INDEX_OF(LIST("a"; "b"); "b")'); // 2
@@ -1470,6 +1492,8 @@ of `operatorValue`: `STARTS_WITH` runs its text form, so a list of prefixes
 keeps nothing. An operator with no implementation returns `null` with a `TYPE`
 warning.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
 await evalOk(
@@ -1493,6 +1517,8 @@ two date values held as separate objects (as input data holds them) for two
 values, as `COUNT_UNIQUE` counts them. A list that holds a list, the empty list
 included, or any other object returns `null` with a `TYPE` warning.
 
+Anything about the result that this page does not state is unspecified.
+
 ```ts
 await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
 await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))'); // 2
@@ -1510,6 +1536,8 @@ equal it — so the two lists line up position by position. Items compare as in
 two date values held as separate objects for two values, and the first three
 convert text to numbers and to booleans. A list that holds a list, the empty
 list included, or any other object returns `null` with a `TYPE` warning.
+
+Anything about the result that this page does not state is unspecified.
 
 ```ts
 await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))'); // [2, 1]
