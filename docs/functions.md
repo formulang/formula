@@ -1164,7 +1164,7 @@ Unspecified: in `"pattern"` mode, an option that holds a line terminator, as for
   Every such token counts, and their occurrences may overlap. An occurrence counts only at a word
   boundary: a token that starts with a letter, mark or number must not follow one (`"ca."` inside
   `Africa.` does not count), and a token that starts with anything else always counts. Tokens
-  match case-sensitively; empty ones are skipped.
+  match case-sensitively; empty ones, `""` and `null`, are skipped.
 
   ```ts
   await evalOk('SENTENCES("Wir helfen z. B. Handwerkern.")'); // ["Wir helfen z.", "B.", "Handwerkern."]
@@ -1175,6 +1175,7 @@ Unspecified: in `"pattern"` mode, an option that holds a line terminator, as for
   await evalOk('SENTENCES("Na ja... Gut."; "terminators"; LIST("..."))'); // ["Na ja... Gut."]
   await evalOk('SENTENCES("Dr. Who"; "punctuation"; LIST("dr."))'); // ["Dr.", "Who"]
   await evalOk('SENTENCES("a. b"; "punctuation"; LIST(""; "a."))'); // ["a. b"]
+  await evalOk('SENTENCES("a. b"; "punctuation"; value)', { value: [null, 'a.'] }); // ["a. b"]
   ```
 
 - A `null` text returns `null`, and a `null` `keep` is no list; a text that is not text, or a
@@ -1312,11 +1313,12 @@ Unspecified: nothing; these rules decide every text and mode.
   await evalOk('FIRST_CONTAINED("abc"; LIST("b"); "substring"; value)', { value: null }); // "b"
   ```
 
-- Empty phrases are skipped.
+- Empty phrases, `""` and `null`, are skipped.
 
   ```ts
   await evalOk('FIRST_CONTAINED("abc"; LIST(""; "b"))'); // "b"
   await evalOk('FIRST_CONTAINED("abc"; LIST(""))'); // null
+  await evalOk('FIRST_CONTAINED("abc"; value)', { value: [null, 'b'] }); // "b"
   ```
 
 - A `null` text or list returns `null`; a text that is not text, a list holding a value that is
@@ -1407,11 +1409,12 @@ Unspecified: nothing; these rules decide every text, list and option.
   }); // []
   ```
 
-- Items that are empty once normalised are skipped.
+- Items that are `null`, or empty once normalised, are skipped.
 
   ```ts
   await evalOk('MISSING_FROM(LIST(""; "  "; "x"); "abc")'); // ["x"]
   await evalOk('MISSING_FROM(LIST(""; "x"); "abc"; "exact")'); // ["x"]
+  await evalOk('MISSING_FROM(value; "abc"; "exact")', { value: [null, 'x'] }); // ["x"]
   ```
 
 - A `null` list or text returns `null`; a text that is not text, or an item that is not text,
@@ -1545,12 +1548,13 @@ Unspecified: nothing; these rules decide every list, text and mode.
   ```
 
 - In `"html"`, a numeric reference, decimal (`&#150;`) or hexadecimal (`&#x96;`, `&#X96;`), with
-  one digit or more, leading zeros included, gives its code point, except that zero, a surrogate
-  and a value past U+10FFFF give U+FFFD, and 128 to 159 give the windows-1252 character where that
-  encoding has one and stay C1 controls where it has none.
+  one digit or more, leading zeros included, and its closing `;`, gives its code point, except
+  that zero, a surrogate and a value past U+10FFFF give U+FFFD, and 128 to 159 give the
+  windows-1252 character where that encoding has one and stay C1 controls where it has none.
 
   ```ts
   await evalOk('PLAIN_TEXT("&#65;&#x42;&#X43;&#0067;"; "html")'); // "ABCC"
+  await evalOk('PLAIN_TEXT("&#65 &#65; &#x41 &#x41;"; "html")'); // "&#65 A &#x41 A"
   await evalOk('PLAIN_TEXT("a&#1;b&#127;c&#x10FFFF;"; "html")'); // "a\u0001b\u007fc\udbff\udfff"
   await evalOk('PLAIN_TEXT("&#0;&#xD800;&#xDFFF;&#x110000;"; "html")'); // "\ufffd\ufffd\ufffd\ufffd"
   await evalOk('PLAIN_TEXT("&#150;&#159;&#128;&#129;"; "html")'); // "\u2013\u0178\u20ac\u0081"
@@ -2036,7 +2040,7 @@ Unspecified: nothing; these rules decide every list, count and start.
   await evalOk('INDEX_OF(value; "A")', { value: ['a', 'A'] }); // 2
   ```
 
-- `null` when no item is equal, or when `value` is empty.
+- `null` when no item is equal, or when `value` is `null` or `""`.
 
   ```ts
   await evalOk('INDEX_OF(LIST("a"; "b"); "c")'); // null
@@ -2044,14 +2048,15 @@ Unspecified: nothing; these rules decide every list, count and start.
   await evalOk('INDEX_OF(LIST(1; 2); value)', { value: null }); // null
   ```
 
-- A list that holds a list, the empty list included, or a list as `value`, returns `null` with a
-  `TYPE` warning; a `null` list returns `null`, and a list of another type `null` with a `TYPE`
-  warning.
+- A list that holds a list, or a list as `value`, the empty list included either way, returns
+  `null` with a `TYPE` warning; a `null` list returns `null`, and a list of another type `null`
+  with a `TYPE` warning.
 
   ```ts
   await evalOk('INDEX_OF(value; 1)', { value: [[1], 2] }); // null with a TYPE warning
   await evalOk('INDEX_OF(value; 1)', { value: [[], 1] }); // null with a TYPE warning
   await evalOk('INDEX_OF(value; LIST(1))', { value: [1] }); // null with a TYPE warning
+  await evalOk('INDEX_OF(LIST(1); LIST())'); // null with a TYPE warning
   await evalOk('INDEX_OF(value; 1)', { value: null }); // null
   await evalOk('INDEX_OF(value; 1)', { value: 'abc' }); // null with a TYPE warning
   ```
