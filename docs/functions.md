@@ -1009,7 +1009,8 @@ await evalOk('WORD_COUNT(""; "whitespace")'); // 0
 
 The first `count` words joined by one space, or `null` when the text has fewer
 words. A `count` that is not a positive whole number returns `null` with a
-`TYPE` warning. `mode` and `option` work as for `WORDS`.
+`TYPE` warning, and a `null` count `null` without one. `mode` and `option` work
+as for `WORDS`.
 
 Anything about the result that this page does not state is unspecified.
 

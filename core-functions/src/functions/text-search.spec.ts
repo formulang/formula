@@ -113,5 +113,10 @@ describe('contains', () => {
       expect(contains(`${run}${longNeedle}`, longNeedle), String(shift)).toBe(true);
       expect(contains(`${run}b${'a'.repeat(299)}`, longNeedle), String(shift)).toBe(false);
     }
+    // A place where the tail occurs too early for the rest of the needle to fit before it is no
+    // candidate, though the text starts with that rest.
+    expect(contains(`b${'a'.repeat(250)}`, longNeedle)).toBe(false);
+    expect(contains(`b${'a'.repeat(299)}`, longNeedle)).toBe(false);
+    expect(contains(`b${'a'.repeat(300)}`, longNeedle)).toBe(true);
   });
 });

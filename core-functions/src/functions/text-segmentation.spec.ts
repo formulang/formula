@@ -1,4 +1,5 @@
 import { BuiltinSignatureIds, FormulaErrorCodes } from '@formulang/definitions';
+import * as entry from '../index';
 import {
   collectAllErrors,
   createTestRuntime,
@@ -318,6 +319,11 @@ describe('Text segmentation', () => {
         value: null,
         codes: ['TYPE'],
       });
+      // A null count answers null without a warning.
+      expect(await warningCodes('LEADING_WORDS("a b c"; value)', { value: null })).toStrictEqual({
+        value: null,
+        codes: [],
+      });
     });
 
     it('maps over a list and takes the word modes', async () => {
@@ -362,6 +368,10 @@ describe('Text segmentation', () => {
         'Hello.',
         'World',
       ]);
+      // A run of terminators ends one sentence, and stays with it whole.
+      expect(
+        await evalOk('SENTENCES(value; "terminators")', { value: 'Wow?! Ja... Gut。。' }),
+      ).toStrictEqual(['Wow?!', 'Ja...', 'Gut。。']);
     });
 
     it('ends a sentence at each terminator, the full-width ones in terminators mode only', async () => {
@@ -416,7 +426,17 @@ describe('Text segmentation', () => {
         expect(await evalOk(`SENTENCES("Dr. Smith."; "${mode}"; LIST("dr."))`), mode).toStrictEqual(
           ['Dr.', 'Smith.'],
         );
+        // Every occurrence protects, not the first alone.
+        expect(
+          await evalOk(`SENTENCES("Dr. A kam. Dr. B ging."; "${mode}"; LIST("Dr."))`),
+          mode,
+        ).toStrictEqual(['Dr. A kam.', 'Dr. B ging.']);
       }
+      // A split just before a token is not inside it, so it stays.
+      expect(await evalOk('SENTENCES("Ok.Dr. Smith."; "terminators"; LIST("Dr."))')).toStrictEqual([
+        'Ok.',
+        'Dr. Smith.',
+      ]);
     });
 
     it('trims each sentence', async () => {
@@ -497,6 +517,14 @@ describe('Text segmentation', () => {
         { limits: { maxWildcardOutputLength: 2 } },
       );
       expect(res.errors.map((e) => e.code)).toContain(FormulaErrorCodes.LIST_TOO_LARGE);
+      // A list of exactly maxWildcardOutputLength passes.
+      const atBound = await evalFormula(
+        'SENTENCES("a. b. c.")',
+        {},
+        { limits: { maxWildcardOutputLength: 3 } },
+      );
+      expect(atBound.res.errors).toStrictEqual([]);
+      expect(atBound.res.value).toStrictEqual(['a.', 'b.', 'c.']);
     });
   });
 
@@ -615,6 +643,15 @@ describe('Text segmentation', () => {
         splitSentences('Wir helfen z. B. Handwerkern.', 'punctuation', ['z. B.']),
       ).toHaveLength(1);
       expect(() => splitSentences('a', 'locale' as never)).toThrow(TypeError);
+      // A keep entry that is not text throws, where SENTENCES answers null with TYPE.
+      expect(() => splitSentences('a. b.', 'punctuation', [1 as never])).toThrow(TypeError);
+    });
+
+    it('comes from the package entry, and is not bounded by maxWildcardOutputLength', () => {
+      expect(entry.splitWords).toBe(splitWords);
+      expect(entry.splitSentences).toBe(splitSentences);
+      expect(splitWords('a '.repeat(5_001))).toHaveLength(5_001);
+      expect(splitSentences('a. '.repeat(5_001))).toHaveLength(5_001);
     });
   });
 

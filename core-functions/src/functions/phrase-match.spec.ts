@@ -64,6 +64,10 @@ describe('Phrase matching', () => {
         'OWNER',
       );
       expect(await evalOk('FIRST_CONTAINED("kennst du das?"; LIST("KENNST DU DAS?"))')).toBe(null);
+      // As LOWER does: STRASSE lower-cases to strasse, which does not hold straße.
+      expect(await evalOk('FIRST_CONTAINED("STRASSE"; LIST("straße"); "substring"; TRUE)')).toBe(
+        null,
+      );
     });
 
     it('requires word boundaries on both sides in word mode', async () => {
@@ -91,6 +95,18 @@ describe('Phrase matching', () => {
       expect(await evalOk('CONTAINS_ANY("(owner)_"; LIST("owner"); "word")')).toBe(true);
       expect(
         await evalOk('CONTAINS_ANY(value; LIST("owner"); "word")', { value: '\u00A0owner\u2019s' }),
+      ).toBe(true);
+      // A letter outside the Basic Multilingual Plane is a letter, before or after the phrase; an
+      // emoji is none of the three.
+      for (const value of ['\u{1D400}owner', 'owner\u{1D400}']) {
+        expect(await evalOk('CONTAINS_ANY(value; LIST("owner"); "word")', { value }), value).toBe(
+          false,
+        );
+      }
+      expect(
+        await evalOk('CONTAINS_ANY(value; LIST("owner"); "word")', {
+          value: '\u{1F600}owner\u{1F600}',
+        }),
       ).toBe(true);
     });
 
@@ -182,6 +198,10 @@ describe('Phrase matching', () => {
       const phrases = Array.from({ length: 1_001 }, (_, i) => `p${i}`);
       expect(await errorCodes('CONTAINS_ANY("abc"; value)', { value: phrases })).toContain(
         FormulaErrorCodes.LIST_TOO_LARGE,
+      );
+      // A list of exactly maxListLength is taken.
+      expect(await evalOk('CONTAINS_ANY("p999"; value)', { value: phrases.slice(0, 1_000) })).toBe(
+        true,
       );
     });
 
@@ -285,6 +305,10 @@ describe('Phrase matching', () => {
         'x',
       ]);
       expect(await evalOk('MISSING_FROM(LIST(); "a b")')).toStrictEqual([]);
+      // An item comes back as listed, though it is compared trimmed and collapsed.
+      expect(
+        await evalOk('MISSING_FROM(LIST(" billig  jetzt "; " liefern "); "Wir liefern.")'),
+      ).toStrictEqual([' billig  jetzt ']);
     });
 
     it('finds an item in a run of one letter only where the item occurs', async () => {
