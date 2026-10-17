@@ -67,6 +67,34 @@ describe('Text segmentation', () => {
       expect(await evalOk('COUNT(SENTENCES(value))', { value: 'Ja.\u0085Nein.' })).toBe(1);
     });
 
+    it.each([
+      ['U+001C', '\u001C'],
+      ['U+001D', '\u001D'],
+      ['U+001E', '\u001E'],
+      ['U+001F', '\u001F'],
+      ['U+0085', '\u0085'],
+    ])('separates neither words nor sentences at %s', async (_name, separator) => {
+      expect(await evalOk('WORDS(value)', { value: `a${separator}b c` })).toStrictEqual([
+        `a${separator}b`,
+        'c',
+      ]);
+      expect(await evalOk('SENTENCES(value)', { value: `Ja.${separator}Nein.` })).toStrictEqual([
+        `Ja.${separator}Nein.`,
+      ]);
+    });
+
+    it('keeps the marks and numbers of a run in letters mode', async () => {
+      // A combining acute, a combining diaeresis, a Devanagari vowel sign; digits, a superscript.
+      const value = 'Cafe\u0301 na\u0308ive \u0915\u093F H2O x\u00B2';
+      expect(await evalOk('WORDS(value; "letters")', { value })).toStrictEqual([
+        'Cafe\u0301',
+        'na\u0308ive',
+        '\u0915\u093F',
+        'H2O',
+        'x\u00B2',
+      ]);
+    });
+
     it('joins letter runs on apostrophes, hyphens and digit separators in letters mode', async () => {
       expect(await evalOk('WORD_COUNT("Don\'t re-enter the e-mail, oder?"; "letters")')).toBe(5);
       expect(await evalOk('WORDS("Don\'t re-enter the e-mail, oder?"; "letters")')).toStrictEqual([
@@ -190,6 +218,17 @@ describe('Text segmentation', () => {
           codes: ['REGEX'],
         });
       }
+    });
+
+    it('takes /pattern/flags only with lower-case flags, and any other option as a raw pattern', async () => {
+      const value = 'ab AB /ab/I /ab/i1 a/b';
+      const words = (pattern: string) => evalOk(`WORDS(value; "pattern"; "${pattern}")`, { value });
+      expect(await words('/ab/I')).toStrictEqual(['/ab/I']);
+      expect(await words('/ab/i1')).toStrictEqual(['/ab/i1']);
+      expect(await words('/ab/')).toStrictEqual(['ab', 'ab', 'ab']);
+      expect(await words('/ab/i')).toStrictEqual(['ab', 'AB', 'ab', 'ab']);
+      // Split at the last slash.
+      expect(await words('/a/b/')).toStrictEqual(['a/b']);
     });
 
     it('bounds the WORDS list but counts past the bound', async () => {
@@ -354,6 +393,41 @@ describe('Text segmentation', () => {
       }
     });
 
+    it('drops a piece of nothing but terminators in terminators mode', async () => {
+      for (const terminator of ['.', '!', '?', '\u3002', '\uff01', '\uff1f']) {
+        expect(
+          await evalOk('SENTENCES(value; "terminators")', { value: `a. ${terminator} b` }),
+          terminator,
+        ).toStrictEqual(['a.', 'b']);
+      }
+    });
+
+    it('suppresses only the splits inside or at the end of a keep token', async () => {
+      // "Dr" ends before the full stop, so the split after it stays; "Dr." covers it.
+      for (const mode of ['punctuation', 'terminators']) {
+        expect(await evalOk(`SENTENCES("Dr. Smith."; "${mode}"; LIST("Dr"))`), mode).toStrictEqual([
+          'Dr.',
+          'Smith.',
+        ]);
+        expect(await evalOk(`SENTENCES("Dr. Smith."; "${mode}"; LIST("Dr."))`), mode).toStrictEqual(
+          ['Dr. Smith.'],
+        );
+        // Matching is case-sensitive.
+        expect(await evalOk(`SENTENCES("Dr. Smith."; "${mode}"; LIST("dr."))`), mode).toStrictEqual(
+          ['Dr.', 'Smith.'],
+        );
+      }
+    });
+
+    it('trims each sentence', async () => {
+      for (const mode of ['punctuation', 'terminators']) {
+        expect(
+          await evalOk(`SENTENCES(value; "${mode}")`, { value: '  Hi.\t Ok.  ' }),
+          mode,
+        ).toStrictEqual(['Hi.', 'Ok.']);
+      }
+    });
+
     it('never ends a sentence inside or at the end of a keep token', async () => {
       expect(await evalOk('COUNT(SENTENCES("Wir helfen z. B. Handwerkern."))')).toBe(3);
       expect(
@@ -454,28 +528,28 @@ describe('Text segmentation', () => {
       expect(await evalOk('LINES(value)', { value: null })).toBe(null);
     });
 
-    it('counts the lines LINES returns, for every break and both modes', async () => {
-      const samples = [
-        '',
-        '\n',
-        'a',
-        'a\n',
-        '\n\na',
-        'a\r\n\r\n',
-        ' \n\t\nb\r',
-        'a\u2028\u2029b\u0085',
+    it('drops a line that is empty after trimming, and counts the lines it keeps', async () => {
+      // [text, the lines in "non-blank" mode, the lines in "all" mode]
+      const cases: Array<[string, string[], string[]]> = [
+        ['', [], []],
+        ['\n', [], ['']],
+        ['a', ['a'], ['a']],
+        ['a\n', ['a'], ['a']],
+        ['\n\na', ['a'], ['', '', 'a']],
+        ['a\r\n\r\n', ['a'], ['a', '']],
+        [' \n\t\nb\r', ['b'], [' ', '\t', 'b']],
+        ['a\n  \nb', ['a', 'b'], ['a', '  ', 'b']],
+        ['a\n \t', ['a'], ['a', ' \t']],
+        ['a\n\u00a0\n b ', ['a', ' b '], ['a', '\u00a0', ' b ']],
+        ['a\u2028\u2029b\u0085', ['a', 'b'], ['a', '', 'b']],
       ];
-      for (const value of samples) {
-        for (const mode of ['non-blank', 'all']) {
-          const lines = (await evalOk(`LINES(value; "${mode}")`, { value })) as string[];
-          expect(
-            await evalOk(`LINE_COUNT(value; "${mode}")`, { value }),
-            JSON.stringify(value),
-          ).toBe(lines.length);
-        }
+      for (const [value, nonBlank, all] of cases) {
+        const name = JSON.stringify(value);
+        expect(await evalOk('LINES(value)', { value }), name).toStrictEqual(nonBlank);
+        expect(await evalOk('LINE_COUNT(value)', { value }), name).toBe(nonBlank.length);
+        expect(await evalOk('LINES(value; "all")', { value }), name).toStrictEqual(all);
+        expect(await evalOk('LINE_COUNT(value; "all")', { value }), name).toBe(all.length);
       }
-      expect(await evalOk('LINES(value; "all")', { value: '\n\na' })).toStrictEqual(['', '', 'a']);
-      expect(await evalOk('LINES(value; "all")', { value: 'a\r\n\r\n' })).toStrictEqual(['a', '']);
     });
 
     it('bounds the line list', async () => {

@@ -51,6 +51,21 @@ describe('Phrase matching', () => {
       ).toBe(true);
     });
 
+    it('lower-cases the phrase too with ignoreCase', async () => {
+      expect(
+        await evalOk(
+          'FIRST_CONTAINED("kennst du das?"; LIST("KENNST DU DAS?"); "substring"; TRUE)',
+        ),
+      ).toBe('KENNST DU DAS?');
+      expect(
+        await evalOk('CONTAINS_ANY("kennst du das?"; LIST("Kennst Du"); "substring"; TRUE)'),
+      ).toBe(true);
+      expect(await evalOk('FIRST_CONTAINED("Der Owner, Kim"; LIST("OWNER"); "word"; TRUE)')).toBe(
+        'OWNER',
+      );
+      expect(await evalOk('FIRST_CONTAINED("kennst du das?"; LIST("KENNST DU DAS?"))')).toBe(null);
+    });
+
     it('requires word boundaries on both sides in word mode', async () => {
       expect(await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))')).toBe(true);
       expect(await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"); "word")')).toBe(false);
