@@ -56,10 +56,10 @@ const NON_WHITESPACE_RUN = /\S+/gu;
 /**
  * `letters` mode: runs of letters, marks and numbers, joined into one word by an apostrophe
  * (`'`, U+2019) or a hyphen (`-`, U+2010, U+2011, soft hyphen U+00AD) between two runs, and by
- * `.` or `,` between two digits.
+ * `.` or `,` between two decimal digits.
  */
 const LETTER_WORD =
-  /[\p{L}\p{M}\p{N}]+(?:(?:['\u2019\u2010\u2011\u00AD-]|(?<=\p{N})[.,](?=\p{N}))[\p{L}\p{M}\p{N}]+)*/gu;
+  /[\p{L}\p{M}\p{N}]+(?:(?:['\u2019\u2010\u2011\u00AD-]|(?<=\p{Nd})[.,](?=\p{Nd}))[\p{L}\p{M}\p{N}]+)*/gu;
 
 /** `punctuation` mode: a whitespace run directly after `.`, `!` or `?` ends a sentence. */
 const PUNCTUATION_BREAK = /(?<=[.!?])\s+/gu;

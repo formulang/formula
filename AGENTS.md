@@ -40,7 +40,7 @@ Run from the repo root.
 
 ## Critical facts (non-obvious — read before working)
 
-- **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 72 spec files / 659 tests). Run `pnpm run test` freely and often.
+- **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 73 spec files / 654 tests). Run `pnpm run test` freely and often.
 - **Lint DOES need a build.** `lint` is `tsc --noEmit` per package (core-functions' also type-checks its test helper, `src/test-helpers/`, under `tsconfig.test-helpers.json`), and cross-package imports resolve through the published entrypoints (`dist/`). Run `pnpm run build` before `pnpm run lint` — and before anything else that resolves `dist/` instead of the vitest aliases.
 - Test files are `*.spec.ts`, co-located with the source they test.
 - TypeScript 6 with `module`/`moduleResolution` set to `nodenext` (modern Node module semantics, matching `engines >=22`), CJS emit. Mind Node-style module resolution rules when adding imports.
@@ -70,4 +70,4 @@ Also present: root `README.md` (project overview), `SECURITY.md` (security model
 1. Add a signature id in `definitions/src/builtin-signature-ids.ts` and the portable definition (name, params, return type, purity — plus an operator registration if it has an operator form) in `definitions/src/register-core-definitions.ts`.
 2. Implement it in `core-functions/src/functions/<name>.ts` (most implementations extend `AbstractEagerBatchImplementation`) and register the implementation under its signature id in `core-functions/src/functions/register-primitive-implementations.ts`.
 3. Add a co-located `<name>.spec.ts` next to the implementation.
-4. Document the function in `docs/functions.md`: its signature, one bullet per rule with `evalOk`/`evalErrors` examples under each, and one closing `Unspecified:` sentence. `core-functions/src/functions/function-docs.spec.ts` runs every example on that page and fails on a rule bullet without one, for every function the 1.0.0 baseline does not name.
+4. Document the function in `docs/functions.md`: its signature, one bullet per rule, each one sentence (no `;` or `:` outside code) with at least two `evalOk`/`evalErrors` examples under it that call the function and give different results, and one closing `Unspecified:` sentence; rules every such function shares go under _Shared rules_, once. `core-functions/src/functions/function-docs.spec.ts` runs every example on that page and fails on any departure from that form, for every function the 1.0.0 baseline does not name.

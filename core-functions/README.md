@@ -143,10 +143,14 @@ registers just the definitions when you only need to parse and validate.
 
 The full reference — signatures, edge cases, and a runnable example per
 function — is in **[docs/functions.md](../docs/functions.md)**. The sections of
-the functions added since 1.0.0 state each function as rules, each rule with
-examples, and close with one sentence naming the inputs they leave unspecified;
-`src/functions/function-docs.spec.ts` runs the examples on that page through
-the runtime, so a wrong example, or a rule without one, fails the suite.
+the functions added since 1.0.0 state each function as rules, one rule of one
+sentence per bullet with at least two examples that give different results,
+share the rules under _Shared rules_, and close with one sentence naming the
+inputs they leave unspecified. `src/functions/function-docs.spec.ts` runs the
+examples on that page through the runtime and checks that form: a wrong
+example, a rule with fewer than two examples or with examples that all give
+one result, an example that does not call the section's function, a bullet of
+more than one sentence, and prose outside a rule each fail the suite.
 Overview:
 
 | Category           | Functions                                                                                                                                                                                                                                                                                                                                                                |

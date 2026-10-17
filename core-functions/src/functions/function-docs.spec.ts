@@ -1,14 +1,20 @@
 import * as coreFunctions from '@formulang/core-functions';
 import { readFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import baseline from '../../../scripts/compat/baseline-1.0.0.json';
 import harness from '../../../scripts/compat/harness.js';
-import { evalErrors, evalOkWithOutput } from '../test-helpers/eval-formula';
+import { evalErrors, evalFormulaOutput, evalOkWithOutput } from '../test-helpers/eval-formula';
 
 /**
- * docs/functions.md states each function added to 1.0.0 as rule bullets, each carrying examples,
- * and one sentence naming what it leaves unspecified. This spec reads the document as the
- * repository holds it and runs every example in it through the real runtime, so a rule whose
- * example is wrong, and a rule with no example, are red.
+ * docs/functions.md states each function added to 1.0.0 as rules, and the rules all of them share
+ * once, under "Shared rules". Each rule is one bullet of one sentence (no `;` and no `:` outside
+ * code), followed by one code block of at least two examples that give different results, each
+ * calling the section's function (in the shared rules, a function added to 1.0.0). A section
+ * closes with one sentence, `Unspecified: ...`, naming what its rules leave unspecified. This spec
+ * reads the document as the repository holds it, checks that form, and runs every example
+ * through the real runtime: a wrong example, a rule without a pair of examples that tell its
+ * condition apart, an example that does not call the function, and any prose outside a rule are
+ * red.
  */
 
 /** docs/functions.md, as the repository holds it. */
@@ -19,6 +25,11 @@ const ADDED: string[] = harness.addedFunctionNames({ coreFunctions }, baseline.f
 
 /** The sentence that closes each added function's section. */
 const UNSPECIFIED = 'Unspecified: ';
+
+/** The heading of the rules every added function follows, and the one sentence that opens them. */
+const SHARED_HEADING = '## Shared rules';
+const SHARED_INTRO =
+  'These rules hold in every section that states its function as rules, for each argument but a mode and the operator of `FILTER_BY`, which a formula writes as literals.';
 
 /**
  * The examples outside the added functions' sections that this spec does not run, each with the
@@ -42,9 +53,12 @@ type Example = {
   variables?: Record<string, unknown>;
   comment: string;
   line: number;
+  /** The lines of its code block the statement spans, from 0. */
+  first: number;
+  last: number;
 };
 
-type Bullet = { line: number; text: string; examples: Example[] };
+type Bullet = { line: number; prose: string; examples: Example[] };
 
 /** The sections that start with `### NAME`, each running to the next heading or rule. */
 function readSections(docs: string): Section[] {
@@ -58,6 +72,16 @@ function readSections(docs: string): Section[] {
     found.push({ name: heading[1], line: index + 1, lines: all.slice(index + 1, end) });
   }
   return found;
+}
+
+/** The shared rules: the lines after their heading, up to the next heading or rule. */
+function readShared(docs: string): Section | undefined {
+  const all = docs.split('\n');
+  const start = all.indexOf(SHARED_HEADING);
+  if (start < 0) return undefined;
+  let end = start + 1;
+  while (end < all.length && !/^(#{1,3} |---$)/.test(all[end])) end += 1;
+  return { name: 'Shared rules', line: start + 1, lines: all.slice(start + 1, end) };
 }
 
 /** The source and the variables of an example's call, read as JavaScript reads its literals. */
@@ -101,98 +125,254 @@ function readExamples(lines: string[], first: number): Example[] {
       ...readCall(call),
       comment: (comment ?? '').trim(),
       line: first + index,
+      first: index,
+      last: end,
     });
     index = end;
   }
   return found;
 }
 
+/** Prose with its code spans and link targets taken out, so only its own words remain. */
+function words(prose: string): string {
+  return prose
+    .replace(/(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, 'C')
+    .replace(/\]\([^)\s]*\)/g, ']')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** What makes prose more than one sentence: a `;`, a `:`, or an end of sentence before its last. */
+function sentenceProblems(text: string): string[] {
+  const problems: string[] = [];
+  if (text.includes(';')) problems.push('a ";" joins two rules');
+  if (text.includes(':')) problems.push('a ":" joins two rules');
+  if (!text.endsWith('.')) problems.push('it does not end with "."');
+  if (/[.!?]["')\]]*\s/.test(text.slice(0, -1))) problems.push('it holds more than one sentence');
+  return problems;
+}
+
 /**
- * The rule bullets of an added function's section: its signature line, then top-level bullets,
- * each with its examples in indented code blocks, then the one `Unspecified: ` sentence. Any
- * other line at the left margin, and any nested bullet, is a claim outside a rule and fails.
+ * The rules of a section's lines, from `from` on: top-level bullets, each one sentence of prose,
+ * then one indented code block of examples, and at most a closing `Unspecified: ` sentence.
+ * Every departure from that form is a problem: prose outside a bullet, a nested bullet, a bullet
+ * without a code block, a line of a code block that is no example, prose after a code block, and
+ * text after the closing sentence.
  */
-function readBullets(section: Section): { bullets: Bullet[]; unspecified: string } {
-  const where = (offset: number) => `${section.name}, line ${section.line + 1 + offset}`;
+function readRules(
+  section: Section,
+  from: number,
+  problems: string[],
+): { bullets: Bullet[]; unspecified: string | null } {
   const lines = section.lines;
-  let index = 0;
-  while (index < lines.length && lines[index].trim() === '') index += 1;
-  expect(lines[index], `${where(index)}: the signature`).toMatch(/^`[A-Z0-9_]+\(.*\) -> .+`$/);
-  index += 1;
+  const where = (offset: number) => `${section.name}, line ${section.line + 1 + offset}`;
   const bullets: Bullet[] = [];
-  let unspecified = '';
+  let unspecified: string | null = null;
+  let index = from;
+  const skipBlank = () => {
+    while (index < lines.length && lines[index].trim() === '') index += 1;
+  };
+  skipBlank();
   while (index < lines.length) {
     const line = lines[index];
-    if (line.trim() === '') {
+    if (unspecified !== null) {
+      problems.push(`${where(index)}: text after the unspecified sentence: ${line}`);
       index += 1;
-    } else if (line.startsWith('- ')) {
-      let end = index + 1;
-      while (end < lines.length && (lines[end].trim() === '' || lines[end].startsWith('  '))) {
-        expect(lines[end], `${where(end)}: a nested bullet`).not.toMatch(/^\s+[-*+] /);
-        end += 1;
-      }
-      const body = lines.slice(index, end);
-      bullets.push({
-        line: section.line + 1 + index,
-        text: body
-          .filter((part) => !part.startsWith('  ```') && !/^\s+await /.test(part))
-          .join(' '),
-        examples: readExamples(body, section.line + 1 + index),
-      });
-      index = end;
-    } else {
-      expect(line, `${where(index)}: prose outside a rule bullet`).toMatch(/^Unspecified: /);
-      expect(unspecified, `${where(index)}: a second unspecified sentence`).toBe('');
-      let end = index;
-      while (end < lines.length && lines[end].trim() !== '') end += 1;
-      unspecified = lines.slice(index, end).join(' ');
-      index = end;
+      skipBlank();
+      continue;
     }
+    if (line.startsWith(UNSPECIFIED)) {
+      const start = index;
+      while (index < lines.length && lines[index].trim() !== '') index += 1;
+      unspecified = lines.slice(start, index).join(' ');
+      skipBlank();
+      continue;
+    }
+    if (!line.startsWith('- ')) {
+      problems.push(`${where(index)}: prose outside a rule bullet: ${line}`);
+      index += 1;
+      skipBlank();
+      continue;
+    }
+    const bulletLine = section.line + 1 + index;
+    const proseLines = [line.slice(2)];
+    index += 1;
+    while (index < lines.length && lines[index].trim() !== '') {
+      if (!lines[index].startsWith('  ') || /^\s+[-*+] /.test(lines[index])) {
+        problems.push(`${where(index)}: a line of a rule that is no part of its sentence`);
+      }
+      proseLines.push(lines[index].trim());
+      index += 1;
+    }
+    skipBlank();
+    const fence = index < lines.length ? /^ {2}(`{3,})ts$/.exec(lines[index]) : null;
+    const examples: Example[] = [];
+    if (fence === null) {
+      problems.push(`line ${bulletLine}: a rule bullet without a code block of examples`);
+    } else {
+      const open = index;
+      index += 1;
+      while (index < lines.length && lines[index] !== `  ${fence[1]}`) index += 1;
+      if (index >= lines.length) problems.push(`${where(open)}: a code block that is not closed`);
+      const block = lines.slice(open + 1, index);
+      examples.push(...readExamples(block, section.line + 2 + open));
+      const covered = new Set<number>();
+      for (const example of examples) {
+        for (let at = example.first; at <= example.last; at++) covered.add(at);
+      }
+      block.forEach((text, at) => {
+        if (text.trim() !== '' && !covered.has(at)) {
+          problems.push(`${where(open + 1 + at)}: a line of a code block that is no example`);
+        }
+      });
+      index += 1;
+      skipBlank();
+    }
+    bullets.push({ line: bulletLine, prose: proseLines.join(' '), examples });
   }
-  expect(unspecified, `${section.name}: the unspecified sentence`).not.toBe('');
   return { bullets, unspecified };
 }
 
-/** The value a comment states as JSON; a comment that is not JSON fails. */
-function readJson(text: string, where: string): unknown {
-  let value: unknown;
-  expect(() => {
-    value = JSON.parse(text);
-  }, `${where}: the comment ${text}`).not.toThrow();
-  return value;
+/** Whether an example's source calls the function `name`, or names it as a callable. */
+function callsFunction(source: string, name: string): boolean {
+  return new RegExp(`(?<![A-Za-z0-9_])${name}\\s*\\(|"${name}"`).test(source);
+}
+
+/** The value a comment states as JSON, or a problem when it is not JSON. */
+function readJson(text: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /**
- * Runs one example. An `evalOk` comment states the value, and for an added function the warning
- * too (`null with a TYPE warning`; none stated is none given); the comments of 1.0.0's examples
- * may add a note in brackets after the value. An `evalErrors` comment states the error codes.
+ * What an example states it gives, read from its comment: for `evalOk` the value and the warning
+ * (`null with a TYPE warning`; none stated is none given), for `evalErrors` the error codes.
  */
-async function check(example: Example, added: boolean): Promise<void> {
+function stated(example: Example): { ok: true; value: unknown } | { ok: false } {
+  if (example.helper === 'evalErrors') {
+    const codes = readJson(example.comment);
+    return codes.ok ? { ok: true, value: { errors: codes.value } } : codes;
+  }
+  const withWarning = /^(.*) with an? ([A-Z_]+) warning$/.exec(example.comment);
+  const value = readJson(withWarning === null ? example.comment : withWarning[1]);
+  if (!value.ok) return value;
+  return { ok: true, value: { value: value.value, warnings: withWarning ? [withWarning[2]] : [] } };
+}
+
+/** What an example gives when it runs, in the shape `stated` reads from its comment. */
+async function given(example: Example): Promise<unknown> {
+  if (example.helper === 'evalErrors') {
+    return { errors: await evalErrors(example.source, example.variables) };
+  }
+  const { parsed, compiled, output, errors } = await evalFormulaOutput(
+    example.source,
+    example.variables,
+  );
+  const all = [...parsed.errors, ...compiled.errors, ...errors].map((error) => error.code);
+  if (all.length > 0) return { errors: all };
+  return {
+    value: output.value ?? null,
+    warnings: (output.warnings ?? []).map((warning) => warning.code),
+  };
+}
+
+/**
+ * Every problem of a block of rules: the form of each bullet and of the closing sentence, the
+ * examples each bullet needs, and every example that does not give what its comment states.
+ */
+async function ruleProblems(
+  section: Section,
+  from: number,
+  calls: readonly string[],
+  closing: boolean,
+): Promise<string[]> {
+  const problems: string[] = [];
+  const { bullets, unspecified } = readRules(section, from, problems);
+  if (bullets.length === 0) problems.push(`${section.name}: no rule bullets`);
+  for (const bullet of bullets) {
+    const at = `line ${bullet.line}`;
+    for (const problem of sentenceProblems(words(bullet.prose))) {
+      problems.push(`${at}: one rule per bullet, in one sentence: ${problem}`);
+    }
+    if (bullet.examples.length < 2) {
+      problems.push(`${at}: ${bullet.examples.length} example(s), at least two needed`);
+    }
+    const outcomes = new Set<string>();
+    for (const example of bullet.examples) {
+      const where = `line ${example.line}: ${example.source}`;
+      if (example.variables === undefined) {
+        problems.push(`${where}: a variable named but not given`);
+        continue;
+      }
+      if (!calls.some((name) => callsFunction(example.source, name))) {
+        problems.push(
+          `${where}: calls none of ${calls.length === 1 ? calls[0] : 'the added functions'}`,
+        );
+      }
+      const expected = stated(example);
+      if (!expected.ok) {
+        problems.push(`${where}: the comment ${example.comment} is not a stated result`);
+        continue;
+      }
+      outcomes.add(JSON.stringify(expected.value));
+      const actual = await given(example);
+      if (!isDeepStrictEqual(actual, expected.value)) {
+        problems.push(`${where}: gives ${JSON.stringify(actual)}, not ${example.comment}`);
+      }
+    }
+    if (bullet.examples.length >= 2 && outcomes.size < 2) {
+      problems.push(`${at}: every example gives the same result, so none tells the rule apart`);
+    }
+  }
+  if (!closing) {
+    if (unspecified !== null) problems.push(`${section.name}: an unspecified sentence`);
+    return problems;
+  }
+  if (unspecified === null) {
+    problems.push(`${section.name}: no unspecified sentence`);
+    return problems;
+  }
+  const sentence = words(unspecified);
+  if (sentence.split('Unspecified:').length !== 2) {
+    problems.push(`${section.name}: "Unspecified:" more than once`);
+  }
+  for (const problem of sentenceProblems(sentence.slice(UNSPECIFIED.length))) {
+    problems.push(`${section.name}: the unspecified sentence: ${problem}`);
+  }
+  return problems;
+}
+
+/** Runs one example of 1.0.0, whose comment may add a note in brackets after the value. */
+async function checkBaseline(example: Example): Promise<void> {
   const where = `line ${example.line}: ${example.source}`;
   expect(example.variables, `${where}: the variables`).toBeDefined();
+  const json = readJson(
+    example.helper === 'evalErrors' ? example.comment : example.comment.replace(/\s+\(.*\)$/, ''),
+  );
+  expect(json.ok, `${where}: the comment ${example.comment}`).toBe(true);
+  const value = json.ok ? json.value : undefined;
   if (example.helper === 'evalErrors') {
-    expect(await evalErrors(example.source, example.variables), where).toStrictEqual(
-      readJson(example.comment, where),
-    );
+    expect(await evalErrors(example.source, example.variables), where).toStrictEqual(value);
     return;
   }
-  const withWarning = added ? /^(.*) with an? ([A-Z_]+) warning$/.exec(example.comment) : null;
-  const valueText = withWarning === null ? example.comment : withWarning[1];
-  const stated = readJson(added ? valueText : valueText.replace(/\s+\(.*\)$/, ''), where);
-  const { output, value } = await evalOkWithOutput(example.source, example.variables);
-  expect(value, where).toStrictEqual(stated);
-  if (!added) return;
-  const warnings = (output.warnings ?? []).map((warning) => warning.code);
-  expect(warnings, `${where}: warnings`).toStrictEqual(withWarning ? [withWarning[2]] : []);
+  expect((await evalOkWithOutput(example.source, example.variables)).value, where).toStrictEqual(
+    value,
+  );
 }
 
 const SECTIONS = readSections(DOCS);
 const BY_NAME = new Map(SECTIONS.map((section) => [section.name, section]));
+const SHARED = readShared(DOCS);
 
 describe('docs/functions.md examples', () => {
-  it('reads every example statement on the page, each inside a function section', () => {
+  it('reads every example statement on the page, each inside a function section or the shared rules', () => {
     const statements = DOCS.split('\n').filter((line) => /^\s*await /.test(line)).length;
-    const read = SECTIONS.flatMap((section) => readExamples(section.lines, section.line + 1));
+    const read = [...SECTIONS, ...(SHARED ? [SHARED] : [])].flatMap((section) =>
+      readExamples(section.lines, section.line + 1),
+    );
     expect(statements).toBeGreaterThan(0);
     expect(read.length).toBe(statements);
   });
@@ -208,16 +388,25 @@ describe('docs/functions.md for the functions added to 1.0.0', () => {
     expect([...stated].sort()).toStrictEqual([...ADDED].sort());
   });
 
+  it('states the shared rules once, opened by their one sentence, in the form of the rules', async () => {
+    expect(SHARED, SHARED_HEADING).toBeDefined();
+    const shared = SHARED as Section;
+    const first = shared.lines.findIndex((line) => line.trim() !== '');
+    expect(shared.lines[first], 'the sentence that opens the shared rules').toBe(SHARED_INTRO);
+    expect(DOCS.split('\n').filter((line) => line === SHARED_HEADING)).toHaveLength(1);
+    const problems = await ruleProblems(shared, first + 1, ADDED, false);
+    expect(problems, problems.join('\n')).toStrictEqual([]);
+  });
+
   for (const name of ADDED) {
-    it(`${name}: every rule bullet has an example, and every example answers as written`, async () => {
+    it(`${name}: one rule per bullet, each with examples that tell it apart, each answering as written`, async () => {
       const section = BY_NAME.get(name);
       expect(section, `${name}: its section`).toBeDefined();
-      const { bullets } = readBullets(section as Section);
-      expect(bullets.length, `${name}: rule bullets`).toBeGreaterThan(0);
-      for (const bullet of bullets) {
-        expect(bullet.examples.length, `line ${bullet.line}: ${bullet.text}`).toBeGreaterThan(0);
-        for (const example of bullet.examples) await check(example, true);
-      }
+      const lines = (section as Section).lines;
+      const signature = lines.findIndex((line) => line.trim() !== '');
+      expect(lines[signature], `${name}: the signature`).toMatch(/^`[A-Z0-9_]+\(.*\) -> .+`$/);
+      const problems = await ruleProblems(section as Section, signature + 1, [name], true);
+      expect(problems, problems.join('\n')).toStrictEqual([]);
     });
   }
 });
@@ -233,7 +422,7 @@ describe('docs/functions.md for the functions of 1.0.0', () => {
     let ran = 0;
     for (const example of examples) {
       if (example.source in NOT_RUN) continue;
-      await check(example, false);
+      await checkBaseline(example);
       ran += 1;
     }
     expect(ran).toBe(examples.length - Object.keys(NOT_RUN).length);

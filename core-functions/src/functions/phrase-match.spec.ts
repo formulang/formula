@@ -198,12 +198,12 @@ describe('Phrase matching', () => {
         // With ignoreCase the phrase counts lower-cased: U+0130 lower-cases to two code units.
         const ignoring = `${name}(value; other; "substring"; TRUE)`;
         expect(
-          await evalOk(ignoring, { value: 'x', other: ['İ'.repeat(125)] }, options),
+          await evalOk(ignoring, { value: 'x', other: ['\u0130'.repeat(125)] }, options),
           name,
         ).toBe(name === 'CONTAINS_ANY' ? false : null);
         const { parsed, compiled, res } = await evalFormula(
           ignoring,
-          { value: 'x', other: ['İ'.repeat(126)] },
+          { value: 'x', other: ['\u0130'.repeat(126)] },
           options,
         );
         expect(

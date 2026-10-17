@@ -147,6 +147,24 @@ describe('Text segmentation', () => {
       ).toStrictEqual(['3.5', '3,5', '1.2.3', 'a', 'b', '3', 'a', 'a', '3']);
     });
 
+    it('joins on . or , only between two decimal digits, not other numbers', async () => {
+      // U+0663 and U+0665 are Arabic-Indic digits; U+00B9, U+00B2 and U+00BD are numbers that are
+      // no decimal digits, and U+2160 a letter number.
+      expect(
+        await evalOk('WORDS(value; "letters")', {
+          value: '\u0663,\u0665 \u00b9,\u00b2 \u00bd.\u00bd \u2160.\u2160',
+        }),
+      ).toStrictEqual([
+        '\u0663,\u0665',
+        '\u00b9',
+        '\u00b2',
+        '\u00bd',
+        '\u00bd',
+        '\u2160',
+        '\u2160',
+      ]);
+    });
+
     it('segments with Intl.Segmenter in locale mode', async () => {
       expect(await evalOk('WORDS("Kund:innen"; "locale"; "de")')).toStrictEqual(['Kund:innen']);
       expect(await evalOk('WORD_COUNT("Don\'t"; "locale"; "en")')).toBe(1);
