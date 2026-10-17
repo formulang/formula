@@ -142,7 +142,12 @@ registers just the definitions when you only need to parse and validate.
 ## Function categories
 
 The full reference — signatures, edge cases, and a runnable example per
-function — is in **[docs/functions.md](../docs/functions.md)**. Overview:
+function — is in **[docs/functions.md](../docs/functions.md)**. The sections of
+the functions added since 1.0.0 state each function as rules, each rule with
+examples, and close with one sentence naming the inputs they leave unspecified;
+`src/functions/function-docs.spec.ts` runs the examples on that page through
+the runtime, so a wrong example, or a rule without one, fails the suite.
+Overview:
 
 | Category           | Functions                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -44,6 +44,19 @@ arguments with `,` instead.
   it wires `createCoreFormulaRuntime()`, parses, optimizes, and evaluates the
   formula, asserts that no errors were produced, and returns the result value.
   The comment after each call shows that value.
+  `evalErrors(source, variables?)`, from the same file, returns instead the
+  codes of the errors the formula reports, and its comment shows them.
+  `core-functions/src/functions/function-docs.spec.ts` runs the examples on
+  this page and compares each result with its comment, read as JSON less a note
+  in brackets after it, except six it names: two whose value is the current
+  date, three that name a variable they do not give, and one whose comment
+  marks its value with `~`.
+- **Rules.** Some sections state their function as rules, one bullet each,
+  every bullet followed by examples that show it, and close with one sentence
+  naming the inputs whose result they leave unspecified. In those sections the
+  comment of an `evalOk` call also names the warning the call attaches
+  (`null with a TYPE warning`), and a comment that names none states that the
+  call attaches none.
 
 ## Operator aliases
 
@@ -576,65 +589,20 @@ Most text functions return `null` (often with a `TYPE` warning) when given a
 non-empty, non-text value, and plain `null` when the input is empty.
 
 **Text segmentation.** `WORDS`, `WORD_COUNT` and `LEADING_WORDS` share one
-tokeniser, chosen by an optional `mode` literal (a misspelt mode is a
-compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when higher-order calls
-pass the mode on through callables named by string literals, as far as the
-parser follows them; see **Modes** under [Conventions](#conventions)):
-
-- `"whitespace"` (default) — the text is trimmed and split at every run of
-  whitespace. Whitespace is JavaScript's `\s`: tabs, line breaks and the
-  no-break space U+00A0 separate words; U+0085 and U+001C–U+001F do not
-  (Python's `str.split()` also splits at those), and the byte order mark
-  U+FEFF does (Python's `str.split()` does not).
-- `"letters"` — runs of letters, marks and numbers (`\p{L}`, `\p{M}`,
-  `\p{N}`). An apostrophe (`'`, `’`) or a hyphen (`-`, U+2010, U+2011, the soft
-  hyphen U+00AD) between two runs joins them into one word, and so does `.` or
-  `,` between two digits: `don't`, `E-Mail-Adresse` and `3,5` are one word
-  each, `Kund:innen` is two.
-- `"locale"` — the word-like segments `Intl.Segmenter` finds for the BCP 47
-  language tag in `option` (`"de"`, `"en-GB"`). A malformed tag, or one the
-  runtime holds no segmentation data for, returns `null` with a `TYPE` warning
-  instead of falling back to the host's locale. The segmentation comes from the
-  runtime's ICU data, so a runtime that upgrades ICU can answer differently;
-  the other modes do not depend on ICU.
-- `"pattern"` — every non-empty match of the regular expression in `option`,
-  written raw or as `/pattern/flags`. An option that starts with `/` and
-  ends with a `/` and lower-case letters (or none) takes that form: it is split
-  at its last `/`, and the flags must come from `imsu`; `g` is implied, and
-  any other lower-case letter, `g` itself included, returns `null` with a
-  `REGEX` warning. Any other option is a raw pattern, its slashes included:
-  `/ab/I` matches the text `/ab/I`. The pattern is compiled under the safety
-  rules of [MATCH_EXPRESSION](#match_expression), including the 8,000-character
-  input limit; those rules do not bound the time a pattern they accept takes
-  (**Work**, below).
-
-`option` is accepted only in the `"locale"` and `"pattern"` modes; elsewhere
-any option, the empty text `""` included, returns `null` with a `TYPE`
-warning. In those two modes an omitted, `null` or empty tag or pattern returns
-`null` with a `TYPE` warning too. A `null` option is no option, so outside
-those modes it is ignored.
-
-`SENTENCES` takes a `mode` too: `"punctuation"` (default) ends a sentence at a
-whitespace run directly after `.`, `!` or `?`; `"terminators"` ends one at
-every run of `.`, `!`, `?`, `。`, `！`, `？`. The optional `keep` list names
-tokens that never end a sentence — abbreviations such as `"z. B."`, `"Dr."`,
-`"ca."` — so each language's abbreviations are data the caller supplies. There
-is no locale sentence mode: `Intl.Segmenter` has no abbreviation data for
-sentences and splits German `"Wir helfen z. B. Handwerkern."` after `z.` and
-after `B.`.
-
+tokeniser, chosen by `mode` ([WORDS](#words) gives the modes); `SENTENCES` has
+modes of its own and a `keep` list of tokens that end no sentence. There is no
+locale sentence mode: `Intl.Segmenter` has no abbreviation data for sentences
+and splits German `"Wir helfen z. B. Handwerkern."` after `z.` and after `B.`.
 Embedders that count outside a formula import the same tokenisers from
 `@formulang/core-functions`: `splitWords(text, mode?, option?)` and
 `splitSentences(text, mode?, keep?)`.
 
-**Bounds.** List results (`WORDS`, `SENTENCES`, `LINES`, `MARKDOWN_BLOCKS`)
-longer than `maxWildcardOutputLength` (5,000) raise a `LIST_TOO_LARGE` security
-error, as `FLAT` does; `WORD_COUNT` and `LINE_COUNT` build no list and count
-past that bound. List arguments (`keep`, `phrases`, `items`) longer than
-`maxListLength` (1,000) raise `LIST_TOO_LARGE`. Each `keep` token, and each
-phrase in `"word"` mode, is found with one Knuth-Morris-Pratt search, in time
-linear in the lengths of the text and of the token or phrase however often
-their occurrences overlap. Each phrase in `"substring"` mode, and each item of
+**Bounds.** Each function's section states the bounds it applies:
+`maxWildcardOutputLength` (5,000) to a list it returns and `maxListLength`
+(1,000) to a list it reads, both raising `LIST_TOO_LARGE` as `FLAT` does. Each
+`keep` token, and each phrase in `"word"` mode, is found with one
+Knuth-Morris-Pratt search, in time linear in the lengths of the text and of the
+token or phrase however often their occurrences overlap. Each phrase in `"substring"` mode, and each item of
 `MISSING_FROM`, is found with one substring search, linear in the same
 lengths. A phrase of up to 250 code units goes to the runtime's own search,
 whose tables in V8 cover such a phrase whole. A longer one first has its last
@@ -987,344 +955,839 @@ await evalOk('ISURL("localhost")'); // false
 
 `WORDS(text: text, mode?: text, option?: text) -> list<text>`
 
-The words of `text`, in order, found by the [text segmentation](#text) mode:
-`mode` is one of the literals `"whitespace"` (default), `"letters"`,
-`"locale"`, `"pattern"`, and `option` carries the language tag or the pattern
-of the last two. An empty text yields `[]`.
+- `"whitespace"` (the default): the text is trimmed and split at every run of whitespace, and the
+  pieces are the words, in order. Whitespace is JavaScript's `\s`: spaces, tabs, line breaks, the
+  no-break space U+00A0 and the byte order mark U+FEFF separate words; U+0085 and U+001C to
+  U+001F do not, though Python's `str.split()` splits at them. A text of nothing but whitespace
+  has no words.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('WORDS("  Kennst du   das? ")'); // ["Kennst", "du", "das?"]
+  await evalOk('WORDS(value)', { value: 'a\tb\nc\u00A0d\uFEFFe' }); // ["a", "b", "c", "d", "e"]
+  await evalOk('WORDS(value)', { value: 'a\u001Cb\u0085c' }); // ["a\u001cb\u0085c"]
+  await evalOk('WORDS("")'); // []
+  await evalOk('WORDS("  ")'); // []
+  ```
 
-```ts
-await evalOk('WORDS("  Kennst du   das? ")'); // ["Kennst", "du", "das?"]
-await evalOk('WORDS("Für 3,5 Mio. Kund:innen"; "letters")'); // ["Für", "3,5", "Mio", "Kund", "innen"]
-await evalOk('WORDS("Kund:innen"; "locale"; "de")'); // ["Kund:innen"]
-await evalOk('WORDS(LOWER("Für 50$ – sofort!"); "pattern"; "[A-Za-z0-9$\']+")'); // ["f", "r", "50$", "sofort"]
-```
+- `"letters"`: the words are the runs of letters, marks and numbers (Unicode's `\p{L}`, `\p{M}`
+  and `\p{N}`). One apostrophe (`'`, `’`) or one hyphen (`-`, U+2010, U+2011, the soft hyphen
+  U+00AD) between two runs joins them into one word, and so does one `.` or `,` between two
+  digits; every other character separates words.
+
+  ```ts
+  await evalOk('WORDS("Don\'t re-enter the e-mail, oder?"; "letters")'); // ["Don't", "re-enter", "the", "e-mail", "oder"]
+  await evalOk('WORDS("Für 3,5 Mio. Kund:innen"; "letters")'); // ["Für", "3,5", "Mio", "Kund", "innen"]
+  await evalOk('WORDS(value; "letters")', {
+    value: 'it\u2019s E\u2010Mail Ge\u2011biet Silben\u00ADtrennung',
+  }); // ["it\u2019s", "E\u2010Mail", "Ge\u2011biet", "Silben\u00adtrennung"]
+  await evalOk('WORDS("a--b \'zitiert\' 3.5. x,y 1,2,3"; "letters")'); // ["a", "b", "zitiert", "3.5", "x", "y", "1,2,3"]
+  ```
+
+- `"locale"`: the segments `Intl.Segmenter` marks word-like for the BCP 47 language tag in
+  `option` (`"de"`, `"en-GB"`). They come from the runtime's ICU data, so a runtime with other
+  ICU data can answer otherwise; the other modes do not depend on ICU. A malformed tag, or one the
+  runtime holds no segmentation data for, returns `null` with a `TYPE` warning instead of falling
+  back to the host's locale.
+
+  ```ts
+  await evalOk('WORDS("Kund:innen"; "locale"; "de")'); // ["Kund:innen"]
+  await evalOk('WORDS("Don\'t stop"; "locale"; "en-GB")'); // ["Don't", "stop"]
+  await evalOk('WORDS("a b"; "locale"; "x-invalid-")'); // null with a TYPE warning
+  await evalOk('WORDS("a b"; "locale"; "zz")'); // null with a TYPE warning
+  ```
+
+- `"pattern"`: every non-empty match of the regular expression in `option`, left to right. An
+  option that starts with `/` and ends with `/` and lower-case letters (or none) is read as
+  `/pattern/flags`, split at its last `/`: each flag is one of `i`, `m`, `s` and `u`, at most
+  once, and `g` is implied, so any other letter, `g` included, or a flag written twice returns
+  `null` with a `REGEX` warning. Any other option is the pattern as written, its slashes included.
+
+  ```ts
+  await evalOk('WORDS(LOWER("Für 50$ – sofort!"); "pattern"; "[A-Za-z0-9$\']+")'); // ["f", "r", "50$", "sofort"]
+  await evalOk('WORDS("Ab ab"; "pattern"; "/ab/i")'); // ["Ab", "ab"]
+  await evalOk('WORDS("/ab/I"; "pattern"; "/ab/I")'); // ["/ab/I"]
+  await evalOk('WORDS("abc"; "pattern"; "x*")'); // []
+  await evalOk('WORDS("Ab"; "pattern"; "/ab/g")'); // null with a REGEX warning
+  await evalOk('WORDS("a"; "pattern"; "/a/ii")'); // null with a REGEX warning
+  ```
+
+- The pattern is compiled under the safety rules of [MATCH_EXPRESSION](#match_expression): a
+  pattern they refuse as unsafe, and a text of more than `maxRegexTextLength` (8,000) code
+  units, are errors, and a look-behind returns `null` with a `REGEX` warning. They do not bound
+  the time a pattern they accept takes (**Work**, under [Text](#text)).
+
+  ```ts
+  await evalErrors('WORDS("aaa"; "pattern"; "(a+)+")'); // ["REGEX_UNSAFE"]
+  await evalErrors('WORDS(value; "pattern"; "a")', { value: 'a'.repeat(8001) }); // ["REGEX_INPUT_TOO_LONG"]
+  await evalOk('WORDS("ab"; "pattern"; "(?<=a)b")'); // null with a REGEX warning
+  ```
+
+- `option` belongs to `"locale"` and `"pattern"`: in the other modes any option, `""` included,
+  returns `null` with a `TYPE` warning, and in those two an omitted or empty option does too. A
+  `null` option is no option.
+
+  ```ts
+  await evalOk('WORDS("a b"; "whitespace"; "de")'); // null with a TYPE warning
+  await evalOk('WORDS("a b"; "letters"; "")'); // null with a TYPE warning
+  await evalOk('WORDS("a b"; "locale")'); // null with a TYPE warning
+  await evalOk('WORDS("a b"; "pattern"; "")'); // null with a TYPE warning
+  await evalOk('WORDS("a b"; "whitespace"; value)', { value: null }); // ["a", "b"]
+  await evalOk('WORDS("a b"; "pattern"; value)', { value: null }); // null with a TYPE warning
+  ```
+
+- A `null` text returns `null`; a value that is not text returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('WORDS(value)', { value: null }); // null
+  await evalOk('WORDS(value)', { value: 5 }); // null with a TYPE warning
+  ```
+
+- A result of more than `maxWildcardOutputLength` (5,000) words raises `LIST_TOO_LARGE`;
+  [WORD_COUNT](#word_count) counts past it.
+
+  ```ts
+  await evalErrors('WORDS(value)', { value: 'w '.repeat(5001) }); // ["LIST_TOO_LARGE"]
+  await evalOk('COUNT(WORDS(value))', { value: 'w '.repeat(5000) }); // 5000
+  ```
+
+Unspecified: in `"pattern"` mode, an option that holds a line terminator.
 
 ### WORD_COUNT
 
 `WORD_COUNT(text: text, mode?: text, option?: text) -> number`
 
-The number of words `WORDS` finds with the same arguments; `""` counts `0`.
-No list is built, so a long text is countable past the list-result limit.
+- The number of words [WORDS](#words) finds with the same arguments; where `WORDS` returns
+  `null`, so does `WORD_COUNT`, with the same warning.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('WORD_COUNT("  Kennst du   das? ")'); // 3
+  await evalOk('WORD_COUNT("Don\'t re-enter the e-mail, oder?"; "letters")'); // 5
+  await evalOk('WORD_COUNT("a1b22"; "pattern"; "[0-9]+")'); // 2
+  await evalOk('WORD_COUNT("a b"; "whitespace"; "de")'); // null with a TYPE warning
+  await evalOk('WORD_COUNT(value)', { value: null }); // null
+  await evalOk('WORD_COUNT(value)', { value: 5 }); // null with a TYPE warning
+  ```
 
-```ts
-await evalOk('WORD_COUNT("  Kennst du   das? ")'); // 3
-await evalOk('WORD_COUNT("Don\'t re-enter the e-mail, oder?"; "letters")'); // 5
-await evalOk('WORD_COUNT(""; "whitespace")'); // 0
-```
+- `""`, and a text of nothing but whitespace, count `0`.
+
+  ```ts
+  await evalOk('WORD_COUNT("")'); // 0
+  await evalOk('WORD_COUNT("  "; "letters")'); // 0
+  ```
+
+- No list is built, so a text of more than 5,000 words, where `WORDS` raises `LIST_TOO_LARGE`, is
+  counted.
+
+  ```ts
+  await evalOk('WORD_COUNT(value)', { value: 'w '.repeat(5100) }); // 5100
+  ```
+
+Unspecified: in `"pattern"` mode, an option that holds a line terminator, as for `WORDS`.
 
 ### LEADING_WORDS
 
 `LEADING_WORDS(text: text, count: number, mode?: text, option?: text) -> text`
 
-The first `count` words joined by one space, or `null` when the text has fewer
-words. A `count` that is not a positive whole number returns `null` with a
-`TYPE` warning, and a `null` count `null` without one. `mode` and `option` work
-as for `WORDS`.
+- The first `count` words, as [WORDS](#words) finds them with `mode` and `option`, joined by one
+  space; where `WORDS` returns `null`, so does `LEADING_WORDS`, with the same warning.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('LEADING_WORDS("eins zwei  drei vier"; 2)'); // "eins zwei"
+  await evalOk('LEADING_WORDS("Don\'t re-enter it"; 2; "letters")'); // "Don't re-enter"
+  await evalOk('EACH(LIST("a b"; "c d e"); "LEADING_WORDS"; 2)'); // ["a b", "c d"]
+  await evalOk('LEADING_WORDS("a b"; 1; "whitespace"; "de")'); // null with a TYPE warning
+  ```
 
-```ts
-await evalOk('LEADING_WORDS("eins zwei  drei vier"; 2)'); // "eins zwei"
-await evalOk('LEADING_WORDS("eins zwei"; 3)'); // null
-await evalOk('EACH(LIST("a b"; "c d e"); "LEADING_WORDS"; 2)'); // ["a b", "c d"]
-```
+- A text with fewer than `count` words returns `null`; one with exactly `count` gives them all.
+
+  ```ts
+  await evalOk('LEADING_WORDS("eins zwei"; 3)'); // null
+  await evalOk('LEADING_WORDS("eins zwei"; 2)'); // "eins zwei"
+  await evalOk('LEADING_WORDS(""; 1)'); // null
+  ```
+
+- A `count` that is not a positive whole number returns `null` with a `TYPE` warning; a `null`
+  count returns `null`.
+
+  ```ts
+  await evalOk('LEADING_WORDS("a b"; 0)'); // null with a TYPE warning
+  await evalOk('LEADING_WORDS("a b"; 2.5)'); // null with a TYPE warning
+  await evalOk('LEADING_WORDS("a b"; -1)'); // null with a TYPE warning
+  await evalOk('LEADING_WORDS("a b"; value)', { value: null }); // null
+  ```
+
+- A `null` text returns `null`; a value that is not text returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('LEADING_WORDS(value; 1)', { value: null }); // null
+  await evalOk('LEADING_WORDS(value; 1)', { value: 5 }); // null with a TYPE warning
+  ```
+
+Unspecified: in `"pattern"` mode, an option that holds a line terminator, as for `WORDS`.
 
 ### SENTENCES
 
 `SENTENCES(text: text, mode?: text, keep?: list<text>) -> list<text>`
 
-The sentences of `text`, each trimmed, empty pieces dropped. `mode` is
-`"punctuation"` (default) or `"terminators"` (see
-[text segmentation](#text)). `keep` lists tokens that never end a sentence: a
-split that falls inside or at the end of an occurrence of a listed token is
-suppressed when the occurrence starts at a word boundary — a token starting
-with a letter, mark or number must not follow one (`"ca."` inside `Africa.`
-does not count), a token starting with anything else always counts (`"..."`
-in `Na ja...`). Matching is case-sensitive and empty entries are skipped. In
-`"terminators"` mode the terminator run stays with the sentence it ends, and a
-piece holding nothing but terminators is not a sentence. The `"punctuation"`
-mode splits as Python's `re.split(r"(?<=[.!?])\s+", text.strip())` does, with
-JavaScript's whitespace: U+FEFF separates sentences, U+0085 and U+001C–U+001F
-do not.
+- `"punctuation"` (the default): a sentence ends at each run of whitespace directly after `.`,
+  `!` or `?`, as Python's `re.split(r"(?<=[.!?])\s+", text.strip())` splits, with JavaScript's
+  whitespace: U+FEFF separates sentences, U+0085 and U+001C to U+001F do not.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('SENTENCES("Hi. Ok!  Next? end")'); // ["Hi.", "Ok!", "Next?", "end"]
+  await evalOk('SENTENCES("3.5 Uhr. Gut.")'); // ["3.5 Uhr.", "Gut."]
+  await evalOk('SENTENCES("Na ja… Gut.")'); // ["Na ja… Gut."]
+  await evalOk('SENTENCES(value)', { value: 'Ja.\uFEFFNein.\u0085Doch.' }); // ["Ja.", "Nein.\u0085Doch."]
+  ```
 
-```ts
-await evalOk('SENTENCES("Hi. Ok!  Next? end")'); // ["Hi.", "Ok!", "Next?", "end"]
-await evalOk('SENTENCES("3.5 Uhr. Gut."; "terminators")'); // ["3.", "5 Uhr.", "Gut."]
-await evalOk('SENTENCES("Wir helfen z. B. Handwerkern."; "punctuation"; LIST("z. B."))'); // ["Wir helfen z. B. Handwerkern."]
-```
+- `"terminators"`: every run of `.`, `!`, `?`, `。`, `！` and `？` ends a sentence and stays with
+  it; a piece holding nothing but terminators is no sentence.
+
+  ```ts
+  await evalOk('SENTENCES("3.5 Uhr. Gut."; "terminators")'); // ["3.", "5 Uhr.", "Gut."]
+  await evalOk('SENTENCES("Wirklich?! Ja。 Nein！"; "terminators")'); // ["Wirklich?!", "Ja。", "Nein！"]
+  await evalOk('SENTENCES("Hm. ... Ja."; "terminators")'); // ["Hm.", "Ja."]
+  ```
+
+- Each sentence is trimmed, and a piece that is empty after trimming is dropped.
+
+  ```ts
+  await evalOk('SENTENCES("Hi. Ok ")'); // ["Hi.", "Ok"]
+  await evalOk('SENTENCES(" Ja.  ")'); // ["Ja."]
+  await evalOk('SENTENCES("")'); // []
+  await evalOk('SENTENCES("!? ..."; "terminators")'); // []
+  ```
+
+- `keep` lists tokens that never end a sentence: a split that falls inside an occurrence of a
+  listed token, or at its end, does not happen. Every token counts, and their occurrences may
+  overlap. An occurrence counts only at a word boundary: a token that starts with a letter, mark
+  or number must not follow one (`"ca."` inside `Africa.` does not count), and a token that
+  starts with anything else always counts. Tokens match case-sensitively; empty ones are skipped.
+
+  ```ts
+  await evalOk('SENTENCES("Wir helfen z. B. Handwerkern.")'); // ["Wir helfen z.", "B.", "Handwerkern."]
+  await evalOk('SENTENCES("Wir helfen z. B. Handwerkern."; "punctuation"; LIST("z. B."))'); // ["Wir helfen z. B. Handwerkern."]
+  await evalOk('SENTENCES("Dr. Smith kam z. B. heute."; "punctuation"; LIST("Dr."; "z. B."))'); // ["Dr. Smith kam z. B. heute."]
+  await evalOk('SENTENCES("Das ist z. B. gut."; "punctuation"; LIST("z. B."; "z."))'); // ["Das ist z. B. gut."]
+  await evalOk('SENTENCES("Africa. Ok."; "punctuation"; LIST("ca."))'); // ["Africa.", "Ok."]
+  await evalOk('SENTENCES("Na ja... Gut."; "terminators"; LIST("..."))'); // ["Na ja... Gut."]
+  await evalOk('SENTENCES("Dr. Who"; "punctuation"; LIST("dr."))'); // ["Dr.", "Who"]
+  await evalOk('SENTENCES("a. b"; "punctuation"; LIST(""; "a."))'); // ["a. b"]
+  ```
+
+- A `null` text returns `null`, and a `null` `keep` is no list; a text that is not text, or a
+  `keep` entry that is not text, returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('SENTENCES(value)', { value: null }); // null
+  await evalOk('SENTENCES("a. b"; "punctuation"; value)', { value: null }); // ["a.", "b"]
+  await evalOk('SENTENCES(value)', { value: 5 }); // null with a TYPE warning
+  await evalOk('SENTENCES("a. b"; "punctuation"; value)', { value: [1] }); // null with a TYPE warning
+  ```
+
+- A result of more than `maxWildcardOutputLength` (5,000) sentences, and a `keep` list of more
+  than `maxListLength` (1,000) tokens, raise `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('SENTENCES(value)', { value: 'Ja. '.repeat(5001) }); // ["LIST_TOO_LARGE"]
+  await evalErrors('SENTENCES("a. b"; "punctuation"; value)', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: a `keep` token that starts or ends with whitespace.
 
 ### LINES
 
 `LINES(text: text, mode?: text) -> list<text>`
 
-The lines of `text` as written (not trimmed). A line ends at `\r\n`, `\n`,
-`\r`, U+000B, U+000C, U+0085, U+2028 or U+2029; a final line break ends the
-last line instead of starting an empty one. `mode` is `"non-blank"` (default),
-which drops lines that are empty after trimming, or `"all"`.
+- The lines of `text`, as written (not trimmed): a line ends at `\r\n`, `\n`, `\r`, U+000B,
+  U+000C, U+0085, U+2028 or U+2029, and a final line break ends the last line instead of starting
+  an empty one.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('LINES(value)', { value: 'a\r\nb\rc\u000Bd\u000Ce\u0085f\u2028g\u2029h' }); // ["a", "b", "c", "d", "e", "f", "g", "h"]
+  await evalOk('LINES(value; "all")', { value: 'a\n' }); // ["a"]
+  await evalOk('LINES(value; "all")', { value: 'a\n\n' }); // ["a", ""]
+  await evalOk('LINES(value)', { value: ' a ' }); // [" a "]
+  await evalOk('LINES("")'); // []
+  ```
 
-```ts
-await evalOk('LINES(value)', { value: 'a\n\n b' }); // ["a", " b"]
-await evalOk('LINES(value; "all")', { value: 'a\n\n b' }); // ["a", "", " b"]
-```
+- `"non-blank"` (the default) drops each line that is empty once trimmed of JavaScript's
+  whitespace; `"all"` keeps it.
+
+  ```ts
+  await evalOk('LINES(value)', { value: 'a\n\n \t\u00A0\nb' }); // ["a", "b"]
+  await evalOk('LINES(value; "all")', { value: 'a\n\n \t\u00A0\nb' }); // ["a", "", " \t\u00a0", "b"]
+  await evalOk('LINES(value; "all")', { value: '\n' }); // [""]
+  ```
+
+- A `null` text returns `null`; a value that is not text returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('LINES(value)', { value: null }); // null
+  await evalOk('LINES(value)', { value: 5 }); // null with a TYPE warning
+  ```
+
+- A result of more than `maxWildcardOutputLength` (5,000) lines raises `LIST_TOO_LARGE`;
+  [LINE_COUNT](#line_count) counts past it.
+
+  ```ts
+  await evalErrors('LINES(value)', { value: 'x\n'.repeat(5001) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: nothing; these rules decide every text and mode.
 
 ### LINE_COUNT
 
 `LINE_COUNT(text: text, mode?: text) -> number`
 
-The number of lines `LINES` returns with the same arguments; `""` counts `0`.
+- The number of lines [LINES](#lines) returns with the same arguments; where `LINES` returns
+  `null`, so does `LINE_COUNT`, with the same warning.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('LINE_COUNT(value)', { value: 'a\r\nb\rc' }); // 3
+  await evalOk('LINE_COUNT(value)', { value: 'a\n\n b' }); // 2
+  await evalOk('LINE_COUNT(value; "all")', { value: 'a\n\n b' }); // 3
+  await evalOk('LINE_COUNT(value)', { value: null }); // null
+  await evalOk('LINE_COUNT(value)', { value: 5 }); // null with a TYPE warning
+  ```
 
-```ts
-await evalOk('LINE_COUNT(value)', { value: 'a\r\nb\rc' }); // 3
-await evalOk('LINE_COUNT(""; "all")'); // 0
-```
+- `""` counts `0`.
+
+  ```ts
+  await evalOk('LINE_COUNT("")'); // 0
+  await evalOk('LINE_COUNT(""; "all")'); // 0
+  ```
+
+- No list is built, so a text of more than 5,000 lines, where `LINES` raises `LIST_TOO_LARGE`, is
+  counted.
+
+  ```ts
+  await evalOk('LINE_COUNT(value)', { value: 'x\n'.repeat(5001) }); // 5001
+  ```
+
+Unspecified: nothing; these rules decide every text and mode.
 
 ### FIRST_CONTAINED
 
 `FIRST_CONTAINED(text: text, phrases: list<text>, match?: text, ignoreCase?: boolean) -> text`
 
-The first phrase of `phrases`, in list order, that occurs in `text` — list
-order wins over the order in the text — or `null` when none does. `match` is
-the literal `"substring"` (default) or `"word"`; `"word"` also requires that
-the characters directly before and after the occurrence are not letters, marks
-or numbers (or are the edges of the text). `ignoreCase` (default `FALSE`)
-compares after lower-casing both sides as `LOWER` does; the answer is the
-phrase as listed. Empty phrases are skipped.
+- The first phrase of `phrases`, in list order, that occurs in `text`, as the list holds it, so
+  list order wins over the order in the text; `null` when none does, an empty list included.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('FIRST_CONTAINED("Gut, oder? Richtig?"; LIST("Richtig?"; "oder?"))'); // "Richtig?"
+  await evalOk('FIRST_CONTAINED("ab"; LIST("abc"; "b"))'); // "b"
+  await evalOk('FIRST_CONTAINED("abc"; LIST("x"; "y"))'); // null
+  await evalOk('FIRST_CONTAINED("abc"; LIST())'); // null
+  ```
 
-```ts
-await evalOk('FIRST_CONTAINED("Gut, oder? Richtig?"; LIST("Richtig?"; "oder?"))'); // "Richtig?"
-await evalOk('FIRST_CONTAINED("KENNST DU DAS?"; LIST("kennst du das?"); "substring"; TRUE)'); // "kennst du das?"
-await evalOk('FIRST_CONTAINED("Der Geschäftsführer"; LIST("führer"); "word")'); // null
-```
+- `"substring"` (the default): the phrase occurs anywhere in the text, compared code unit by code
+  unit.
+
+  ```ts
+  await evalOk('FIRST_CONTAINED("the homeowner"; LIST("owner"))'); // "owner"
+  await evalOk('FIRST_CONTAINED("Der Geschäftsführer"; LIST("führer"))'); // "führer"
+  await evalOk('FIRST_CONTAINED("Owner"; LIST("owner"))'); // null
+  ```
+
+- `"word"`: an occurrence counts only when the characters directly before and after it are not
+  letters, marks or numbers, or are the text's edges; any occurrence of the phrase can be the one.
+
+  ```ts
+  await evalOk('FIRST_CONTAINED("Der Geschäftsführer"; LIST("führer"); "word")'); // null
+  await evalOk('FIRST_CONTAINED("the homeowner, the owner"; LIST("owner"); "word")'); // "owner"
+  await evalOk('FIRST_CONTAINED("(owner)"; LIST("owner"); "word")'); // "owner"
+  await evalOk('FIRST_CONTAINED("owner2"; LIST("owner"); "word")'); // null
+  ```
+
+- `ignoreCase` `TRUE` compares after lower-casing both sides as [LOWER](#lower) does; `FALSE` and
+  `null` compare as written. The answer is the phrase as the list holds it.
+
+  ```ts
+  await evalOk('FIRST_CONTAINED("KENNST DU DAS?"; LIST("kennst du das?"); "substring"; TRUE)'); // "kennst du das?"
+  await evalOk('FIRST_CONTAINED("Product Owner,"; LIST("product owner"); "word"; TRUE)'); // "product owner"
+  await evalOk('FIRST_CONTAINED("ABC"; LIST("b"); "substring"; FALSE)'); // null
+  await evalOk('FIRST_CONTAINED("abc"; LIST("b"); "substring"; value)', { value: null }); // "b"
+  ```
+
+- Empty phrases are skipped.
+
+  ```ts
+  await evalOk('FIRST_CONTAINED("abc"; LIST(""; "b"))'); // "b"
+  await evalOk('FIRST_CONTAINED("abc"; LIST(""))'); // null
+  ```
+
+- A `null` text or list returns `null`; a text that is not text, a list holding a value that is
+  not text, or an `ignoreCase` that is not a boolean returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('FIRST_CONTAINED(value; LIST("a"))', { value: null }); // null
+  await evalOk('FIRST_CONTAINED("abc"; value)', { value: null }); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("a"))', { value: 5 }); // null with a TYPE warning
+  await evalOk('FIRST_CONTAINED("abc"; value)', { value: ['a', 1] }); // null with a TYPE warning
+  await evalOk('FIRST_CONTAINED("abc"; LIST("b"); "substring"; value)', { value: 'yes' }); // null with a TYPE warning
+  ```
+
+- A list of more than `maxListLength` (1,000) phrases raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('FIRST_CONTAINED("abc"; value)', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: nothing; these rules decide every text, list and option.
 
 ### CONTAINS_ANY
 
 `CONTAINS_ANY(text: text, phrases: list<text>, match?: text, ignoreCase?: boolean) -> boolean`
 
-Whether `FIRST_CONTAINED` finds a phrase with the same arguments; an empty
-list yields `false`. It is a separate name rather than a `CONTAINS` list
-overload because an overload could not carry `match` and `ignoreCase`.
+- Whether [FIRST_CONTAINED](#first_contained) finds a phrase with the same arguments: `TRUE` where
+  it answers a phrase, `FALSE` where it finds none, an empty list included, and `null`, with the
+  same warning, where it returns `null` for its arguments.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))'); // true
+  await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"); "word")'); // false
+  await evalOk('CONTAINS_ANY("ABC"; LIST("b"); "substring"; TRUE)'); // true
+  await evalOk('CONTAINS_ANY("abc"; LIST())'); // false
+  await evalOk('CONTAINS_ANY("abc"; LIST(""))'); // false
+  await evalOk('CONTAINS_ANY(value; LIST("a"))', { value: null }); // null
+  await evalOk('CONTAINS_ANY(value; LIST("a"))', { value: 5 }); // null with a TYPE warning
+  await evalErrors('CONTAINS_ANY("abc"; value)', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
+  ```
 
-```ts
-await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))'); // true
-await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"); "word")'); // false
-await evalOk('CONTAINS_ANY("abc"; LIST())'); // false
-```
+Unspecified: nothing; these rules decide every text, list and option.
 
 ### MISSING_FROM
 
 `MISSING_FROM(items: list<text>, text: text, normalise?: text) -> list<text>`
 
-The items, in order and as listed, that `text` does not contain. `normalise`
-sets how both sides are compared: `"whitespace"` (default) trims them and
-collapses every whitespace run to one space; `"exact"` compares them as
-written; `"loose"` also lower-cases them and folds typographic quotes
-(`‘ ’ ‚ ‛ ‹ ›` to `'`, `“ ” „ ‟ « »` to `"`) and dashes (U+2010 to U+2015 and
-the minus sign U+2212 to `-`). Items that are empty after normalising are
-skipped.
+- The items, in order and as listed, that `text` does not contain once both sides are normalised
+  as `normalise` says.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('MISSING_FROM(LIST("b"; "x"; "a"); "abc"; "exact")'); // ["x"]
+  await evalOk('MISSING_FROM(LIST(" x "); "abc")'); // [" x "]
+  ```
 
-```ts
-await evalOk('MISSING_FROM(LIST("liefern schnell"; "billig"); value)', {
-  value: 'Wir liefern\n  schnell.',
-}); // ["billig"]
-await evalOk('MISSING_FROM(LIST("\\"hallo\\""); value; "loose")', { value: 'Er sagte „Hallo“.' }); // []
-```
+- `"whitespace"` (the default): both sides are trimmed and every run of whitespace, JavaScript's
+  `\s` with line breaks and the no-break space U+00A0, becomes one space.
+
+  ```ts
+  await evalOk('MISSING_FROM(LIST("liefern schnell"; "billig"); value)', {
+    value: 'Wir liefern\n  schnell.',
+  }); // ["billig"]
+  await evalOk('MISSING_FROM(LIST("liefern schnell"); value)', {
+    value: 'Wir liefern\u00A0schnell.',
+  }); // []
+  await evalOk('MISSING_FROM(LIST(" billig "); "billig")'); // []
+  ```
+
+- `"exact"`: both sides as written.
+
+  ```ts
+  await evalOk('MISSING_FROM(LIST("liefern schnell"); value; "exact")', {
+    value: 'liefern  schnell',
+  }); // ["liefern schnell"]
+  await evalOk('MISSING_FROM(LIST("Liefern"); "liefern"; "exact")'); // ["Liefern"]
+  ```
+
+- `"loose"`: as `"whitespace"`, and both sides lower-cased as [LOWER](#lower) does, with the
+  typographic quotes `‘ ’ ‚ ‛ ‹ ›` folded to `'` and `“ ” „ ‟ « »` to `"`, and the dashes U+2010
+  to U+2015 and the minus sign U+2212 to `-`.
+
+  ```ts
+  await evalOk('MISSING_FROM(LIST("\\"hallo\\""); value; "loose")', { value: 'Er sagte „Hallo“.' }); // []
+  await evalOk('MISSING_FROM(LIST("it\'s"); value; "loose")', { value: 'IT\u2019S' }); // []
+  await evalOk('MISSING_FROM(LIST("a-b"); value; "loose")', { value: 'A\u2013B' }); // []
+  await evalOk('MISSING_FROM(LIST("a-b"); value; "loose")', { value: 'A\u2212B' }); // []
+  await evalOk('MISSING_FROM(LIST("liefern  schnell"); value; "loose")', {
+    value: 'LIEFERN\nSCHNELL',
+  }); // []
+  ```
+
+- Items that are empty once normalised are skipped.
+
+  ```ts
+  await evalOk('MISSING_FROM(LIST(""; "  "; "x"); "abc")'); // ["x"]
+  await evalOk('MISSING_FROM(LIST(""; "x"); "abc"; "exact")'); // ["x"]
+  ```
+
+- A `null` list or text returns `null`; a text that is not text, or an item that is not text,
+  returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('MISSING_FROM(value; "abc")', { value: null }); // null
+  await evalOk('MISSING_FROM(LIST("a"); value)', { value: null }); // null
+  await evalOk('MISSING_FROM(LIST("a"); value)', { value: 5 }); // null with a TYPE warning
+  await evalOk('MISSING_FROM(value; "abc")', { value: ['a', 2] }); // null with a TYPE warning
+  ```
+
+- A list of more than `maxListLength` (1,000) items raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('MISSING_FROM(value; "abc")', { value: Array(1001).fill('x') }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: nothing; these rules decide every list, text and mode.
 
 ### PLAIN_TEXT
 
 `PLAIN_TEXT(markup: text, format: text) -> text`
 
-The text of `markup`, one line per block, with whitespace collapsed within
-each line and blank lines dropped. `format` is a required literal:
+- The text of `markup`, read as the required `format`, `"html"` or `"markdown"`, says: one line
+  per block, whitespace (JavaScript's `\s`) collapsed to one space within each line, each line
+  trimmed, and blank lines dropped.
 
-- `"html"` — the markup is read in one pass, by these rules:
-  - **Tags.** `<` followed by an ASCII letter starts a tag, and `</` followed
-    by an ASCII letter an end tag. The name runs to a space, a tab, a line
-    feed, a carriage return, a form feed, `/` or `>`, and its ASCII letters
-    are read in either case. The tag ends at the next `>` outside a quoted
-    attribute value; a quote opens a value only after an attribute name and
-    `=`, with spaces allowed around the `=`, so `<a title="a > b">` is one
-    tag, and `<a " > b">` ends at its first `>`.
-  - **Other markup.** `<!--` starts a comment, which ends at `-->` or `--!>`,
-    or at once for `<!-->` and `<!--->`. Any other `<!` or `<?`, and `</`
-    followed by anything but an ASCII letter or `>`, runs to the next `>`.
-    All of these are dropped, and so is `</>`. Any other `<`, and `<` or `</`
-    at the end of the markup, is text.
-  - **Dropped content.** The content of `script`, `style` and `title` is
-    dropped, and, while `head` is open, the content of `noframes`, `noscript`
-    and `template`. It ends at the element's end tag: `</script`, in any
-    letter case, followed by a space, a tab, a line feed, a carriage return,
-    a form feed, `/` or `>`. `</scripts>` does not end it, nor does anything
-    else inside it, `<!--` included.
-  - **`head`.** `head` opens at `<head>` or at a start tag of an element that
-    can live in it (`base`, `basefont`, `bgsound`, `link`, `meta`,
-    `noframes`, `noscript`, `script`, `style`, `template` and `title`),
-    unless the body has started, and nothing in it reaches the result. The
-    body starts, whether `head` opened or not, at `</head>`, `</body>`,
-    `</html>` or `</br>`, at a start tag of any other element but `html`, or
-    at text written with anything but spaces, tabs, line feeds, carriage
-    returns and form feeds (`&nbsp;` and `&#32;` included); no other end tag
-    starts it.
-  - **Lines.** `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`,
-    `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`,
-    `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`,
-    `tr` and `ul` end a line where they open or close; every other tag is
-    removed. Whitespace (JavaScript's `\s`, the no-break space included)
-    collapses to one space within a line, and blank lines are dropped. A line
-    break in the source (`\n`, `\r` or `\r\n`) is whitespace, except inside
-    `pre`, where each one ends a line.
-  - **References.** A numeric reference, decimal (`&#150;`) or hexadecimal
-    (`&#x96;`, `&#X96;`), has one digit or more, leading zeros included, with
-    no upper bound. Zero, a surrogate or a value past U+10FFFF gives U+FFFD;
-    128 to 159 give the windows-1252 character where that encoding has one
-    (`&#150;` is an en dash) and stay C1 controls where it has none
-    (`&#129;`); any other value gives its code point. The 252 named
-    references of HTML 4 (`&amp;`, `&nbsp;`, `&euro;` and the rest) give the
-    characters the HTML standard's table maps them to: `&lang;` and `&rang;`
-    are U+27E8 and U+27E9, not HTML 4's U+2329 and U+232A. A reference needs
-    its closing `;`, and any other name stays as written, `&AMP;` included.
-  - **Unterminated markup.** Markup that ends inside a tag, a comment, other
-    markup or dropped content loses that part:
-    `PLAIN_TEXT("Hello <b"; "html")` is `"Hello"`.
-  - **Not handled.** `textarea`, `xmp`, `iframe`, `noembed` and `plaintext`
-    have no rule of their own: their content is read as markup like any
-    other, its tags removed and its references decoded, where a browser keeps
-    it as text. `<!--` inside `script` does not change where the script
-    ends. Inside `pre`, a carriage return or line feed that a reference gives
-    (`&#13;`, `&#10;`) ends a line as one in the source does.
+  ```ts
+  await evalOk('PLAIN_TEXT("<p>A&amp;B</p><p>C&nbsp;D</p>"; "html")'); // "A&B\nC D"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '# Titel\n\nZeile  eins\nZeile zwei' }); // "Titel\nZeile eins Zeile zwei"
+  await evalOk('PLAIN_TEXT(""; "html")'); // ""
+  ```
 
-  The result is plain text, not sanitised HTML: `&lt;b&gt;` comes back as
-  `<b>`. What these rules do not state about the result is unspecified.
+- In `"html"`, a tag runs from `<` followed by an ASCII letter, or `</` followed by one, to the
+  first `>` that is not inside a quoted attribute value (`name="…"` or `name='…'`), and is removed
+  with its attributes. Tag names are read in either letter case.
 
-- `"markdown"` — ATX heading markers, `>` quote markers, list markers (`-`,
-  `*`, `+`, `1.`, `1)`), table pipes and the delimiter row, code fences,
-  emphasis (`*`, `_`, `**`, `__`), inline-code backticks and backslash escapes
-  are removed; `[text](url)` becomes `text`, `![alt](url)` becomes `alt` and
-  `<url>` becomes `url`. A paragraph's lines join into one line and each line
-  of a fenced code block stays a line. The document is read as
-  [MARKDOWN_BLOCKS](#markdown_blocks) reads it, and its inline markup as
-  follows:
-  - emphasis: a run of `*` or `_` is left-flanking when the character after
-    it is not whitespace and is not punctuation, or is punctuation and the
-    character before the run is whitespace or punctuation; it is
-    right-flanking in the mirror case (whitespace is JavaScript's `\s` or the
-    text's edge, punctuation a character of Unicode's P or S categories). A
-    `*` run can open when it is left-flanking and close when it is
-    right-flanking; a `_` run can open when it is left-flanking and either not
-    right-flanking or after punctuation, and close when it is right-flanking
-    and either not left-flanking or before punctuation. A run that can close
-    is removed together with the nearest run of the same character before it
-    that can open, whatever their lengths, and the runs of the other character
-    opened between the two pair no more; a run that pairs with none stays, so
-    `snake_case` and a lone `*` stay;
-  - a run of backticks pairs with the next run of exactly as many; the code
-    span between them keeps its text, less one space at each end when it has
-    a space at both ends and holds more than whitespace, and a run with no
-    partner stays;
-  - a backslash before an ASCII punctuation character (`\*`, `\{`, `\~`) is
-    removed, except inside a code span, and one before anything else stays;
-    at the end of a paragraph line other than the last (a hard line break) it
-    is dropped;
-  - only inline links are read (`[text][ref]` and a `[ref]: url` line stay as
-    written). Link text may hold brackets nested one level deep, and a
-    destination parentheses nested one level deep, in pairs only: an escaped
-    bracket is a bracket all the same. Link text of more than 1,000
-    characters, a destination of more than 2,000 (a nested pair counting as
-    one in both) or a nested pair holding more than 500 is not read as a link;
-  - `<url>` is an autolink when its scheme has 2 to 32 characters (a letter,
-    then letters, digits, `+`, `.` or `-`) and the rest at most 2,000
-    characters, none of them whitespace, `<` or `>`; `<name@host>` is one with
-    at most 256 characters, none of them whitespace, `<`, `>` or `@`, on
-    either side of the `@`;
-  - HTML tags and character references stay as written.
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "html")', {
+    value: '<b>bold</b> <a href="x" title="a > b">link</a>',
+  }); // "bold link"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b=c d="x>y">z' }); // "z"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: "<a title='a > b'>x</a>" }); // "x"
+  await evalOk('PLAIN_TEXT("<P>a</P><DIV>b</DIV>"; "html")'); // "a\nb"
+  ```
 
-  What these rules and `MARKDOWN_BLOCKS`' do not state about the result is
-  unspecified.
+- In `"html"`, a `<` followed by anything but an ASCII letter, `/`, `!` or `?`, or at the end of
+  the markup, is text.
 
-HTML is read in one forward scan and markdown line by line; **Work** under
-[Text](#text) gives what each costs.
+  ```ts
+  await evalOk('PLAIN_TEXT("1 < 2 and a <3 <"; "html")'); // "1 < 2 and a <3 <"
+  ```
 
-```ts
-await evalOk('PLAIN_TEXT("<p>A&amp;B</p><p>C&nbsp;D</p><script>x</script>"; "html")'); // "A&B\nC D"
-await evalOk('PLAIN_TEXT("## Titel"; "markdown")'); // "Titel"
-await evalOk('PLAIN_TEXT("[Link](https://x) and **bold**"; "markdown")'); // "Link and bold"
-```
+- In `"html"`, a comment, from `<!--` to the next `-->`, is dropped, and so is any other `<!` or
+  `<?` up to the next `>`, as a document type or a processing instruction is.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("a<!-- x -->b"; "html")'); // "ab"
+  await evalOk('PLAIN_TEXT("a<!-- x --->b"; "html")'); // "ab"
+  await evalOk('PLAIN_TEXT("a<!-- <p>x</p> -->b"; "html")'); // "ab"
+  await evalOk('PLAIN_TEXT(value; "html")', {
+    value: "<!DOCTYPE html><?xml version='1.0'?><p>x</p>",
+  }); // "x"
+  ```
+
+- In `"html"`, the content of `script`, `style` and `title` is dropped up to the element's end
+  tag, written in any letter case; nothing else inside ends it.
+
+  ```ts
+  await evalOk(
+    'PLAIN_TEXT("a<script>if (x < 1) {}</script>b<style>p{}</style>c<title>T</title>d"; "html")',
+  ); // "abcd"
+  await evalOk('PLAIN_TEXT("a<SCRIPT>x</SCRIPT>b"; "html")'); // "ab"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: "a<script>'</p>'</script>b" }); // "ab"
+  ```
+
+- In `"html"`, between `<head>` and `</head>`, the elements that belong in a head (`base`,
+  `basefont`, `bgsound`, `link`, `meta`, `noframes`, `noscript`, `script`, `style`, `template`
+  and `title`) give nothing.
+
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "html")', {
+    value:
+      '<html><head><title>T</title><meta charset="utf-8"><noscript>N</noscript></head><body><p>B</p></body></html>',
+  }); // "B"
+  ```
+
+- In `"html"`, `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`, `dl`, `dt`,
+  `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`, `li`, `main`, `nav`, `ol`, `p`,
+  `pre`, `section`, `table`, `td`, `th`, `tr` and `ul` end a line where they open or close; no
+  other tag ends one, and a line break in the markup is whitespace.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("<ul><li>a</li><li>b</li></ul>x<br>y<hr>z"; "html")'); // "a\nb\nx\ny\nz"
+  await evalOk('PLAIN_TEXT("<table><tr><td>1</td><td>2</td></tr></table>"; "html")'); // "1\n2"
+  await evalOk('PLAIN_TEXT("<div>  </div>x<span>y</span>"; "html")'); // "xy"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: 'a\n  b\t c' }); // "a b c"
+  ```
+
+- In `"html"`, inside `pre`, a nested `pre` included, each line break in the markup (`\n`, `\r`
+  or `\r\n`) ends a line; whitespace still collapses within those lines, and blank ones are
+  dropped.
+
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre>a\nb</pre>c\nd' }); // "a\nb\nc d"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre>a</pre>b\nc' }); // "a\nb c"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre><pre>a</pre>b\nc</pre>d\ne' }); // "a\nb\nc\nd e"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre>a  b\n\n  c</pre>' }); // "a b\nc"
+  ```
+
+- In `"html"`, a numeric reference, decimal (`&#150;`) or hexadecimal (`&#x96;`, `&#X96;`), with
+  one digit or more, leading zeros included, gives its code point, except that zero, a surrogate
+  and a value past U+10FFFF give U+FFFD, and 128 to 159 give the windows-1252 character where that
+  encoding has one and stay C1 controls where it has none.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("&#65;&#x42;&#X43;&#0067;"; "html")'); // "ABCC"
+  await evalOk('PLAIN_TEXT("a&#1;b&#127;c&#x10FFFF;"; "html")'); // "a\u0001b\u007fc\udbff\udfff"
+  await evalOk('PLAIN_TEXT("&#0;&#xD800;&#xDFFF;&#x110000;"; "html")'); // "\ufffd\ufffd\ufffd\ufffd"
+  await evalOk('PLAIN_TEXT("&#150;&#159;&#128;&#129;"; "html")'); // "\u2013\u0178\u20ac\u0081"
+  ```
+
+- In `"html"`, the 252 named references of HTML 4 (`&amp;`, `&nbsp;`, `&euro;` and the rest)
+  give the characters the HTML standard's table maps them to, `&lang;` and `&rang;` U+27E8 and
+  U+27E9. A reference needs its closing `;`, and any other name stays as written.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("&auml;&euro;&lang;x&rang;"; "html")'); // "ä€\u27e8x\u27e9"
+  await evalOk('PLAIN_TEXT("&amp &AMP; &foo; &amp;amp;"; "html")'); // "&amp &AMP; &foo; &amp;"
+  ```
+
+- In `"html"`, markup that ends inside a tag, a comment, a `<!` or `<?`, or dropped content loses
+  that unfinished part.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("Hello <b"; "html")'); // "Hello"
+  await evalOk('PLAIN_TEXT("a<!-- x"; "html")'); // "a"
+  await evalOk('PLAIN_TEXT("a<!DOCTYPE"; "html")'); // "a"
+  await evalOk('PLAIN_TEXT("a<script>x"; "html")'); // "a"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<script>x</script b="y' }); // "a"
+  ```
+
+- In `"html"`, the result is plain text, not HTML: a reference to `<` gives `<`.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("&lt;b&gt;"; "html")'); // "<b>"
+  ```
+
+- In `"markdown"`, the document is read into blocks as [MARKDOWN_BLOCKS](#markdown_blocks) reads
+  it, and each block gives one line: a heading's, a list item's or a table row's text, or a
+  paragraph's lines joined by one space; each line of a fenced code block stays a line.
+
+  ````ts
+  await evalOk('PLAIN_TEXT("## Titel"; "markdown")'); // "Titel"
+  await evalOk('PLAIN_TEXT("> zitat"; "markdown")'); // "zitat"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '- a\n1. b\n2) c' }); // "a\nb\nc"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '| A | B |\n|---|---|\n| 1 | 2 |' }); // "A B\n1 2"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '```\na\nb\n```' }); // "a\nb"
+  ````
+
+- In `"markdown"`, emphasis: a run of `*` or `_` is left-flanking when the character after it is
+  not whitespace and not punctuation, or is punctuation and the character before the run is
+  whitespace or punctuation; it is right-flanking in the mirror case (whitespace is JavaScript's
+  `\s` or the text's edge, punctuation a character of Unicode's P or S categories). A `*` run can
+  open when it is left-flanking and close when it is right-flanking; a `_` run can open when it
+  is left-flanking and either not right-flanking or after punctuation, and close when it is
+  right-flanking and either not left-flanking or before punctuation. A run that can close is
+  removed together with the nearest run of the same character before it that can open, whatever
+  their lengths, and the runs of the other character opened between the two pair no more; a run
+  that pairs with none stays.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("**bold** and _it_ and __b__ and *i*"; "markdown")'); // "bold and it and b and i"
+  await evalOk('PLAIN_TEXT("**bold _and_ more**"; "markdown")'); // "bold and more"
+  await evalOk('PLAIN_TEXT("_a *b* c_"; "markdown")'); // "a b c"
+  await evalOk('PLAIN_TEXT("*a _b* c_"; "markdown")'); // "a _b c_"
+  await evalOk('PLAIN_TEXT("(*it*), *a*."; "markdown")'); // "(it), a."
+  await evalOk('PLAIN_TEXT("snake_case * x **a"; "markdown")'); // "snake_case * x **a"
+  await evalOk('PLAIN_TEXT("2*3*4"; "markdown")'); // "234"
+  ```
+
+- In `"markdown"`, a run of backticks pairs with the next run of exactly as many, and the code
+  span between them keeps its text as written, less one space at each end when it starts and
+  ends with a space and holds more than whitespace; a run with no partner stays.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("Use `a*b*c` here"; "markdown")'); // "Use a*b*c here"
+  await evalOk('PLAIN_TEXT("`` a ` b ``"; "markdown")'); // "a ` b"
+  await evalOk('PLAIN_TEXT("x` a `y"; "markdown")'); // "xay"
+  await evalOk('PLAIN_TEXT("`x"; "markdown")'); // "`x"
+  ```
+
+- In `"markdown"`, a backslash before an ASCII punctuation character is removed, except inside a
+  code span or an autolink, where it stays; a backslash before anything else stays, and one at
+  the end of a paragraph line other than the last (a hard line break) is dropped.
+
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\*not em\\* a\\b' }); // "*not em* a\\b"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '`\\*`' }); // "\\*"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '<https://x.de/a\\_b>' }); // "https://x.de/a\\_b"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a\\\nb\\' }); // "a b\\"
+  ```
+
+- In `"markdown"`, an inline link `[text](url)` gives `text` and an image `![alt](url)` gives
+  `alt`; `[text][ref]` and a `[ref]: url` line stay as written. Link text may hold brackets nested
+  one level deep, and a destination parentheses nested one level deep, in pairs; an escaped
+  bracket is a bracket all the same.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("[Link](https://x) and ![Bild](b.png)"; "markdown")'); // "Link and Bild"
+  await evalOk('PLAIN_TEXT("[a [b] c](u) [x](u (v)) [t][r]"; "markdown")'); // "a [b] c x [t][r]"
+  await evalOk('PLAIN_TEXT("[a [b [c]] d](u)"; "markdown")'); // "[a [b [c]] d](u)"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '[a \\[b] c](u) [r]: https://x' }); // "a [b] c [r]: https://x"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '[a \\[b c](u)' }); // "[a [b c](u)"
+  ```
+
+- In `"markdown"`, `<url>` gives `url` when its scheme is a letter followed by letters, digits,
+  `+`, `.` or `-`, 2 to 32 characters in all, and the rest after its `:` holds no whitespace, `<`
+  or `>`; `<name@host>` gives `name@host` when neither side holds whitespace, `<`, `>` or `@`.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("<https://x.de> <HTTP://y.de> <a@b.de> <x> <ab:c d>"; "markdown")'); // "https://x.de HTTP://y.de a@b.de <x> <ab:c d>"
+  ```
+
+- A `null` markup returns `null`; a value that is not text returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "html")', { value: null }); // null
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 5 }); // null with a TYPE warning
+  ```
+
+Unspecified: in `"html"`, the content of `textarea`, `xmp`, `iframe`, `noembed` and `plaintext`,
+markup before `<body>` with no `<head>` start tag, any other markup or text written between
+`<head>` and `</head>`, a quote in a tag that does not follow an attribute name and `=`, `</`
+followed by anything but an ASCII letter, a comment written `<!-->` or `<!--->` or ending in
+`--!>`, `<!--` inside `script`, and a line break that a reference gives inside `pre`; in
+`"markdown"`, HTML tags and character references, a code span that starts or ends with a tab,
+link text of more than 1,000 code units, a destination of more than 2,000 or a nested pair of
+more than 500, an autolink of more than 2,000 code units after its scheme or more than 256 on a
+side of an address's `@`, and what `MARKDOWN_BLOCKS` leaves unspecified.
 
 ### MARKDOWN_BLOCKS
 
 `MARKDOWN_BLOCKS(text: text, kind: text) -> list<text>`
 
-The blocks of one `kind`, in document order, without their markers and with
-inline markup removed as `PLAIN_TEXT` removes it. `kind` is a required
-literal: `"heading"` (every level), `"heading-1"` … `"heading-6"`,
-`"list-item"`, `"table-row"`, `"paragraph"` or `"code"`. A block's text is:
+- The blocks of one `kind`, in document order, each without its markers and with its inline
+  markup removed as [PLAIN_TEXT](#plain_text) removes it. `kind` is required: `"heading"` (every
+  level), `"heading-1"` … `"heading-6"`, `"list-item"`, `"table-row"`, `"paragraph"` or `"code"`.
 
-- for a heading, its text without the opening and closing `#`s;
-- for a list item, its text and continuation lines — nested items are items
-  of their own, and a bare marker with no text is no item. An item
-  interrupts a paragraph only when it has text and, if ordered, starts
-  at 1: a wrapped line opening with `2025.` continues its paragraph;
-- for a table row, its non-empty cells joined by one space — every row except
-  the delimiter row, the header row included, and a table needs its delimiter
-  row;
-- for a paragraph, its lines joined by one space;
-- for a fenced code block, its content unchanged.
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "heading-2")', { value: '# A\n## B\n## C' }); // ["B", "C"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# A\n## B\n## C' }); // ["A", "B", "C"]
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '- **bold** [l](u)' }); // ["bold l"]
+  await evalOk('MARKDOWN_BLOCKS(""; "paragraph")'); // []
+  ```
 
-The text is read line by line, by these rules alone; there are no setext
-headings, indented code blocks, HTML blocks or link reference definitions. A
-line ends at `\n`, `\r` or `\r\n` (U+2028 and U+2029 do not end one, as they
-do for `LINES`), and on each line:
+- The text is read line by line, and a line ends at `\n`, `\r` or `\r\n`; U+2028 and U+2029 end
+  none, though they end one for [LINES](#lines). A blank line ends the open block.
 
-- `>` quote markers are read through: up to three spaces, `>` and one optional
-  space, repeated for each level of nesting;
-- an ATX heading is one to six `#`s after at most three spaces, followed by a
-  space, a tab or the end of the line: `#x` and `####### x` are paragraph
-  text, and `#` alone is an empty heading. A closing run of `#`s counts only
-  after a space or a tab (`# C#` is `C#`). There are no `===` or `---`
-  underlines;
-- a code fence is three or more backticks or tildes at any indentation, and a
-  backtick fence's info string holds no backtick. It closes at a line of at
-  least as many of the same character with only spaces or tabs around them,
-  at any indentation; its content lines lose up to as many leading spaces as
-  there are spaces and tabs before the opening fence, and an unclosed fence
-  runs to the end. There are no indented code blocks;
-- a thematic break is three or more of one of `-`, `*` and `_` after at most
-  three spaces, with spaces or tabs between them allowed; it ends the block
-  before it and yields no block;
-- a list item starts with `-`, `*`, `+`, or one to nine digits and `.` or `)`,
-  at any indentation, followed by a space, a tab or the end of the line (`-x`
-  is paragraph text);
-- a table starts at a row holding `|` whose next line, also holding `|`, is a
-  delimiter row with one cell per header cell, each of dashes with an optional
-  colon at either end, and ends a paragraph it starts in; it runs to a blank
-  line or the next heading, list item, fence or thematic break, and a row's
-  cells past the header's count are dropped. Inside a cell `\|` is a pipe, the
-  last cell's included.
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\r\rb\r\nc\n\nd' }); // ["a", "b c", "d"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\u2028b' }); // ["a b"]
+  ```
 
-What these rules do not state about the result is unspecified. **Work** under
-[Text](#text) gives what the reading costs.
+- A heading is one to six `#`s after at most three spaces, followed by a space, a tab or the end
+  of the line; its text is the rest of the line less a closing run of `#`s that follows a space
+  or a tab. There are no `===` or `---` underlines.
 
-```ts
-// value = '## 1. Erstens\n- item\n  - nested\n| A | B |\n|---|---|\n| 1 | 2 |'
-await evalOk('MARKDOWN_BLOCKS(value; "heading-2")', { value }); // ["1. Erstens"]
-await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value }); // ["item", "nested"]
-await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value }); // ["A B", "1 2"]
-```
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', {
+    value: '# Titel #\n   ### drei\n# C#\n#\n#\tTab',
+  }); // ["Titel", "drei", "C#", "", "Tab"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '#x\n####### x\n    # vier' }); // ["#x ####### x # vier"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading-6")', { value: '###### F\n####### G' }); // ["F"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: 'Titel\n===' }); // []
+  ```
+
+- `>` quote markers are read through: up to three spaces, `>` and one optional space, again for
+  each level of nesting.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '> > zitat\n>weiter' }); // ["zitat weiter"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '   > # h' }); // ["h"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '    > x' }); // ["> x"]
+  ```
+
+- A code fence is three or more backticks or tildes after any number of spaces, and a backtick
+  fence's text after it holds no backtick. The fenced block holds the lines up to a closing line
+  of at least as many of the same character with only spaces or tabs around them, each losing up
+  to as many leading spaces as precede the opening fence; an unclosed fence runs to the end.
+
+  ````ts
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```js\nconst a = 1;\n```' }); // ["const a = 1;"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '  ~~~\n  a\n   b\n  ~~~~' }); // ["a\n b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\nx\n``\n```' }); // ["x\n``"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\na' }); // ["a"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '``` a`b\nx' }); // ["``` a`b x"]
+  ````
+
+- A thematic break, three or more of one of `-`, `*` and `_` after at most three spaces, with
+  spaces or tabs between them allowed, ends the block before it and gives no block.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n---\nb\n* * *\nc\n   ___\nd' }); // ["a", "b", "c", "d"]
+  ```
+
+- A list item starts with `-`, `*`, `+`, or one to nine digits and `.` or `)`, after any spaces
+  or tabs, followed by a space, a tab or the end of the line. Its text runs on over the lines
+  after it up to a blank line or a line that starts another block; a nested item is an item of
+  its own, and a marker with no text is no item.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', {
+    value: '- a\n  - b\n\t- c\n3) d\n+ e\n123456789. f',
+  }); // ["a", "b", "c", "d", "e", "f"]
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '- a\nmore\n- b' }); // ["a more", "b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '-x\n\n-\n- y' }); // ["y"]
+  ```
+
+- A list item interrupts a paragraph only when it has text and, if ordered, its number is 1;
+  otherwise the line continues the paragraph.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n- a' }); // ["a"]
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n1. eins' }); // ["eins"]
+  await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n01. eins' }); // ["eins"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n2025. war gut\n-' }); // ["Text 2025. war gut -"]
+  ```
+
+- A table starts at a line holding `|` whose next line, also holding `|`, is a delimiter row with
+  one cell per header cell, each of dashes with an optional colon at either end. It ends a
+  paragraph it starts in and runs to a blank line or the next heading, list item, fence or
+  thematic break. Each row but the delimiter row, the header row included, is a block: its cells
+  trimmed and the non-empty ones joined by one space, with cells past the header's count dropped
+  and `\|` inside a cell read as a pipe.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
+    value: '| A | B |\n|---|:-:|\n| 1 | 2 | 3 |\n| x\\|y | |',
+  }); // ["A B", "1 2", "x|y"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'Name\n|---|' }); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B |\n|---|\n| 1 | 2 |' }); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', {
+    value: 'Text\n| A | B |\n|---|---|\n| 1 | 2 |\n\nnach',
+  }); // ["Text", "nach"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
+    value: '| A | B |\n|---|---|\n| 1 | 2 |\n# H\n| 3 | 4 |',
+  }); // ["A B", "1 2"]
+  ```
+
+- A paragraph is a run of lines that start no other block, and its block is those lines joined
+  by one space. There are no indented code blocks, HTML blocks or link reference definitions:
+  their lines are paragraph text.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\nb\n\nc' }); // ["a b", "c"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', {
+    value: '    code\n<div>x</div>\n[r]: https://x',
+  }); // ["code <div>x</div> [r]: https://x"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '    code' }); // []
+  ```
+
+- A `null` text returns `null`; a value that is not text returns `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: null }); // null
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 5 }); // null with a TYPE warning
+  ```
+
+- A result of more than `maxWildcardOutputLength` (5,000) blocks raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'x\n\n'.repeat(5001) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: a `#`, `>`, fence or thematic-break marker preceded by a tab, and a tab directly
+after `>`.
 
 ---
 
@@ -1471,111 +1934,236 @@ await evalOk('INCLUDES(LIST("a"); "b")'); // false
 
 `TAKE(list: list<T>, count: number, start?: number) -> list<T>`
 
-`count` consecutive items, starting at the 1-based position `start` (default
-`1`). A `count` of `0` yields `[]`; a run past the end yields the items that
-exist. A negative or fractional `count` or `start`, or a `start` below `1`,
-returns `null` with a `TYPE` warning.
+- `count` consecutive items, from the 1-based position `start`; an omitted or `null` `start` is
+  `1`.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('TAKE(LIST(1; 2; 3); 2)'); // [1, 2]
+  await evalOk('TAKE(LIST(1; 2; 3); 2; 2)'); // [2, 3]
+  await evalOk('TAKE(LIST(1; 2; 3); 1; value)', { value: null }); // [1]
+  ```
 
-```ts
-await evalOk('TAKE(LIST(1; 2; 3); 2)'); // [1, 2]
-await evalOk('TAKE(LIST(1; 2; 3); 2; 3)'); // [3]
-await evalOk('TAKE(LIST(1; 2; 3); 0)'); // []
-```
+- A `count` of `0` gives `[]`, and a run past the end gives the items that exist.
+
+  ```ts
+  await evalOk('TAKE(LIST(1; 2; 3); 0)'); // []
+  await evalOk('TAKE(LIST(1; 2; 3); 2; 3)'); // [3]
+  await evalOk('TAKE(LIST(1; 2; 3); 5)'); // [1, 2, 3]
+  await evalOk('TAKE(LIST(1; 2; 3); 1; 4)'); // []
+  await evalOk('TAKE(LIST(); 2)'); // []
+  ```
+
+- A negative or fractional `count` or `start`, or a `start` below `1`, returns `null` with a
+  `TYPE` warning.
+
+  ```ts
+  await evalOk('TAKE(LIST(1; 2; 3); -1)'); // null with a TYPE warning
+  await evalOk('TAKE(LIST(1; 2; 3); 1.5)'); // null with a TYPE warning
+  await evalOk('TAKE(LIST(1; 2; 3); 1; 0)'); // null with a TYPE warning
+  await evalOk('TAKE(LIST(1; 2; 3); 1; 1.5)'); // null with a TYPE warning
+  await evalOk('TAKE(LIST(1; 2; 3); 1; -1)'); // null with a TYPE warning
+  ```
+
+- A `null` list or `count` returns `null`; a list or a `count` of another type returns `null`
+  with a `TYPE` warning.
+
+  ```ts
+  await evalOk('TAKE(value; 1)', { value: null }); // null
+  await evalOk('TAKE(LIST(1; 2; 3); value)', { value: null }); // null
+  await evalOk('TAKE(value; 1)', { value: 'abc' }); // null with a TYPE warning
+  await evalOk('TAKE(LIST(1; 2; 3); value)', { value: '2' }); // null with a TYPE warning
+  ```
+
+- A list of more than `maxListLength` (1,000) items raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('TAKE(value; 1)', { value: Array(1001).fill(1) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: nothing; these rules decide every list, count and start.
 
 ### INDEX_OF
 
 `INDEX_OF(list: list<T>, value: T) -> number`
 
-The 1-based position of the first item equal to `value` under the coerced
-equality of `INCLUDES` and `=`, or `null` when no item is equal or `value` is
-empty. `INDEX(list; INDEX_OF(...))` reads the item back. Text that reads as a
-number finds that number (`"2"` finds `2`), the texts `true` and `false` (in
-any case) find the booleans, and two objects, such as dates, are equal only as
-the same value object. So on the dates `DISTINCT` keeps, `INDEX_OF` answers as
-`INCLUDES` does: it finds the date `DISTINCT` kept, but not an equal date held
-as another object, such as a second occurrence in input data. A list that holds a
-list, the empty list included, or a list `value` returns `null` with a `TYPE`
-warning.
+- The 1-based position of the first item equal to `value`, so
+  `INDEX(list; INDEX_OF(list; value))` reads it back.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('INDEX_OF(LIST("a"; "b"; "a"); "a")'); // 1
+  await evalOk('INDEX_OF(LIST("a"; "b"); "b")'); // 2
+  await evalOk('INDEX(LIST("a"; "b"); INDEX_OF(LIST("a"; "b"); "b"))'); // "b"
+  ```
 
-```ts
-await evalOk('INDEX_OF(LIST("a"; "b"); "b")'); // 2
-await evalOk('INDEX_OF(LIST("a"; "b"; "a"); "a")'); // 1
-await evalOk('INDEX_OF(LIST("a"; "b"); "c")'); // null
-await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] }); // 2
-```
+- Items compare as [INCLUDES](#includes) and `=` compare them: text that reads as a number equals
+  that number, and the texts `true` and `false`, in any letter case, equal the booleans; other
+  text compares case-sensitively.
+
+  ```ts
+  await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] }); // 2
+  await evalOk('INDEX_OF(value; 2)', { value: ['1', '2'] }); // 2
+  await evalOk('INDEX_OF(value; "TRUE")', { value: [false, true] }); // 2
+  await evalOk('INDEX_OF(value; "true")', { value: ['TRUE', true] }); // 1
+  await evalOk('INDEX_OF(value; "A")', { value: ['a', 'A'] }); // 2
+  ```
+
+- `null` when no item is equal, or when `value` is empty.
+
+  ```ts
+  await evalOk('INDEX_OF(LIST("a"; "b"); "c")'); // null
+  await evalOk('INDEX_OF(LIST("a"; ""); "")'); // null
+  await evalOk('INDEX_OF(LIST(1; 2); value)', { value: null }); // null
+  ```
+
+- A list that holds a list, the empty list included, or a list as `value`, returns `null` with a
+  `TYPE` warning; a `null` list returns `null`, and a list of another type `null` with a `TYPE`
+  warning.
+
+  ```ts
+  await evalOk('INDEX_OF(value; 1)', { value: [[1], 2] }); // null with a TYPE warning
+  await evalOk('INDEX_OF(value; 1)', { value: [[], 1] }); // null with a TYPE warning
+  await evalOk('INDEX_OF(value; LIST(1))', { value: [1] }); // null with a TYPE warning
+  await evalOk('INDEX_OF(value; 1)', { value: null }); // null
+  await evalOk('INDEX_OF(value; 1)', { value: 'abc' }); // null with a TYPE warning
+  ```
+
+- A list of more than `maxListLength` (1,000) items raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('INDEX_OF(value; 1)', { value: Array(1001).fill(1) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: whether a date, time, datetime or other object equals another.
 
 ### FILTER_BY
 
 `FILTER_BY(list: list<T>, keys: list<any>, operator: callable, operatorValue?: any) -> list<T>`
 
-Keeps the items of `list` whose key — the item at the same position in
-`keys` — the named `operator` answers `TRUE` for, called as `(key)` or, when
-`operatorValue` is given, `(key, operatorValue)`. `list` and `keys` must have
-the same length; otherwise the result is `null` with a `TYPE` warning. The
-operator is validated at parse time as for `FILTER`, and called as `FILTER`
-calls it: the function behind an operator token, otherwise the first function
-of that name that has an implementation. For an overloaded name that can be
-another overload than the one the parser checked for the types of the keys and
-of `operatorValue`: `STARTS_WITH` runs its text form, so a list of prefixes
-keeps nothing. An operator with no implementation returns `null` with a `TYPE`
-warning.
+- The items of `list` whose key, the item at the same position in `keys`, the named `operator`
+  answers `TRUE` for, called as `(key)` or, when `operatorValue` is given, as
+  `(key, operatorValue)`; a key it answers `FALSE` or `null` for drops its item.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
+  await evalOk('FILTER_BY(LIST("x"; "y"); LIST(""; "z"); "IS_EMPTY")'); // ["x"]
+  await evalOk('FILTER_BY(LIST(1; 2); value; ">"; 0)', { value: [5, null] }); // [1]
+  await evalOk('FILTER_BY(LIST(); LIST(); ">"; 1)'); // []
+  ```
 
-```ts
-await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
-await evalOk(
-  'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; "b")',
-); // ["y"]
-// value = a list of callouts: keep those longer than eight words
-await evalOk('FILTER_BY(value; EACH(value; "WORD_COUNT"); ">"; 8)', { value });
-```
+- `list` and `keys` of different lengths return `null` with a `TYPE` warning.
+
+  ```ts
+  await evalOk('FILTER_BY(LIST("a"; "b"); LIST(1); ">"; 0)'); // null with a TYPE warning
+  ```
+
+- The operator is checked at parse time as for [FILTER](#filter), an unknown name being an
+  `UNKNOWN_FUNCTION_REFERENCE` error, and called as `FILTER` calls it: the function behind an
+  operator token, otherwise the first function of that name that has an implementation. For an
+  overloaded name that can be another overload than the one the parser checked: `STARTS_WITH` runs
+  its text form, so a list of prefixes keeps nothing.
+
+  ```ts
+  await evalOk(
+    'FILTER_BY(LIST("x"; "y"; "z"); LIST("apple"; "banana"; "cherry"); "STARTS_WITH"; "b")',
+  ); // ["y"]
+  await evalOk('FILTER_BY(LIST("x"; "y"); LIST("apple"; "banana"); "STARTS_WITH"; LIST("a"; "b"))'); // []
+  await evalErrors('FILTER_BY(LIST(1); LIST(1); "NOPE")'); // ["UNKNOWN_FUNCTION_REFERENCE"]
+  ```
+
+- A `null` list or `keys` returns `null`; a list of another type returns `null` with a `TYPE`
+  warning.
+
+  ```ts
+  await evalOk('FILTER_BY(value; LIST(1); ">"; 0)', { value: null }); // null
+  await evalOk('FILTER_BY(LIST(1); value; ">"; 0)', { value: null }); // null
+  await evalOk('FILTER_BY(value; LIST(1); ">"; 0)', { value: 'abc' }); // null with a TYPE warning
+  ```
+
+- A list of more than `maxListLength` (1,000) items raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('FILTER_BY(value; value; ">"; 0)', { value: Array(1001).fill(1) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: an operator name that has no implementation, which only a host's own registry can
+hold.
 
 ### DISTINCT
 
 `DISTINCT(list: list<T>) -> list<T>`
 
-The first occurrence of each distinct item, in order, with empty items
-dropped. Text, numbers and booleans are equal by value and type, with no
-conversion (`1` and `"1"` stay apart, as do `TRUE` and `"true"`, and text is
-compared case-sensitively); dates, times and datetimes are equal when their
-kind and `iso` text are. `GROUP_COUNTS` uses the same equality. `=`, `INCLUDES`
-and `INDEX_OF` do not: they convert text to numbers and to booleans, and take
-two date values held as separate objects (as input data holds them) for two
-values, as `COUNT_UNIQUE` counts them. A list that holds a list, the empty list
-included, or any other object returns `null` with a `TYPE` warning.
+- The first occurrence of each distinct item, in order, with the empty items `null` and `""`
+  dropped.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
+  await evalOk('DISTINCT(LIST())'); // []
+  ```
 
-```ts
-await evalOk('DISTINCT(LIST("x"; "y"; "x"; ""))'); // ["x", "y"]
-await evalOk('COUNT(DISTINCT(LIST("a"; "A"; "a")))'); // 2
-await evalOk('COUNT(DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2))))'); // 1
-```
+- Text, numbers and booleans are equal by value and type, with no conversion: `1` and `"1"` stay
+  apart, as do `TRUE` and `"true"`, and text compares case-sensitively.
+
+  ```ts
+  await evalOk('DISTINCT(value)', { value: [1, '1', true, 'true', 'a', 'A', 1, null, ''] }); // [1, "1", true, "true", "a", "A"]
+  ```
+
+- Dates, times and datetimes are equal when their kind and their `iso` text are.
+
+  ```ts
+  await evalOk('COUNT(DISTINCT(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2))))'); // 1
+  await evalOk('COUNT(DISTINCT(LIST(TIME(1; 2; 3); TIME(1; 2; 3); TIME(1; 2; 4))))'); // 2
+  ```
+
+- A list that holds a list, the empty list included, or any other object returns `null` with a
+  `TYPE` warning; a `null` list returns `null`, and a list of another type `null` with a `TYPE`
+  warning.
+
+  ```ts
+  await evalOk('DISTINCT(value)', { value: [[1], 2] }); // null with a TYPE warning
+  await evalOk('DISTINCT(value)', { value: [[], 2] }); // null with a TYPE warning
+  await evalOk('DISTINCT(value)', { value: [{ a: 1 }] }); // null with a TYPE warning
+  await evalOk('DISTINCT(value)', { value: null }); // null
+  await evalOk('DISTINCT(value)', { value: 'abc' }); // null with a TYPE warning
+  ```
+
+- A list of more than `maxListLength` (1,000) items raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('DISTINCT(value)', { value: Array(1001).fill(1) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: nothing; these rules decide every list.
 
 ### GROUP_COUNTS
 
 `GROUP_COUNTS(list: list<any>) -> list<number>`
 
-For each item of `DISTINCT(list)`, in the same order, how many items of `list`
-equal it — so the two lists line up position by position. Items compare as in
-`DISTINCT`: by value and type with no conversion, dates and times by kind and
-`iso` text. `=`, `INCLUDES`, `INDEX_OF` and `COUNT_UNIQUE` differ: they take
-two date values held as separate objects for two values, and the first three
-convert text to numbers and to booleans. A list that holds a list, the empty
-list included, or any other object returns `null` with a `TYPE` warning.
+- For each item of [DISTINCT](#distinct)`(list)`, in the same order, how many items of `list`
+  equal it, so the two lists line up position by position; items compare as in `DISTINCT`, and
+  a list `DISTINCT` refuses is refused the same way.
 
-Anything about the result that this page does not state is unspecified.
+  ```ts
+  await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))'); // [2, 1]
+  await evalOk('GROUP_COUNTS(value)', { value: [1, '1', true, 'true', 'a', 'A', 1, null, ''] }); // [2, 1, 1, 1, 1, 1]
+  await evalOk('GROUP_COUNTS(LIST(DATE(2024; 1; 2); DATE(2024; 1; 2); DATE(2024; 1; 3)))'); // [2, 1]
+  await evalOk('GROUP_COUNTS(LIST())'); // []
+  await evalOk('INDEX(DISTINCT(value); INDEX_OF(GROUP_COUNTS(value); MAX(GROUP_COUNTS(value))))', {
+    value: ['a', 'b', 'b', 'c'],
+  }); // "b"
+  await evalOk('MAX(GROUP_COUNTS(value)) - MIN(GROUP_COUNTS(value)) <= 1', {
+    value: ['a', 'b', 'b', 'c'],
+  }); // true
+  await evalOk('GROUP_COUNTS(value)', { value: [[1], 2] }); // null with a TYPE warning
+  await evalOk('GROUP_COUNTS(value)', { value: null }); // null
+  ```
 
-```ts
-await evalOk('GROUP_COUNTS(LIST("x"; "y"; "x"; ""))'); // [2, 1]
-// groups balanced within one: MAX(GROUP_COUNTS(value)) - MIN(GROUP_COUNTS(value)) <= 1
-// the largest group: INDEX(DISTINCT(value); INDEX_OF(GROUP_COUNTS(value); MAX(GROUP_COUNTS(value))))
-```
+- A list of more than `maxListLength` (1,000) items raises `LIST_TOO_LARGE`.
+
+  ```ts
+  await evalErrors('GROUP_COUNTS(value)', { value: Array(1001).fill(1) }); // ["LIST_TOO_LARGE"]
+  ```
+
+Unspecified: nothing; these rules decide every list.
 
 ---
 
