@@ -85,7 +85,7 @@ const HIDDEN_CONTENT_END_TAGS: ReadonlyMap<string, RegExp> = new Map([
   ['template', /<\/template(?=[\t\n\f\r />])/gi],
 ]);
 
-/** The elements that live in `head`; any other start tag, and any text, starts the body. */
+/** The elements that live in `head`; a start tag of any other but `html` starts the body. */
 const HEAD_ELEMENTS: ReadonlySet<string> = new Set([
   'base',
   'basefont',
@@ -100,7 +100,7 @@ const HEAD_ELEMENTS: ReadonlySet<string> = new Set([
   'title',
 ]);
 
-/** The end tags that end `head`; HTML ignores every other end tag there. */
+/** The end tags that start the body; every other end tag leaves the head state as it is. */
 const HEAD_ENDING_END_TAGS: ReadonlySet<string> = new Set(['body', 'br', 'head', 'html']);
 
 /** Elements whose opening and closing tags end a line. */
@@ -143,8 +143,8 @@ const ASCII_LETTER = /^[A-Za-z]$/;
 const ASCII_UPPER_CASE = /[A-Z]+/g;
 const NOT_HTML_SPACE = /[^\t\n\f\r ]/;
 /**
- * A numeric reference of any number of digits, leading zeros included, as the HTML tokenizer
- * reads one; a named one of at most 32 characters, the longest HTML 4 name being 8.
+ * A numeric reference of one digit or more, leading zeros included; a named one of 2 to 32
+ * characters, the longest HTML 4 name being 8.
  */
 const CHARACTER_REFERENCE = /&(?:#([0-9]+)|#[xX]([0-9A-Fa-f]+)|([A-Za-z][A-Za-z0-9]{1,31}));/g;
 const SOURCE_LINE_BREAK = /\r\n|\r|\n/g;
@@ -161,7 +161,7 @@ type HtmlTag = {
 /** Where the scan stands relative to `head`: before it, inside it, or past it. */
 type HeadState = 'before' | 'in' | 'after';
 
-/** The states of the HTML tokenizer between a tag's name and its `>`. */
+/** The states a tag is read in between its name and its `>`, named as in the HTML standard. */
 type TagState =
   | 'before-attribute-name'
   | 'attribute-name'
@@ -178,9 +178,9 @@ function isHtmlSpace(char: string): boolean {
 }
 
 /**
- * The character a numeric reference names, as the HTML tokenizer decodes it: U+FFFD for zero, a
- * surrogate or a value past U+10FFFF (`Infinity` for a run of digits too long for a number), the
- * windows-1252 character for 0x80-0x9F where that encoding has one, otherwise the code point.
+ * The character a numeric reference names: U+FFFD for zero, a surrogate or a value past U+10FFFF
+ * (`Infinity` for a run of digits too long for a number), the windows-1252 character for
+ * 0x80-0x9F where that encoding has one, otherwise the code point.
  */
 function fromNumericReference(code: number): string {
   const windows1252 = WINDOWS_1252_NUMERIC_REFERENCES.get(code);
@@ -212,10 +212,10 @@ function decodeCharacterReferences(text: string): string {
 }
 
 /**
- * The index after the `>` that ends a tag whose attributes start at `from`, read with the HTML
- * tokenizer's attribute states: a quote opens a value only right after `=`, a quoted value may
- * hold `>`, and a quote anywhere else is an ordinary character. -1 when the markup ends inside
- * the tag.
+ * The index after the `>` that ends a tag whose attributes start at `from`: a quote opens a value
+ * only after an attribute name and `=`, spaces allowed around the `=`, a quoted value may hold
+ * `>`, and a quote anywhere else is an ordinary character. -1 when the markup ends inside the
+ * tag.
  */
 function endOfTag(markup: string, from: number): number {
   let state: TagState = 'before-attribute-name';
@@ -303,9 +303,9 @@ function endOfBogusComment(markup: string, from: number): number {
 }
 
 /**
- * The head state after a start or end tag, as HTML's insertion modes move it: `head` opens at
- * `<head>` or at the first element that lives in it, and ends at `</head>` or where the body
- * starts: at `<body>` or any other element that cannot live in `head`.
+ * The head state after a start or end tag: `head` opens at `<head>` or at a start tag of an
+ * element that lives in it, unless the body has started; the body starts at `</head>`,
+ * `</body>`, `</html>`, `</br>` or a start tag of any other element but `html`.
  */
 function headStateAfterTag(state: HeadState, tag: HtmlTag): HeadState {
   if (state === 'after') return state;
@@ -332,13 +332,11 @@ function endOfHiddenContent(markup: string, name: string, from: number): number 
 }
 
 /**
- * The text of an HTML document, read in one forward pass with the HTML tokenizer's rules for
- * tags, comments and declarations: comments and the content of `script`, `style`, `title` and
- * `head` dropped (`head` ends at `</head>` or where the body starts), the line-ending elements
- * ending a line, every other tag removed, character references decoded, whitespace collapsed
- * within each line (inside `pre`, each source line break ends a line) and blank lines dropped. A
- * tag, comment or dropped element that the markup ends inside is dropped with the rest of the
- * markup, as an HTML parser drops it.
+ * The text of an HTML document, read in one forward pass: comments, other markup and the content
+ * of `script`, `style`, `title` and `head` dropped, the line-ending elements ending a line, every
+ * other tag removed, character references decoded, whitespace collapsed within each line (inside
+ * `pre`, each line break ends a line) and blank lines dropped. A tag, comment, other markup or
+ * dropped content that the markup ends inside is dropped with the rest of the markup.
  */
 function htmlToPlainText(markup: string): string {
   const out: string[] = [];
@@ -467,7 +465,7 @@ function endOfRun(source: string, start: number): number {
   return end;
 }
 
-/** The emphasis delimiter run `[start, end)`, classified by the CommonMark flanking rules. */
+/** The emphasis delimiter run `[start, end)`, classified by the characters on either side. */
 function delimiterRun(
   source: string,
   start: number,
@@ -780,9 +778,9 @@ class MarkdownBlockReader {
 }
 
 /**
- * The blocks of a markdown document, in order: a line-based CommonMark subset with ATX headings,
- * list items (nested items each count), GFM tables, paragraphs and fenced code. Blockquote
- * markers are transparent.
+ * The blocks of a markdown document, in order, read line by line: ATX headings, list items
+ * (nested items each count), pipe tables, paragraphs and fenced code. Quote markers are read
+ * through.
  */
 function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   const lines = source.split(MARKDOWN_LINE_BREAK);
@@ -828,8 +826,8 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
       continue;
     }
     const listItem = LIST_ITEM.exec(line);
-    // As in CommonMark, an item interrupts a paragraph only when it has text and, if ordered,
-    // starts at 1: a wrapped line opening with "2025." or "3." continues the paragraph.
+    // An item interrupts a paragraph only when it has text and, if ordered, starts at 1: a
+    // wrapped line opening with "2025." or "3." continues the paragraph.
     const interrupts =
       listItem !== null &&
       (listItem[2] ?? '').trim().length > 0 &&

@@ -1,8 +1,8 @@
 /**
  * The named character references of HTML 4: the Latin-1 set (U+00A0 to U+00FF in code point
  * order, 96 names), the symbols and Greek letters (124) and the special characters (32), 252
- * names in all. Each decodes to the character current browsers produce for it, so `&lang;` and
- * `&rang;` follow the HTML Living Standard (U+27E8, U+27E9) rather than HTML 4's U+2329, U+232A.
+ * names in all. Each decodes to the character the HTML Living Standard's table maps it to, so
+ * `&lang;` and `&rang;` are U+27E8 and U+27E9 rather than HTML 4's U+2329 and U+232A.
  */
 const LATIN_1_NAMES = [
   'nbsp',
