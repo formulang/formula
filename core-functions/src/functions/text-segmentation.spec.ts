@@ -643,6 +643,16 @@ describe('Text segmentation', () => {
       expect(() => splitWords('a', 'pattern', '(a')).toThrow(TypeError);
     });
 
+    it('splitWords throws TypeError for a text, mode or option that is not one, and only then', () => {
+      let words: string[] = [];
+      expect(() => (words = splitWords('a1 b2', 'pattern', '[a-z]'))).not.toThrow();
+      expect(words).toStrictEqual(['a', 'b']);
+      expect(() => splitWords(5 as never, 'locale', 'en')).toThrow(TypeError);
+      // A String object as the option throws, as a keep entry of splitSentences does.
+      expect(() => splitWords('a1 b2', 'pattern', new String('[a-z]') as never)).toThrow(TypeError);
+      expect(() => splitWords('a', 'nope' as never)).toThrow(TypeError);
+    });
+
     it('splitSentences splits as SENTENCES does', async () => {
       const samples = ['Hi. Ok!  Next? end', '3.5 Uhr. Gut.', 'Hello. ... World', '?!', ''];
       for (const sample of samples) {

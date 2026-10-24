@@ -1540,6 +1540,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   await evalOk('SENTENCES("Wir helfen z. B. Handwerkern."; "punctuation"; LIST("z. B."))'); // ["Wir helfen z. B. Handwerkern."]
   await evalOk('SENTENCES("Dr. Smith agreed. Done."; "punctuation"; LIST("Dr."))'); // ["Dr. Smith agreed.", "Done."]
   await evalOk('SENTENCES("Ja. B. x"; "punctuation"; LIST("B."))'); // ["Ja.", "B. x"]
+  await evalOk('SENTENCES("Hallo! Welt."; "punctuation"; LIST("! Welt"))'); // ["Hallo! Welt."]
   await evalOk('SENTENCES("Na ja... Gut."; "terminators"; LIST("..."))'); // ["Na ja... Gut."]
   await evalOk('SENTENCES("Na ja... Gut."; "terminators")'); // ["Na ja...", "Gut."]
   ```
