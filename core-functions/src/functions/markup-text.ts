@@ -8,6 +8,7 @@ import { AbstractEagerBatchImplementation } from './abstract-eager-batch-impleme
 import { boundedListResult, readRequiredMode, readText, textCost } from './argument-readers';
 import { characterAt, characterBefore } from './helpers';
 import { HTML_NAMED_CHARACTER_REFERENCES, WINDOWS_1252_NUMERIC_REFERENCES } from './html-entities';
+import { chargeWork } from './work-meter';
 
 /** The markup `PLAIN_TEXT` reads. */
 export type MarkupFormat = 'html' | 'markdown';
@@ -220,6 +221,7 @@ function decodeCharacterReferences(text: string): string {
 function endOfTag(markup: string, from: number): number {
   let state: TagState = 'before-attribute-name';
   for (let index = from; index < markup.length; index += 1) {
+    chargeWork(1);
     const char = markup.charAt(index);
     switch (state) {
       case 'double-quoted-value':
@@ -283,6 +285,7 @@ function endOfComment(markup: string, from: number): number {
   }
   for (let search = from; ;) {
     const dashes = markup.indexOf('--', search);
+    chargeWork(1 + (dashes < 0 ? markup.length : dashes) - search);
     if (dashes < 0) {
       return markup.length;
     }
@@ -299,6 +302,7 @@ function endOfComment(markup: string, from: number): number {
 function endOfBogusComment(markup: string, from: number): number {
   const close = markup.indexOf('>', from);
   const end = close < 0 ? markup.length : close + 1;
+  chargeWork(1 + end - from);
   return end;
 }
 
@@ -323,6 +327,7 @@ function endOfHiddenContent(markup: string, name: string, from: number): number 
   if (endTag === undefined) return from;
   endTag.lastIndex = from;
   const found = endTag.exec(markup);
+  chargeWork(1 + (found === null ? markup.length : found.index) - from);
   if (found === null) {
     return markup.length;
   }
@@ -361,6 +366,7 @@ function htmlToPlainText(markup: string): string {
   while (index < markup.length) {
     const lt = markup.indexOf('<', index);
     const textEnd = lt < 0 ? markup.length : lt;
+    chargeWork(1 + textEnd - index);
     appendText(markup.slice(index, textEnd));
     if (lt < 0) break;
     const next = markup.charAt(lt + 1);
@@ -503,6 +509,7 @@ function delimiterRun(
 function pairDelimiterRuns(runs: readonly DelimiterRun[]): void {
   const open: Record<DelimiterRun['marker'], DelimiterRun[]> = { '*': [], _: [] };
   for (const run of runs) {
+    chargeWork(1);
     const own = open[run.marker];
     const opener = run.canClose ? own.pop() : undefined;
     if (opener === undefined) {
@@ -513,6 +520,7 @@ function pairDelimiterRuns(runs: readonly DelimiterRun[]): void {
     run.matched = true;
     const other = open[run.marker === '*' ? '_' : '*'];
     while (other.length > 0 && other[other.length - 1].order > opener.order) {
+      chargeWork(1);
       other.pop();
     }
   }
@@ -529,12 +537,14 @@ class BacktickRuns {
 
   constructor(source: string) {
     let at = source.indexOf('`');
+    chargeWork(1 + (at < 0 ? source.length : at));
     while (at >= 0) {
       const end = endOfRun(source, at);
       const starts = this.starts.get(end - at);
       if (starts === undefined) this.starts.set(end - at, [at]);
       else starts.push(at);
       at = source.indexOf('`', end);
+      chargeWork(1 + (at < 0 ? source.length : at) - end);
     }
   }
 
@@ -544,6 +554,7 @@ class BacktickRuns {
     if (starts === undefined) return -1;
     let cursor = this.cursors.get(length) ?? 0;
     while (cursor < starts.length && starts[cursor] < from) {
+      chargeWork(1);
       cursor += 1;
     }
     this.cursors.set(length, cursor);
@@ -568,6 +579,7 @@ function stripInlineMarkdown(source: string): string {
   let text = '';
   let index = 0;
   while (index < source.length) {
+    chargeWork(1);
     const char = source.charAt(index);
     const next = source.charAt(index + 1);
     if (char === '\\' && next.length > 0 && ASCII_PUNCTUATION.test(next)) {
@@ -791,6 +803,7 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   const reader = new MarkdownBlockReader();
   let fence: OpenFence | null = null;
   for (let index = 0; index < lines.length; index += 1) {
+    chargeWork(1);
     const raw = lines[index];
     if (fence !== null) {
       const content = stripQuoteMarkers(raw, fence.quoteDepth).content;

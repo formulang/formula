@@ -1,3 +1,5 @@
+import { chargeWork } from './work-meter';
+
 /**
  * The borders of `pattern`: `border[i]` is the length of the longest proper prefix of
  * `pattern[0..i]` that also ends it.
@@ -5,8 +7,10 @@
 function borders(pattern: string): Int32Array {
   const border = new Int32Array(pattern.length);
   for (let i = 1, k = 0; i < pattern.length; i++) {
+    chargeWork(1);
     const unit = pattern.charCodeAt(i);
     while (k > 0 && unit !== pattern.charCodeAt(k)) {
+      chargeWork(1);
       k = border[k - 1];
     }
     if (unit === pattern.charCodeAt(k)) k += 1;
@@ -21,9 +25,10 @@ function borders(pattern: string): Int32Array {
  * needle occurs nowhere.
  *
  * Knuth-Morris-Pratt matching makes at most `2 * (text.length + needle.length)` comparisons of
- * code units, whatever `text` and `needle` hold. Restarting `indexOf` after each occurrence
- * instead re-reads up to `needle.length` characters per occurrence, which is quadratic on a
- * periodic text such as a long run of one letter.
+ * code units, whatever `text` and `needle` hold: each step of either loop is one unit of work
+ * (`work-meter.ts`), and a spec holds the count to that bound. Restarting `indexOf` after each
+ * occurrence instead re-reads up to `needle.length` characters per occurrence, which is quadratic
+ * on a periodic text such as a long run of one letter.
  */
 export function someOccurrence(
   text: string,
@@ -34,8 +39,10 @@ export function someOccurrence(
   if (length === 0 || length > text.length) return false;
   const border = borders(needle);
   for (let i = 0, matched = 0; i < text.length; i++) {
+    chargeWork(1);
     const unit = text.charCodeAt(i);
     while (matched > 0 && unit !== needle.charCodeAt(matched)) {
+      chargeWork(1);
       matched = border[matched - 1];
     }
     if (unit === needle.charCodeAt(matched)) matched += 1;

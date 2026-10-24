@@ -29,9 +29,10 @@ arguments with `,` instead.
   message is not.
 - **Budgets.** Each call adds steps to the evaluation's step budget and charges
   a cost estimate against `maxFunctionCostUnits` and `maxTotalCostUnits`
-  ([Resource limiting](architecture.md#36-resource-limiting-during-evaluation));
-  how many steps and how much cost a call of a given function takes is not part
-  of what it does.
+  ([Resource limiting](architecture.md#36-resource-limiting-during-evaluation)).
+  What a call of a function whose section states it as rules charges is part
+  of what it does, as [Charges](#charges) states; for the other functions it
+  is not.
 - **Modes.** A parameter that lists the values it admits (a `mode`, `match`,
   `normalise`, `format` or `kind`) takes a string literal naming one of them; a
   misspelt one is a compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when
@@ -66,12 +67,21 @@ arguments with `,` instead.
   where the condition holds and one, on the nearest input, where it does not.
   Such a section closes with one sentence naming the inputs whose result its
   rules leave unspecified, and the [shared rules](#shared-rules) hold in each
-  of them. In those sections the comment of an `evalOk` call also names the
-  warning the call attaches (`null with a TYPE warning`), and a comment that
-  names none states that the call attaches none. The spec that runs the
-  examples also fails a bullet of more than one sentence, a bullet with fewer
-  than two examples or with examples that all give one result, and an example
-  that does not call the section's function.
+  of them, stated there once. In those sections the comment of an `evalOk`
+  call also names the warning the call attaches (`null with a TYPE warning`),
+  and a comment that names none states that the call attaches none. The spec
+  that runs the examples checks the form of each such section: the signature
+  line, whole, against the one the registry renders; one code block of
+  examples under each bullet and no other prose between the rules; each
+  bullet one sentence by its punctuation, ending with `.` and holding no
+  other `.`, `!` or `?`, no `;`, `:` or dash, and no comma before "and",
+  "or", "but", "nor", "so", "yet" or "then"; no bullet that equals, holds, is
+  held in or starts with the same four words as a shared rule; and at least
+  two examples under each bullet, each calling the section's function and
+  giving what its comment states, not all stating one result. Whether a
+  bullet states one condition, whether a rule holds beyond its examples,
+  whether its examples sit on either side of its condition, and a shared rule
+  restated in other words are for review to judge.
 
 ## Shared rules
 
@@ -253,7 +263,7 @@ These rules hold in every section that states its function as rules, for each ar
   await evalOk('GROUP_COUNTS(value)', { value: Array(1000).fill(1) }); // [1000]
   ```
 
-- The arguments are checked one after another from left to right, and the first that fails decides the result.
+- The leftmost argument whose check fails decides the result.
 
   ```ts
   await evalOk('WORDS(value; "whitespace"; "de")', { value: null }); // null
@@ -305,6 +315,40 @@ These rules hold in every section that states its function as rules, for each ar
   await evalOk('WORDS(value; "whitespace"; "de")', { value: 'w '.repeat(5001) }); // null with a TYPE warning
   await evalErrors('WORDS(value)', { value: 'w '.repeat(5001) }); // ["LIST_TOO_LARGE"]
   ```
+
+## Charges
+
+A call of a function whose section states it as rules charges what this
+table states: the cost it adds against `maxFunctionCostUnits` and
+`maxTotalCostUnits`, charged before the function reads its arguments, so that
+a call that returns `null` or raises an error pays it too, and the steps it
+adds to the step budget, the step of its own node included (each argument
+adds the steps of its own nodes).
+
+| Function                                                                                       | Cost of a call                                | Steps of a call |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------- |
+| `WORDS`, `WORD_COUNT`, `LEADING_WORDS`, `LINES`, `LINE_COUNT`, `PLAIN_TEXT`, `MARKDOWN_BLOCKS` | `min(0.05, 0.00001 + 0.000001 × T)`           | `1`             |
+| `SENTENCES`, `FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`                                 | `min(0.05, 0.00001 + 0.000001 × T × (1 + E))` | `1`             |
+| `TAKE`, `INDEX_OF`, `DISTINCT`, `GROUP_COUNTS`                                                 | `0.00002 + 0.00002 × N`                       | `1`             |
+| `FILTER_BY`                                                                                    | `0.0003 + 0.00005 × N`                        | `1 + M`         |
+
+`T` is the length in code units of `text` (of `markup` for `PLAIN_TEXT`), or
+50 when that argument is no text; `E` is the length of `keep`, `phrases` or
+`items`, or 0 when it is no list; `N` is the length of `list`, or 10 when it
+is no list; `M` is the number of keys `FILTER_BY` calls its operator for,
+which is the length of `keys` once every argument has passed its check and 0
+otherwise. The calls `FILTER_BY` makes of its operator charge nothing more,
+neither cost nor steps. A text function's cost stops at 0.05 however long its
+text and however many its phrases, so no cost limit refuses a long text
+before it runs: the wall-time limits stop a call that does more work than it
+is charged for
+([best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)).
+`core-functions/src/functions/charges.spec.ts` reads this table and holds each
+function to it through the limits: for inputs of each kind, a call raises no
+`FUNCTION_COST_LIMIT_EXCEEDED` under a `maxFunctionCostUnits` a billionth
+above the cost the table gives and raises it under one a billionth below, and
+a formula raises no `EVAL_LIMIT_EXCEEDED` under a `maxEvaluationSteps` of
+exactly its steps and raises it under one step fewer.
 
 ## Operator aliases
 
@@ -884,12 +928,22 @@ and what bounds the input:
 | `PLAIN_TEXT` (`"html"`)                        | one forward scan of the markup, tags, comments and dropped elements included, and fixed expressions on each piece of text                                                                                             | the length of `markup`                                                                                                                              |
 | `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, fixed expressions on each, then one scan of each block's inline text                                                                                                                         | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
 
-This is read from the code: it is what the code claims for its own loops and
-for the patterns it runs, and review owns those claims. No spec measures the
-time or the work of these functions, and none checks the complexity of a loop
-or of a pattern. Each cost but that of the formula's own pattern (below) is
-linear in the length of the text or list the function reads, and that length is
-bounded only by what the runtime bounds:
+This is read from the code. `core-functions/src/functions/work-bounds.spec.ts`
+counts the work of the functions' own loops, one unit per step of a loop and
+per code unit that one of the code's own `indexOf` scans reads, through a
+meter the code feeds only while a spec observes an evaluation
+(`core-functions/src/functions/work-meter.ts`, not part of the package's
+entry point). On inputs built to make each loop work hardest, each at three
+sizes, it holds the count in proportion to the input, between 1.8 and 2.2
+times as much at twice the size, and to at most six units per code unit; it
+holds each Knuth-Morris-Pratt search to at most twice the lengths of the text
+and the phrase together. The meter does not see the work inside the runtime's
+regular expressions, its substring search or `Intl.Segmenter`, and no spec
+measures time: that the fixed expressions run in linear time is what the code
+claims, and review owns that claim. Each cost but that of the formula's own
+pattern (below) and of the substring searches (the table above) is linear in
+the length of the text or list the function reads, and that length is bounded
+only by what the runtime bounds:
 `maxStringLiteralLength` bounds literals, not a text the formula computes, so a
 `SUBSTITUTE` of a `SUBSTITUTE` of a 1,000-unit literal, 1,394 characters of
 source, makes 25,000,000 code units: building them alone, `LEN`, takes 0.19 s,
@@ -1205,11 +1259,12 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("Kennst-du-das?")'); // ["Kennst-du-das?"]
   ```
 
-- Whitespace is JavaScript's `\s`, which takes in the no-break space U+00A0 and the byte order mark U+FEFF but not U+0085 or U+001C to U+001F, at which Python's `str.split()` also splits.
+- Whitespace is JavaScript's `\s`, which takes in the no-break space U+00A0 and the byte order mark U+FEFF but not U+0085 or U+001C to U+001F.
 
   ```ts
   await evalOk('WORDS(value)', { value: 'a\tb\nc\u00A0d\uFEFFe' }); // ["a", "b", "c", "d", "e"]
   await evalOk('WORDS(value)', { value: 'a\u001Cb\u0085c' }); // ["a\u001cb\u0085c"]
+  await evalOk('WORDS(value)', { value: 'a\u001Fb' }); // ["a\u001fb"]
   await evalOk('WORDS(value)', { value: 'a\u200Bb' }); // ["a\u200bb"]
   ```
 
@@ -1263,10 +1318,16 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("Don\'t stop"; "locale"; "en-GB")'); // ["Don't", "stop"]
   ```
 
-- A language tag that is malformed, or that the runtime holds no segmentation data for, returns `null` with a `TYPE` warning.
+- A malformed language tag returns `null` with a `TYPE` warning.
 
   ```ts
   await evalOk('WORDS("a b"; "locale"; "x-invalid-")'); // null with a TYPE warning
+  await evalOk('WORDS("a b"; "locale"; "en")'); // ["a", "b"]
+  ```
+
+- A language tag that the runtime holds no segmentation data for returns `null` with a `TYPE` warning.
+
+  ```ts
   await evalOk('WORDS("a b"; "locale"; "zz")'); // null with a TYPE warning
   await evalOk('WORDS("a b"; "locale"; "en")'); // ["a", "b"]
   ```
@@ -1279,7 +1340,7 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("a b"; "letters")'); // ["a", "b"]
   ```
 
-- In the `"locale"` and `"pattern"` modes, an omitted option, or `""`, returns `null` with a `TYPE` warning.
+- In the `"locale"` and `"pattern"` modes, an omitted option or the option `""` returns `null` with a `TYPE` warning.
 
   ```ts
   await evalOk('WORDS("a b"; "locale")'); // null with a TYPE warning
@@ -1297,7 +1358,7 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("abc"; "pattern"; "b*")'); // ["b"]
   ```
 
-- An option that holds no line terminator, starts with `/` and ends with `/` and ASCII lower-case letters, or none, is read as `/pattern/flags`, split at its last `/`.
+- An option that holds no line terminator and runs from a `/` to a `/` followed by zero or more ASCII lower-case letters is read as `/pattern/flags`, split at its last `/`.
 
   ```ts
   await evalOk('WORDS("Ab ab"; "pattern"; "/ab/i")'); // ["Ab", "ab"]
@@ -1343,7 +1404,7 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("ab"; "pattern"; "a(?=b)")'); // ["a"]
   ```
 
-- A pattern in which a `(` is followed by characters other than `)`, at least one of them `+`, `*`, `{` or `|`, and then by `)` and `+`, `*` or `{`, raises `REGEX_UNSAFE`, as in [MATCH_EXPRESSION](#match_expression).
+- A pattern in which a `(` is followed by characters other than `)` (at least one of them `+`, `*`, `{` or `|`) and then by `)` and `+`, `*` or `{` raises `REGEX_UNSAFE`, as in [MATCH_EXPRESSION](#match_expression).
 
   ```ts
   await evalErrors('WORDS("aaa"; "pattern"; "(a+)+")'); // ["REGEX_UNSAFE"]
@@ -1361,7 +1422,7 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("a(b"; "pattern"; value)', { value: '\\(' }); // ["("]
   ```
 
-- The rules of `"pattern"` mode apply in the order they are listed here, and the first that fails decides the result.
+- The first rule of `"pattern"` mode that fails, in the order listed here, decides the result.
 
   ```ts
   await evalErrors('WORDS(value; "pattern"; "(a+)+")', { value: 'a'.repeat(8001) }); // ["REGEX_INPUT_TOO_LONG"]
@@ -1466,7 +1527,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   await evalOk('LEADING_WORDS("aaa"; 1; "pattern"; "(a+)")'); // "aaa"
   ```
 
-- Only the first `count` words are read, so a text of more than 5,000 words gives them.
+- A text of more than 5,000 words gives its first `count` words without raising `LIST_TOO_LARGE`.
 
   ```ts
   await evalOk('LEN(LEADING_WORDS(value; 5001))', { value: 'w '.repeat(5001) }); // 10001
@@ -1479,7 +1540,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
 
 `SENTENCES(text: text, mode?: text, keep?: list<text>) -> list<text>`
 
-- In `"punctuation"` mode, the default, a sentence ends at each run of whitespace directly after `.`, `!` or `?`, as Python's `re.split(r"(?<=[.!?])\s+", text.strip())` splits.
+- In `"punctuation"` mode, the default, a sentence ends at each run of whitespace directly after `.`, `!` or `?`.
 
   ```ts
   await evalOk('SENTENCES("Hi. Ok!  Next? end")'); // ["Hi.", "Ok!", "Next?", "end"]
@@ -1493,6 +1554,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   ```ts
   await evalOk('SENTENCES(value)', { value: 'Ja.\u00A0Nein.\uFEFFDoch.' }); // ["Ja.", "Nein.", "Doch."]
   await evalOk('SENTENCES(value)', { value: 'Ja.\u0085Nein.\u001CDoch.' }); // ["Ja.\u0085Nein.\u001cDoch."]
+  await evalOk('SENTENCES(value)', { value: 'Ja.\u001FNein.' }); // ["Ja.\u001fNein."]
   ```
 
 - In `"terminators"` mode, a sentence ends after each run of `.`, `!`, `?`, `。`, `！` and `？`, which stays with it.
@@ -1533,7 +1595,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   await evalOk('SENTENCES("z. B. x"; "punctuation"; LIST("z. B."))'); // ["z. B. x"]
   ```
 
-- A split that falls inside an occurrence of a `keep` token that neither starts nor ends with whitespace, or at its end, does not happen.
+- A split inside or at the end of an occurrence of a `keep` token that neither starts nor ends with whitespace does not happen.
 
   ```ts
   await evalOk('SENTENCES("Wir helfen z. B. Handwerkern.")'); // ["Wir helfen z.", "B.", "Handwerkern."]
@@ -1699,7 +1761,7 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED(value; LIST("\u00E9"))', { value: 'e\u0301' }); // null
   ```
 
-- In `"word"` mode, an occurrence counts only where the characters directly before and after it are no letters, marks or numbers, or are the text's edges.
+- In `"word"` mode, an occurrence counts only where each of its two neighbours is the text's edge or a character that is no letter, mark or number.
 
   ```ts
   await evalOk('FIRST_CONTAINED("Der Geschäftsführer"; LIST("führer"); "word")'); // null
@@ -1709,14 +1771,21 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\u0301' }); // null
   ```
 
-- In `"word"` mode, a character is a code point, so a surrogate pair is one character, and a lone surrogate is a character that is no letter, mark or number.
+- In `"word"` mode, a surrogate pair is one character.
 
   ```ts
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD800\uDC00owner' }); // null
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD835\uDFFFowner' }); // null
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\uD835\uDC00' }); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\uD840\uDC00' }); // null
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD83D\uDE00owner' }); // "owner"
+  ```
+
+- In `"word"` mode, a lone surrogate is a character that is no letter, mark or number.
+
+  ```ts
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uDC00owner' }); // "owner"
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\uD800' }); // "owner"
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD835aowner' }); // null
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD835\uFF21owner' }); // null
   ```
@@ -1742,6 +1811,7 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED("KENNST DU DAS?"; LIST("kennst du das?"); "substring"; FALSE)'); // null
   await evalOk('FIRST_CONTAINED("Product Owner,"; LIST("product owner"); "word"; TRUE)'); // "product owner"
   await evalOk('FIRST_CONTAINED("STRASSE"; LIST("straße"); "substring"; TRUE)'); // null
+  await evalOk('FIRST_CONTAINED("ISTANBUL"; LIST("istanbul"); "substring"; TRUE)'); // "istanbul"
   ```
 
 - A phrase longer than 250 code units as it is searched for, lower-cased when `ignoreCase` is `TRUE`, raises `PHRASE_TOO_LONG`.
@@ -1774,6 +1844,7 @@ Unspecified: nothing.
   await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"))'); // true
   await evalOk('CONTAINS_ANY("the homeowner"; LIST("owner"); "word")'); // false
   await evalOk('CONTAINS_ANY("ABC"; LIST("b"); "substring"; TRUE)'); // true
+  await evalOk('CONTAINS_ANY("KIND"; LIST("kind"); "word"; TRUE)'); // true
   await evalOk('CONTAINS_ANY("ABC"; LIST("b"))'); // false
   await evalOk('CONTAINS_ANY("abc"; LIST())'); // false
   await evalOk('CONTAINS_ANY("abc"; LIST(""))'); // false
@@ -1872,11 +1943,21 @@ Unspecified: nothing.
   await evalOk('MISSING_FROM(LIST("a-b"); value; "loose")', { value: 'A\u2016B' }); // ["a-b"]
   ```
 
-- In `"loose"` mode, no other character is folded, so a composed and a decomposed letter stay apart.
+- In `"loose"` mode, no other character is folded.
+
+  ```ts
+  await evalOk('MISSING_FROM(LIST("ss"); "STRAẞE"; "loose")'); // ["ss"]
+  await evalOk('MISSING_FROM(LIST("a"); value; "loose")', { value: '\u00E0' }); // ["a"]
+  await evalOk('MISSING_FROM(LIST("a-b"); value; "loose")', { value: 'A\u2212B' }); // []
+  ```
+
+- In `"loose"` mode, a composed letter and its decomposed form stay apart unless both lower-case to the same text.
 
   ```ts
   await evalOk('MISSING_FROM(LIST("\u00E9"); value; "loose")', { value: 'e\u0301' }); // ["\u00e9"]
   await evalOk('MISSING_FROM(LIST("\u00E9"); value; "loose")', { value: '\u00C9' }); // []
+  await evalOk('MISSING_FROM(LIST("\u0130"); value; "loose")', { value: 'I\u0307' }); // []
+  await evalOk('MISSING_FROM(LIST("\u0130"); value; "whitespace")', { value: 'I\u0307' }); // ["\u0130"]
   ```
 
 - An item that is empty once normalised is skipped.
@@ -1895,6 +1976,10 @@ Unspecified: nothing.
   await evalErrors('MISSING_FROM(LIST(value); "a b"; "exact")', {
     value: 'a' + ' '.repeat(300) + 'b',
   }); // ["PHRASE_TOO_LONG"]
+  await evalErrors('MISSING_FROM(LIST(value); "x"; "loose")', { value: '\u0130'.repeat(126) }); // ["PHRASE_TOO_LONG"]
+  await evalOk('COUNT(MISSING_FROM(LIST(value); "x"; "whitespace"))', {
+    value: '\u0130'.repeat(126),
+  }); // 1
   ```
 
 Unspecified: nothing.
@@ -1911,10 +1996,18 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '# Titel\n\nZeile  eins\nZeile zwei' }); // "Titel\nZeile eins Zeile zwei"
   ```
 
-- Within each line, each run of whitespace, JavaScript's `\s`, becomes one space, and the line is trimmed.
+- Within each line, each run of whitespace (JavaScript's `\s`) becomes one space.
 
   ```ts
-  await evalOk('PLAIN_TEXT(value; "html")', { value: '<p> a \t b\u00A0 </p>' }); // "a b"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<p>a \t b\u00A0c</p>' }); // "a b c"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<p>a\u200Bb</p>' }); // "a\u200bb"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a \t b' }); // "a b"
+  ```
+
+- Each line is trimmed.
+
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<p> a </p>' }); // "a"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre> a\n b </pre>' }); // "a\nb"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '  a \t b  ' }); // "a b"
   ```
@@ -1927,7 +2020,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(""; "html")'); // ""
   ```
 
-- In `"html"`, a tag runs from `<` followed by an ASCII letter, or `</` followed by one, to the first `>` outside a quoted attribute value, and is removed.
+- In `"html"`, a tag, which runs from `<` or `</` followed by an ASCII letter to the first `>` outside a quoted attribute value, is removed.
 
   ```ts
   await evalOk('PLAIN_TEXT("<b>bold</b> x"; "html")'); // "bold x"
@@ -1958,7 +2051,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("a<SCRIPT>x</SCRIPT>b"; "html")'); // "ab"
   ```
 
-- In `"html"`, a `<` followed by anything but an ASCII letter, `/`, `!` or `?`, or at the end of the markup, is text.
+- In `"html"`, a `<` that ends the markup or is followed by anything but an ASCII letter, `/`, `!` or `?` is text.
 
   ```ts
   await evalOk('PLAIN_TEXT("1 < 2 and a <3 <"; "html")'); // "1 < 2 and a <3 <"
@@ -2049,7 +2142,7 @@ Unspecified: nothing.
   }); // "B"
   ```
 
-- In `"html"`, the end tags `</head>`, `</body>`, `</html>` and `</br>` end the head, and no other end tag does.
+- In `"html"`, only the end tags `</head>`, `</body>`, `</html>` and `</br>` end the head.
 
   ```ts
   await evalOk('PLAIN_TEXT("<head></head><noscript>N</noscript>"; "html")'); // "N"
@@ -2066,7 +2159,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("<head><noscript>N</noscript>"; "html")'); // ""
   ```
 
-- In `"html"`, `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`, `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1` to `h6`, `header`, `hr`, `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`, `tr` and `ul` end a line where they open and where they close, and no other tag does.
+- In `"html"`, only the tags `address`, `article`, `aside`, `blockquote`, `br`, `dd`, `div`, `dl`, `dt`, `figcaption`, `figure`, `footer`, `h1` to `h6`, `header`, `hr`, `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `table`, `td`, `th`, `tr` and `ul` end a line where they open and where they close.
 
   ```ts
   await evalOk('PLAIN_TEXT("<ul><li>a</li><li>b</li></ul>x<br>y<hr>z"; "html")'); // "a\nb\nx\ny\nz"
@@ -2098,7 +2191,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "html")', { value: '</pre>a\nb' }); // "a b"
   ```
 
-- In `"html"`, a numeric reference, decimal or hexadecimal with `x` or `X`, of one digit or more, leading zeros included, and its closing `;`, gives its code point.
+- In `"html"`, a decimal or hexadecimal (`x` or `X`) numeric reference of one digit or more (leading zeros included) closed by `;` gives its code point.
 
   ```ts
   await evalOk('PLAIN_TEXT("&#65;&#x42;&#X43;&#0067;"; "html")'); // "ABCC"
@@ -2112,13 +2205,20 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("&#1;&#xD7FF;&#xE000;&#x10FFFF;"; "html")'); // "\u0001\ud7ff\ue000\udbff\udfff"
   ```
 
-- In `"html"`, a numeric reference from 128 to 159 gives the windows-1252 character where that encoding has one, and the C1 control otherwise.
+- In `"html"`, a numeric reference from 128 to 159 that windows-1252 assigns a character gives that character.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "html")', {
     value: Array.from({ length: 32 }, (_, index) => `&#${128 + index};`).join(''),
   }); // "\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178"
   await evalOk('PLAIN_TEXT("&#127;&#161;"; "html")'); // "\u007f\u00a1"
+  ```
+
+- In `"html"`, a numeric reference from 128 to 159 that windows-1252 leaves unassigned gives the C1 control of that number.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("&#129;&#141;&#143;&#144;&#157;"; "html")'); // "\u0081\u008d\u008f\u0090\u009d"
+  await evalOk('PLAIN_TEXT("&#128;&#130;"; "html")'); // "\u20ac\u201a"
   ```
 
 - In `"html"`, the 252 named references of HTML 4 give the characters the HTML standard's table maps them to, `&lang;` and `&rang;` U+27E8 and U+27E9.
@@ -2149,7 +2249,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("&amp; &#65;"; "html")'); // "& A"
   ```
 
-- In `"html"`, markup that ends inside a tag, a comment, a `<!` or `<?`, or dropped content loses that unfinished part.
+- In `"html"`, markup that ends inside a tag, a comment, a `<!` or `<?` construct or dropped content loses that unfinished part.
 
   ```ts
   await evalOk('PLAIN_TEXT("Hello <b x"; "html")'); // "Hello"
@@ -2161,14 +2261,14 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<script>x</script b="y' }); // "a"
   ```
 
-- In `"html"`, the result is plain text, so a reference to `<` gives `<`.
+- In `"html"`, a character that a reference gives is text and never markup.
 
   ```ts
   await evalOk('PLAIN_TEXT("&lt;b&gt;"; "html")'); // "<b>"
   await evalOk('PLAIN_TEXT("<b>"; "html")'); // ""
   ```
 
-- In `"markdown"`, each block that [MARKDOWN_BLOCKS](#markdown_blocks) reads, but a fenced code block, gives one line, in document order.
+- In `"markdown"`, each block other than a fenced code block that [MARKDOWN_BLOCKS](#markdown_blocks) reads gives one line in document order.
 
   ```ts
   await evalOk('PLAIN_TEXT("## Titel"; "markdown")'); // "Titel"
@@ -2194,7 +2294,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\*a\\* `c` [t](u)' }); // "*a* c t"
   ````
 
-- In `"markdown"`, a run of `*` or `_` is left-flanking when the character after it is not whitespace, and is not punctuation unless the character before the run is whitespace or punctuation.
+- In `"markdown"`, a run of `*` or `_` is left-flanking when the character after it is not whitespace and is punctuation only where the character before the run is whitespace or punctuation.
 
   ```ts
   await evalOk('PLAIN_TEXT("*a*"; "markdown")'); // "a"
@@ -2203,7 +2303,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(" *(b)*"; "markdown")'); // "(b)"
   ```
 
-- In `"markdown"`, a run of `*` or `_` is right-flanking when the character before it is not whitespace, and is not punctuation unless the character after the run is whitespace or punctuation.
+- In `"markdown"`, a run of `*` or `_` is right-flanking when the character before it is not whitespace and is punctuation only where the character after the run is whitespace or punctuation.
 
   ```ts
   await evalOk('PLAIN_TEXT("*a *"; "markdown")'); // "*a *"
@@ -2211,18 +2311,34 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("*(b)* "; "markdown")'); // "(b)"
   ```
 
-- In `"markdown"`, whitespace is JavaScript's `\s` or the edge of the text, and punctuation a character of Unicode's P or S categories.
+- In `"markdown"`, whitespace is JavaScript's `\s` or the edge of the text.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '*\u00A0a*' }); // "* a*"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '*\u200Ba*' }); // "\u200ba"
+  await evalOk('PLAIN_TEXT("*(b)*"; "markdown")'); // "(b)"
+  ```
+
+- In `"markdown"`, punctuation is a character of Unicode's P or S categories.
+
+  ```ts
   await evalOk('PLAIN_TEXT("a*€b€*c"; "markdown")'); // "a*€b€*c"
+  await evalOk('PLAIN_TEXT("a*(b)*c"; "markdown")'); // "a*(b)*c"
   await evalOk('PLAIN_TEXT("a*b*c"; "markdown")'); // "abc"
   ```
 
-- In `"markdown"`, a `*` run can open emphasis when it is left-flanking and close it when it is right-flanking.
+- In `"markdown"`, a `*` run can open emphasis when it is left-flanking.
 
   ```ts
   await evalOk('PLAIN_TEXT("2*3*4"; "markdown")'); // "234"
+  await evalOk('PLAIN_TEXT("x * a*"; "markdown")'); // "x * a*"
+  ```
+
+- In `"markdown"`, a `*` run can close emphasis when it is right-flanking.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("*a*"; "markdown")'); // "a"
+  await evalOk('PLAIN_TEXT("*a *"; "markdown")'); // "*a *"
   await evalOk('PLAIN_TEXT("2 * 3 * 4"; "markdown")'); // "2 * 3 * 4"
   ```
 
@@ -2267,12 +2383,21 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("**a**"; "markdown")'); // "a"
   ```
 
-- In `"markdown"`, a run of backticks pairs with the next run of exactly as many, and the code span between them keeps its text as written.
+- In `"markdown"`, a run of backticks pairs with the next run of exactly as many.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("`` a ` b ``"; "markdown")'); // "a ` b"
+  await evalOk('PLAIN_TEXT("`a``b`"; "markdown")'); // "a``b"
+  await evalOk('PLAIN_TEXT("``a`b``"; "markdown")'); // "a`b"
+  ```
+
+- In `"markdown"`, emphasis and links inside a code span stay as written.
 
   ```ts
   await evalOk('PLAIN_TEXT("Use `a*b*c` here"; "markdown")'); // "Use a*b*c here"
   await evalOk('PLAIN_TEXT("Use a*b*c here"; "markdown")'); // "Use abc here"
-  await evalOk('PLAIN_TEXT("`` a ` b ``"; "markdown")'); // "a ` b"
+  await evalOk('PLAIN_TEXT("`[a](u)`"; "markdown")'); // "[a](u)"
+  await evalOk('PLAIN_TEXT("[a](u)"; "markdown")'); // "a"
   ```
 
 - In `"markdown"`, a code span that starts and ends with a space and holds more than whitespace loses one space at each end.
@@ -2305,7 +2430,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a\\b \\\u00E4' }); // "a\\b \\\u00e4"
   ```
 
-- In `"markdown"`, a backtick that a backslash escapes is text and takes no part in a run of backticks.
+- In `"markdown"`, a backtick that a backslash escapes takes no part in a run of backticks.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\``x`' }); // "`x"
@@ -2321,13 +2446,22 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\*' }); // "*"
   ```
 
-- In `"markdown"`, an inline link `[text](url)` gives `text`, and an image `![alt](url)` gives `alt`, for text of at most 1,000 code units and a destination of at most 2,000.
+- In `"markdown"`, an inline link `[text](url)` gives `text` for text of at most 1,000 code units and a destination of at most 2,000.
 
   ```ts
-  await evalOk('PLAIN_TEXT("[Link](https://x) and ![Bild](b.png)"; "markdown")'); // "Link and Bild"
+  await evalOk('PLAIN_TEXT("[Link](https://x) and more"; "markdown")'); // "Link and more"
   await evalOk('PLAIN_TEXT("[Link] (https://x)"; "markdown")'); // "[Link] (https://x)"
   await evalOk('LEN(PLAIN_TEXT(value; "markdown"))', { value: '[' + 'a'.repeat(1000) + '](u)' }); // 1000
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '[a](' + 'u'.repeat(2000) + ')' }); // "a"
+  ```
+
+- In `"markdown"`, an image `![alt](url)` gives `alt` for alt text of at most 1,000 code units and a destination of at most 2,000.
+
+  ```ts
+  await evalOk('PLAIN_TEXT("Ein ![Bild](b.png)"; "markdown")'); // "Ein Bild"
+  await evalOk('PLAIN_TEXT("Ein ![Bild] (b.png)"; "markdown")'); // "Ein ![Bild] (b.png)"
+  await evalOk('LEN(PLAIN_TEXT(value; "markdown"))', { value: '![' + 'a'.repeat(1000) + '](u)' }); // 1000
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '![a](' + 'u'.repeat(2000) + ')' }); // "a"
   ```
 
 - In `"markdown"`, link text may hold brackets nested one level deep, in pairs of at most 500 code units.
@@ -2362,7 +2496,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("[t](r)"; "markdown")'); // "t"
   ```
 
-- In `"markdown"`, `<url>` gives `url` when its scheme is a letter followed by letters, digits, `+`, `.` or `-`, 2 to 32 characters in all, and the rest after its `:`, at most 2,000 code units, holds no whitespace, `<` or `>`.
+- In `"markdown"`, `<url>` gives `url` when its scheme (a letter followed by letters, digits, `+`, `.` or `-`, 2 to 32 characters in all) is followed by a `:` and by at most 2,000 code units that hold no whitespace, `<` or `>`.
 
   ```ts
   await evalOk('PLAIN_TEXT("<https://x.de> <HTTP://y.de> <a+b.c-d:x>"; "markdown")'); // "https://x.de HTTP://y.de a+b.c-d:x"
@@ -2382,14 +2516,14 @@ Unspecified: nothing.
   await evalOk('LEN(PLAIN_TEXT(value; "markdown"))', { value: '<' + 'a'.repeat(256) + '@b>' }); // 258
   ```
 
-- In `"markdown"`, text outside the markup these rules name, and outside raw HTML and character references, stays as written.
+- In `"markdown"`, text outside raw HTML, character references and the markup these rules name stays as written.
 
   ```ts
   await evalOk('PLAIN_TEXT("a + b = c! ~ ^ % $"; "markdown")'); // "a + b = c! ~ ^ % $"
   await evalOk('PLAIN_TEXT("a + *b* = c!"; "markdown")'); // "a + b = c!"
   ```
 
-Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in `"markdown"`, raw HTML and character references, link text of more than 1,000 code units, a destination of more than 2,000, a nested pair of more than 500, and an autolink of more than 2,000 code units after its scheme's `:` or of more than 256 on a side of an address's `@`.
+Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in `"markdown"`, raw HTML and character references, link text or alt text of more than 1,000 code units, a destination of more than 2,000, a nested pair of more than 500, and an autolink of more than 2,000 code units after its scheme's `:` or of more than 256 on a side of an address's `@`.
 
 ### MARKDOWN_BLOCKS
 
@@ -2403,12 +2537,18 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '- a\n\ntext\n\n- b' }); // ["a", "b"]
   ```
 
-- `"heading"` selects the headings of every level, and `"heading-1"` to `"heading-6"` those of one level.
+- `"heading"` selects the headings of every level.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', {
     value: '# 1\n## 2\n### 3\n#### 4\n##### 5\n###### 6',
   }); // ["1", "2", "3", "4", "5", "6"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '####### 7' }); // []
+  ```
+
+- `"heading-1"` to `"heading-6"` select the headings of one level.
+
+  ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading-1")', {
     value: '# 1\n## 2\n### 3\n#### 4\n##### 5\n###### 6',
   }); // ["1"]
@@ -2436,18 +2576,34 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\n**bold** [l](u)\n```' }); // ["**bold** [l](u)"]
   ````
 
-- In each block but a code block, each run of whitespace, JavaScript's `\s`, becomes one space, and the text is trimmed.
+- In each block but a code block, each run of whitespace (JavaScript's `\s`) becomes one space.
+
+  ````ts
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# a\u00A0\t b' }); // ["a b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# a\u200Bb' }); // ["a\u200bb"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\na\u00A0\t b\n```' }); // ["a\u00a0\t b"]
+  ````
+
+- In each block but a code block, the text is trimmed.
 
   ````ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '#  a\u00A0\t b  ' }); // ["a b"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\n a\u00A0\t b \n```' }); // [" a\u00a0\t b "]
   ````
 
-- A line ends at `\n`, `\r` or `\r\n`, and U+2028 and U+2029 end none.
+- A line ends at `\n`, `\r` or `\r\n`.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\r\rb\r\nc\n\nd' }); // ["a", "b c", "d"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n\rb' }); // ["a", "b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\r\nb' }); // ["a b"]
+  ```
+
+- U+2028 and U+2029 end no line.
+
+  ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\u2028\u2028b\u2029\u2029c' }); // ["a b c"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n\nb' }); // ["a", "b"]
   ```
 
 - A blank line, empty or of whitespace only, ends the open block.
@@ -2457,7 +2613,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n \tb' }); // ["a b"]
   ```
 
-- Each line outside a fenced block is read as the first of these that it is, a blank line, an opening fence, a thematic break, a heading, a list item, a row of an open table, the header row of a table, and otherwise text of the open paragraph or list item.
+- Each line outside a fenced block is read as the first that it is of a blank line, an opening fence, a thematic break, a heading, a list item, a row of an open table, the header row of a table and text of a paragraph or of the open list item.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '- - -' }); // []
@@ -2476,7 +2632,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '    > x' }); // ["> x"]
   ```
 
-- A tab after `>` is no part of the quote marker and stays in the line.
+- A tab after `>` stays in the line.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '>~~~\n>\tcode\n>~~~' }); // ["\tcode"]
@@ -2555,7 +2711,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\na\n```\nb' }); // ["a"]
   ````
 
-- A thematic break, three or more of one of `-`, `*` and `_` after at most three spaces, with spaces or tabs between and after them, ends the open block and gives no block.
+- A thematic break, three or more of one of `-`, `*` and `_` after at most three spaces with spaces or tabs between and after them, ends the open block.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', {
@@ -2566,7 +2722,15 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n---x' }); // ["a ---x"]
   ```
 
-- A list item starts with `-`, `*`, `+`, or one to nine digits and `.` or `)`, after any spaces or tabs, followed by a space, a tab or the end of the line.
+- A thematic break gives no block.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '---' }); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '--' }); // ["--"]
+  await evalOk('COUNT(MARKDOWN_BLOCKS(value; "list-item"))', { value: '- a\n* * *\n- b' }); // 2
+  ```
+
+- A list item starts, after any spaces or tabs, with `-`, `*`, `+` or one to nine digits and `.` or `)` followed by a space, a tab or the end of the line.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', {
@@ -2634,13 +2798,21 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   }); // ["Text | A | B | | 1 | 2 |", "nach"]
   ```
 
-- A table runs to a blank line or to a line that starts a heading, a list item, a fence or a thematic break, and every line before it is a row.
+- A table runs to a blank line or to a line that starts a heading, a list item, a fence or a thematic break.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
     value: '| A |\n|---|\n| 1 |\nx\n# H\n| 3 |',
   }); // ["A", "1", "x"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\n| 1 |\n\nx' }); // ["A", "1"]
+  ```
+
+- A line of a table is a row even when it holds no `|`.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\nx' }); // ["A", "x"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '| A |\n|---|\nx' }); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '| A |\n|---|\n\nx' }); // ["x"]
   ```
 
 - Each row but the delimiter row, the header row included, gives a block of its cells, trimmed, the non-empty ones joined by one space.
@@ -2671,14 +2843,21 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\n| x\\y |' }); // ["A", "x\\y"]
   ```
 
-- A row's leading `|` is dropped, and so is its trailing `|` unless a backslash precedes it.
+- A row's leading `|` is dropped.
 
   ```ts
-  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n1 | 2' }); // ["A B", "1 2"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n| 1 | 2' }); // ["A B", "1 2"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n|| 1 | 2' }); // ["A B", "1"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '|A|B|\n|-|-|\n|1|2|' }); // ["A B", "1 2"]
+  ```
+
+- A row's trailing `|` is dropped unless a backslash precedes it.
+
+  ```ts
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B |\n---|---\n1 | 2 | 3' }); // ["A B", "1 2"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
     value: '| A | B |\n|---|---|\n| 1 | 2 \\|',
   }); // ["A B", "1 2 |"]
-  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '|A|B|\n|-|-|\n|1|2|' }); // ["A B", "1 2"]
   ```
 
 - A paragraph is a run of lines that start no other block, joined by one space.
@@ -2697,7 +2876,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# a\\' }); // ["a\\"]
   ```
 
-- There are no indented code blocks or link reference definitions, so their lines are paragraph text.
+- A line that would start an indented code block or a link reference definition is paragraph text.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '    code\n[r]: https://x' }); // ["code [r]: https://x"]
@@ -2929,26 +3108,39 @@ Unspecified: nothing.
   await evalOk('INDEX_OF(LIST("a"; "b"); "a")'); // 1
   ```
 
-- Items compare as [INCLUDES](#includes) and `=` compare them, so text that reads as a number equals that number.
+- Items compare with `value` as [INCLUDES](#includes) and `=` compare.
+
+  ```ts
+  await evalOk('INDEX_OF(value; 2)', { value: [1, 2, 3] }); // 2
+  await evalOk('INDEX_OF(value; 4)', { value: [1, 2, 3] }); // null
+  await evalOk('INDEX(value; INDEX_OF(value; "b"))', { value: ['a', 'b'] }); // "b"
+  ```
+
+- A text that JavaScript's `Number` reads as a finite number once the text is trimmed compares as that number.
 
   ```ts
   await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] }); // 2
   await evalOk('INDEX_OF(value; 2)', { value: ['1', ' 2 '] }); // 2
+  await evalOk('INDEX_OF(value; "1")', { value: ['01'] }); // 1
+  await evalOk('INDEX_OF(value; "0x10")', { value: [16] }); // 1
   await evalOk('INDEX_OF(value; "2x")', { value: [1, 2] }); // null
   ```
 
-- The texts `true` and `false`, in any letter case, equal each other and the booleans.
+- A text that is `true` or `false` in any letter case once trimmed compares as that boolean.
 
   ```ts
   await evalOk('INDEX_OF(value; "TRUE")', { value: [false, true] }); // 2
+  await evalOk('INDEX_OF(value; TRUE)', { value: [' true ', true] }); // 1
+  await evalOk('INDEX_OF(value; FALSE)', { value: ['False\t'] }); // 1
   await evalOk('INDEX_OF(value; "true")', { value: ['TRUE', true] }); // 1
   await evalOk('INDEX_OF(value; "yes")', { value: [false, true] }); // null
   ```
 
-- Other text compares case-sensitively.
+- Any other text compares as written, letter case and whitespace included.
 
   ```ts
   await evalOk('INDEX_OF(value; "A")', { value: ['a', 'A'] }); // 2
+  await evalOk('INDEX_OF(value; "a")', { value: [' a', 'a'] }); // 2
   await evalOk('INDEX_OF(value; "a")', { value: ['a', 'A'] }); // 1
   ```
 
@@ -2996,14 +3188,31 @@ Unspecified: whether a date, time, datetime or other object equals another.
   await evalOk('FILTER_BY(LIST(); LIST(); ">"; 1)'); // []
   ```
 
-- The operator is called as `(key)`, or as `(key, operatorValue)` when `operatorValue` is given, `null` included.
+- The operator is called as `(key)` when `operatorValue` is omitted.
 
   ```ts
   await evalOk('FILTER_BY(LIST("x"; "y"); LIST(""; "z"); "IS_EMPTY")'); // ["x"]
-  await evalOk('FILTER_BY(LIST(1; 2); LIST(5; 0); ">"; value)', { value: 0 }); // [1]
-  await evalOk('FILTER_BY(LIST(1; 2); LIST(5; 0); ">"; value)', { value: null }); // []
   await evalOk('FILTER_BY(LIST(1; 2); LIST(TRUE; TRUE); "AND")'); // [1, 2]
-  await evalOk('FILTER_BY(LIST(1; 2); LIST(TRUE; TRUE); "AND"; value)', { value: null }); // []
+  await evalOk('FILTER_BY(LIST(1; 2); LIST(TRUE; TRUE); "AND"; value)', { value: null }); // [1, 2]
+  await evalOk('FILTER_BY(LIST(1; 2); LIST(TRUE; TRUE); "AND"; value)', { value: false }); // []
+  ```
+
+- The operator is called as `(key, operatorValue)` when `operatorValue` is given.
+
+  ```ts
+  await evalOk('FILTER_BY(LIST(1; 2); LIST(5; 0); ">"; value)', { value: 0 }); // [1]
+  await evalOk('FILTER_BY(LIST(1; 2); LIST(5; 0); ">"; value)', { value: 6 }); // []
+  ```
+
+- An error the operator raises for a key is raised by the call.
+
+  ```ts
+  await evalErrors('FILTER_BY(LIST(1); LIST("x"); "CONTAINS_ANY"; value)', {
+    value: ['a'.repeat(251)],
+  }); // ["PHRASE_TOO_LONG"]
+  await evalErrors('FILTER_BY(LIST(1); LIST("x"); "CONTAINS_ANY"; value)', {
+    value: ['a'.repeat(250)],
+  }); // []
   ```
 
 - A key that the operator answers `FALSE` or `null` for drops its item.
@@ -3082,7 +3291,7 @@ Unspecified: an operator that reaches the call as a value that is not text, or a
   await evalOk('COUNT(DISTINCT(LIST(TIME(1; 2; 3); TIME(1; 2; 3); TIME(1; 2; 4))))'); // 2
   ```
 
-- A list that holds a list, the empty list included, or any other object returns `null` with a `TYPE` warning.
+- A list that holds a list (the empty list included) or any other object returns `null` with a `TYPE` warning.
 
   ```ts
   await evalOk('DISTINCT(value)', { value: [[1], 2] }); // null with a TYPE warning

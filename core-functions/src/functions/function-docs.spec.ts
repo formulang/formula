@@ -1,20 +1,40 @@
 import * as coreFunctions from '@formulang/core-functions';
+import type { FormulaType } from '@formulang/definitions';
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import baseline from '../../../scripts/compat/baseline-1.0.0.json';
 import harness from '../../../scripts/compat/harness.js';
-import { evalErrors, evalFormulaOutput, evalOkWithOutput } from '../test-helpers/eval-formula';
+import {
+  createTestRuntime,
+  evalErrors,
+  evalFormulaOutput,
+  evalOkWithOutput,
+} from '../test-helpers/eval-formula';
 
 /**
  * docs/functions.md states each function added to 1.0.0 as rules, and the rules all of them share
- * once, under "Shared rules". Each rule is one bullet of one sentence (no `;` and no `:` outside
- * code), followed by one code block of at least two examples that give different results, each
- * calling the section's function (in the shared rules, a function added to 1.0.0). A section
- * closes with one sentence, `Unspecified: ...`, naming what its rules leave unspecified. This spec
- * reads the document as the repository holds it, checks that form, and runs every example
- * through the real runtime: a wrong example, a rule without a pair of examples that tell its
- * condition apart, an example that does not call the function, and any prose outside a rule are
- * red.
+ * once, under "Shared rules". This spec reads the document as the repository holds it, runs every
+ * example through the real runtime, and checks, for each added function's section and for the
+ * shared rules:
+ *
+ * - a section opens with its function's signature, the whole line as the live registry renders it;
+ * - each rule is a top-level bullet followed by one code block of examples, and a section closes
+ *   with one sentence, `Unspecified: ...`; prose outside a rule, a nested bullet, a line of a code
+ *   block that is no example, and text after the closing sentence are red;
+ * - each bullet, its code spans and link targets taken out, is one sentence: it ends with `.`,
+ *   holds no other `.`, `!` or `?`, no `;`, `:`, en dash, em dash or hyphen between spaces, and no
+ *   comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then"; the closing
+ *   sentence is held to the same form but for the commas;
+ * - no bullet of a section, lower-cased and with its code marks dropped, equals a shared rule,
+ *   holds one, is held in one, or starts with the same four words as one, and no shared rule
+ *   equals, holds or is held in another;
+ * - each bullet has at least two examples, every example calls the section's function (in the
+ *   shared rules, an added function) and gives what its comment states, and at least two of a
+ *   bullet's examples state different results.
+ *
+ * What these checks cannot see is the reviewer's: whether a bullet states one condition and one
+ * outcome, whether a rule holds beyond its examples, whether its examples sit on either side of
+ * its condition, and a shared rule restated in other words.
  */
 
 /** docs/functions.md, as the repository holds it. */
@@ -142,14 +162,70 @@ function words(prose: string): string {
     .trim();
 }
 
-/** What makes prose more than one sentence: a `;`, a `:`, or an end of sentence before its last. */
-function sentenceProblems(text: string): string[] {
+/** A comma that joins two clauses into one bullet: one directly followed by a conjunction. */
+const JOINED = /,\s+(?:and|or|but|nor|so|yet|then)\b/i;
+
+/** A dash between two clauses: an en dash, an em dash, or a hyphen between spaces. */
+const DASH = new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]|\\s-\\s`);
+
+/**
+ * What makes prose more than one sentence: a `;`, a `:`, a dash, a mark that ends a sentence
+ * before its last character, and in a bullet a comma joining two clauses.
+ */
+function sentenceProblems(text: string, bullet: boolean): string[] {
   const problems: string[] = [];
   if (text.includes(';')) problems.push('a ";" joins two rules');
   if (text.includes(':')) problems.push('a ":" joins two rules');
+  if (DASH.test(text)) problems.push('a dash joins two rules');
+  if (bullet && JOINED.test(text)) problems.push('a comma and a conjunction join two rules');
   if (!text.endsWith('.')) problems.push('it does not end with "."');
-  if (/[.!?]["')\]]*\s/.test(text.slice(0, -1))) problems.push('it holds more than one sentence');
+  if (/[.!?]/.test(text.slice(0, -1))) problems.push('it holds more than one sentence');
   return problems;
+}
+
+/** A rule's words: lower-cased, code marks dropped, whitespace collapsed, no closing period. */
+function normal(prose: string): string {
+  return prose.replace(/`/g, '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+}
+
+/** How one rule states another again, or `null` when it does not by these checks. */
+function overlap(rule: string, other: string, byFirstWords: boolean): string | null {
+  const a = normal(rule);
+  const b = normal(other);
+  if (a === b) return 'equals';
+  if (a.includes(b)) return 'holds';
+  if (b.includes(a)) return 'is held in';
+  const first = (text: string) => text.split(' ').slice(0, 4).join(' ');
+  if (byFirstWords && first(a) === first(b)) return 'starts with the four words of';
+  return null;
+}
+
+const { registry } = createTestRuntime();
+
+/** A type as the signature lines write it. */
+function typeText(type: FormulaType): string {
+  switch (type.kind) {
+    case 'list':
+      return `list<${typeText(type.of)}>`;
+    case 'template':
+      return type.name;
+    case 'union':
+      return type.of.map(typeText).join(' | ');
+    default:
+      return type.kind;
+  }
+}
+
+/** The signature line of a function with one definition, rendered from the live registry. */
+function signatureLine(name: string): string {
+  const definitions = registry.listFunctionsByName(name);
+  expect(definitions, `${name}: its definitions`).toHaveLength(1);
+  const [definition] = definitions;
+  const params = definition.params.map(
+    (param) =>
+      `${param.variadic ? '...' : ''}${param.name}${param.optional ? '?' : ''}: ${typeText(param.type)}`,
+  );
+  return `\`${name}(${params.join(', ')}) -> ${typeText(definition.returnType)}\``;
 }
 
 /**
@@ -280,22 +356,28 @@ async function given(example: Example): Promise<unknown> {
 }
 
 /**
- * Every problem of a block of rules: the form of each bullet and of the closing sentence, the
- * examples each bullet needs, and every example that does not give what its comment states.
+ * Every problem of a block of rules: the form of each bullet and of the closing sentence, a
+ * bullet that states one of `shared` again, the examples each bullet needs, and every example
+ * that does not give what its comment states.
  */
 async function ruleProblems(
   section: Section,
   from: number,
   calls: readonly string[],
   closing: boolean,
+  shared: readonly string[],
 ): Promise<string[]> {
   const problems: string[] = [];
   const { bullets, unspecified } = readRules(section, from, problems);
   if (bullets.length === 0) problems.push(`${section.name}: no rule bullets`);
   for (const bullet of bullets) {
     const at = `line ${bullet.line}`;
-    for (const problem of sentenceProblems(words(bullet.prose))) {
+    for (const problem of sentenceProblems(words(bullet.prose), true)) {
       problems.push(`${at}: one rule per bullet, in one sentence: ${problem}`);
+    }
+    for (const rule of shared) {
+      const how = overlap(bullet.prose, rule, true);
+      if (how !== null) problems.push(`${at}: ${how} the shared rule "${rule}"`);
     }
     if (bullet.examples.length < 2) {
       problems.push(`${at}: ${bullet.examples.length} example(s), at least two needed`);
@@ -339,7 +421,7 @@ async function ruleProblems(
   if (sentence.split('Unspecified:').length !== 2) {
     problems.push(`${section.name}: "Unspecified:" more than once`);
   }
-  for (const problem of sentenceProblems(sentence.slice(UNSPECIFIED.length))) {
+  for (const problem of sentenceProblems(sentence.slice(UNSPECIFIED.length), false)) {
     problems.push(`${section.name}: the unspecified sentence: ${problem}`);
   }
   return problems;
@@ -366,6 +448,15 @@ async function checkBaseline(example: Example): Promise<void> {
 const SECTIONS = readSections(DOCS);
 const BY_NAME = new Map(SECTIONS.map((section) => [section.name, section]));
 const SHARED = readShared(DOCS);
+
+/** The prose of each shared rule, as the rules of a section are read. */
+function readSharedRules(shared: Section | undefined): string[] {
+  if (shared === undefined) return [];
+  const first = shared.lines.findIndex((line) => line.trim() !== '');
+  return readRules(shared, first + 1, []).bullets.map((bullet) => bullet.prose);
+}
+
+const SHARED_RULES = readSharedRules(SHARED);
 
 describe('docs/functions.md examples', () => {
   it('reads every example statement on the page, each inside a function section or the shared rules', () => {
@@ -394,7 +485,14 @@ describe('docs/functions.md for the functions added to 1.0.0', () => {
     const first = shared.lines.findIndex((line) => line.trim() !== '');
     expect(shared.lines[first], 'the sentence that opens the shared rules').toBe(SHARED_INTRO);
     expect(DOCS.split('\n').filter((line) => line === SHARED_HEADING)).toHaveLength(1);
-    const problems = await ruleProblems(shared, first + 1, ADDED, false);
+    const problems = await ruleProblems(shared, first + 1, ADDED, false, []);
+    expect(SHARED_RULES.length, 'the shared rules').toBeGreaterThan(0);
+    SHARED_RULES.forEach((rule, index) => {
+      for (const other of SHARED_RULES.slice(index + 1)) {
+        const how = overlap(rule, other, false);
+        if (how !== null) problems.push(`the shared rule "${rule}" ${how} "${other}"`);
+      }
+    });
     expect(problems, problems.join('\n')).toStrictEqual([]);
   });
 
@@ -404,8 +502,14 @@ describe('docs/functions.md for the functions added to 1.0.0', () => {
       expect(section, `${name}: its section`).toBeDefined();
       const lines = (section as Section).lines;
       const signature = lines.findIndex((line) => line.trim() !== '');
-      expect(lines[signature], `${name}: the signature`).toMatch(/^`[A-Z0-9_]+\(.*\) -> .+`$/);
-      const problems = await ruleProblems(section as Section, signature + 1, [name], true);
+      expect(lines[signature], `${name}: the signature`).toBe(signatureLine(name));
+      const problems = await ruleProblems(
+        section as Section,
+        signature + 1,
+        [name],
+        true,
+        SHARED_RULES,
+      );
       expect(problems, problems.join('\n')).toStrictEqual([]);
     });
   }

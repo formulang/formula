@@ -75,8 +75,9 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
       );
     }
 
-    // An operatorValue given, null included, is passed on; an omitted one is not.
-    const opValueProvider = args.length >= 4 ? constProvider(opValue) : undefined;
+    // A null operatorValue counts as omitted, as a null optional argument does in every rules
+    // section: the operator is then called with the key alone.
+    const opValueProvider = opValue == null ? undefined : constProvider(opValue);
     const predicateCalls: BatchEvaluationCall[] = keys.map((key, idx) => {
       ctx.budget.consume(1);
       return {

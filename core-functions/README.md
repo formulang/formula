@@ -147,10 +147,15 @@ the functions added since 1.0.0 state each function as rules, one rule of one
 sentence per bullet with at least two examples that give different results,
 share the rules under _Shared rules_, and close with one sentence naming the
 inputs they leave unspecified. `src/functions/function-docs.spec.ts` runs the
-examples on that page through the runtime and checks that form: a wrong
-example, a rule with fewer than two examples or with examples that all give
-one result, an example that does not call the section's function, a bullet of
-more than one sentence, and prose outside a rule each fail the suite.
+examples on that page through the runtime and checks the part of that form
+the _Rules_ convention of the reference lists: a wrong example, a rule with
+fewer than two examples or with examples that all give one result, an example
+that does not call the section's function, a signature line other than the
+one the registry renders, a bullet that is more than one sentence by its
+punctuation or that repeats a shared rule's words, and prose outside a rule
+each fail the suite; whether a bullet states one condition is for review to
+judge. `src/functions/shared-rules.spec.ts` runs each shared rule against
+every added function.
 Overview:
 
 | Category           | Functions                                                                                                                                                                                                                                                                                                                                                                |
@@ -190,9 +195,16 @@ safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
 [docs/functions.md](../docs/functions.md#text) (_Text_, **Work**) gives, for
 each text function, the work it does on its input, read from its code, and
 what bounds the input: a text the formula computes is bounded only by what the
-runtime bounds, as no formula limit applies to its length. That cost is what
-the code claims for its own loops and for the patterns it runs, and review owns
-those claims: no spec checks the complexity of a loop or of a pattern.
+runtime bounds, as no formula limit applies to its length.
+`src/functions/work-bounds.spec.ts` counts the work of the functions' own
+loops through a meter they feed only while a spec observes an evaluation
+(`src/functions/work-meter.ts`, not part of the entry point) and holds it in
+proportion to the input on inputs built to make each loop work hardest; the
+work inside the runtime's regular expressions, substring search and
+`Intl.Segmenter` is not counted, and review owns the claim that the fixed
+patterns run in linear time. What a call charges against the cost and step
+budgets is in the reference's _Charges_ table, which
+`src/functions/charges.spec.ts` holds each function to.
 `docs/functions.md` also records, measured, the four patterns of 1.0.0 code
 that read their input in more than linear time, among them the formula's own
 pattern in `"pattern"` mode, whose safe-regex rules, inherited from 1.0.0,

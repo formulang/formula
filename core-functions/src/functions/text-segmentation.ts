@@ -26,6 +26,7 @@ import {
 import { asNumber, isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { compileSafeRegex, type RegexCompileFailure } from './regex';
 import { someOccurrence } from './text-search';
+import { chargeWork } from './work-meter';
 
 /** How `WORDS`, `WORD_COUNT` and `LEADING_WORDS` find the words of a text. */
 export type WordSplitMode = 'whitespace' | 'letters' | 'locale' | 'pattern';
@@ -89,12 +90,14 @@ function countOf(items: Iterable<unknown>): number {
 
 function* nonEmptyMatches(text: string, re: RegExp): Generator<string> {
   for (const match of text.matchAll(re)) {
+    chargeWork(1);
     if (match[0].length > 0) yield match[0];
   }
 }
 
 function* wordLikeSegments(segmenter: Intl.Segmenter, text: string): Generator<string> {
   for (const segment of segmenter.segment(text)) {
+    chargeWork(1);
     if (segment.isWordLike === true) yield segment.segment;
   }
 }
@@ -214,6 +217,7 @@ function protectedPositions(text: string, keep: readonly string[]): Uint8Array |
   const marks = new Uint8Array(text.length + 1);
   let open = 0;
   for (let position = 0; position <= text.length; position++) {
+    chargeWork(1);
     open += depth[position];
     marks[position] = open > 0 ? 1 : 0;
   }
@@ -227,6 +231,7 @@ function sentencePieces(text: string, mode: SentenceSplitMode, keep: readonly st
   let start = 0;
   if (mode === 'punctuation') {
     for (const match of text.matchAll(PUNCTUATION_BREAK)) {
+      chargeWork(1);
       if (protectedAt !== null && protectedAt[match.index] === 1) continue;
       const piece = text.slice(start, match.index).trim();
       if (piece.length > 0) pieces.push(piece);
@@ -237,6 +242,7 @@ function sentencePieces(text: string, mode: SentenceSplitMode, keep: readonly st
     return pieces;
   }
   for (const match of text.matchAll(TERMINATOR_RUN)) {
+    chargeWork(1);
     const end = match.index + match[0].length;
     if (protectedAt !== null && protectedAt[end] === 1) continue;
     const piece = text.slice(start, end).trim();
@@ -255,6 +261,7 @@ function sentencePieces(text: string, mode: SentenceSplitMode, keep: readonly st
 function* linesOf(text: string, mode: LineSplitMode): Generator<string> {
   let start = 0;
   for (const match of text.matchAll(LINE_BREAK)) {
+    chargeWork(1);
     const line = text.slice(start, match.index);
     if (mode === 'all' || line.trim().length > 0) yield line;
     start = match.index + match[0].length;
