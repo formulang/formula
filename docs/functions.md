@@ -937,7 +937,8 @@ entry point). On inputs built to make each loop work hardest, each at three
 sizes, it holds the count in proportion to the input, between 1.8 and 2.2
 times as much at twice the size, and to at most six units per code unit; it
 holds each Knuth-Morris-Pratt search to at most twice the lengths of the text
-and the phrase together. The meter does not see the work inside the runtime's
+and the phrase together, and every input whose count is a fixed number of
+units per repetition to that exact count. The meter does not see the work inside the runtime's
 regular expressions, its substring search or `Intl.Segmenter`, and no spec
 measures time: that the fixed expressions run in linear time is what the code
 claims, and review owns that claim. Each cost but that of the formula's own
