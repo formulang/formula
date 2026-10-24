@@ -1812,6 +1812,7 @@ Unspecified: nothing.
     value: 'Wir liefern\u00A0schnell.',
   }); // []
   await evalOk('MISSING_FROM(LIST(" billig "); "billig")'); // []
+  await evalOk('MISSING_FROM(LIST("ab"); "a b")'); // ["ab"]
   await evalOk('MISSING_FROM(LIST("liefern schnell"); value; "exact")', {
     value: 'Wir liefern\n  schnell.',
   }); // ["liefern schnell"]
@@ -2173,6 +2174,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("> zitat"; "markdown")'); // "zitat"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '- a\n1. b\n2) c' }); // "a\nb\nc"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '| A | B |\n|---|---|\n| 1 | 2 |' }); // "A B\n1 2"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'p\n| A |\n|---|\n| 1 |' }); // "p\nA\n1"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a\nb' }); // "a b"
   ```
 
@@ -2534,6 +2536,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\nx\n\t````  ' }); // ["x"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\nx\n~~~\n```' }); // ["x\n~~~"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\nx\n``` y\n```' }); // ["x\n``` y"]
+  await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '````\na\n  ```\nb\n````' }); // ["a\n  ```\nb"]
   `````
 
 - Each line of a fenced block loses up to as many leading spaces as there are spaces and tabs before its opening fence.
@@ -2664,6 +2667,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\n| x\\|y |' }); // ["A", "x|y"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\n| x|y |' }); // ["A", "x"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\n| x\\y |' }); // ["A", "x\\y"]
   ```
 
 - A row's leading `|` is dropped, and so is its trailing `|` unless a backslash precedes it.
@@ -2673,6 +2677,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
     value: '| A | B |\n|---|---|\n| 1 | 2 \\|',
   }); // ["A B", "1 2 |"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '|A|B|\n|-|-|\n|1|2|' }); // ["A B", "1 2"]
   ```
 
 - A paragraph is a run of lines that start no other block, joined by one space.
