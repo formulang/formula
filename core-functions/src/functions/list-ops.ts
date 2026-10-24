@@ -290,7 +290,8 @@ function scalarKey(value: unknown): string | null {
   if (typeof value === 'string') return `text:${JSON.stringify(value)}`;
   if (typeof value === 'number') return `number:${value}`;
   if (typeof value === 'boolean') return `boolean:${value}`;
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  // Anything else is keyed only as a date, time or datetime: an object whose own kind is one of
+  // those and whose own `iso` is a text. A list holds neither property of its own.
   const own = (property: string): unknown =>
     Object.prototype.hasOwnProperty.call(value, property)
       ? (value as Record<string, unknown>)[property]
@@ -343,7 +344,7 @@ export class TakeImplementation extends AbstractEagerBatchImplementation {
     if (count === null || !Number.isInteger(count) || count < 0) {
       return typeWarning('TAKE', 'TAKE count must be a whole number of 0 or more');
     }
-    const rawStart = args.length >= 3 ? args[2] : null;
+    const rawStart = args[2];
     const start = rawStart == null ? 1 : asNumber(rawStart);
     if (start === null || !Number.isInteger(start) || start < 1) {
       return typeWarning('TAKE', 'TAKE start must be a whole number of 1 or more');
@@ -371,8 +372,7 @@ export class IndexOfImplementation extends AbstractEagerBatchImplementation {
     }
     const value = args[1];
     if (Array.isArray(value)) return typeWarning('INDEX_OF', 'INDEX_OF does not compare lists');
-    if (value == null || value === '') return makeOkNull('INDEX_OF');
-    // The coerced equality of INCLUDES and `=`.
+    // The coerced equality of INCLUDES and `=`, under which null and "" equal nothing.
     const index = list.findIndex((item) => equalsUnknownType(item, value) === true);
     return index < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', index + 1);
   }

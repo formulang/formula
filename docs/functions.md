@@ -24,7 +24,14 @@ arguments with `,` instead.
   `ARGUMENT_TYPE_MISMATCH`. Type problems only visible at runtime usually return
   `null` and attach a non-fatal warning to the node output (visible via
   `output.warnings`), rather than throwing. `AND`/`OR`/`NOT`/`IF` are the
-  exception: a non-boolean-like runtime value is a runtime error.
+  exception: a non-boolean-like runtime value is a runtime error. A warning's
+  or an error's code is part of what a function does, and the wording of its
+  message is not.
+- **Budgets.** Each call adds steps to the evaluation's step budget and charges
+  a cost estimate against `maxFunctionCostUnits` and `maxTotalCostUnits`
+  ([Resource limiting](architecture.md#36-resource-limiting-during-evaluation));
+  how many steps and how much cost a call of a given function takes is not part
+  of what it does.
 - **Modes.** A parameter that lists the values it admits (a `mode`, `match`,
   `normalise`, `format` or `kind`) takes a string literal naming one of them; a
   misspelt one is a compile-time `LITERAL_VALUE_NOT_ALLOWED` error, also when
@@ -1701,6 +1708,18 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\u0301' }); // null
   ```
 
+- In `"word"` mode, a character is a code point, so a surrogate pair is one character, and a lone surrogate is a character that is no letter, mark or number.
+
+  ```ts
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD800\uDC00owner' }); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD835\uDFFFowner' }); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\uD835\uDC00' }); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD83D\uDE00owner' }); // "owner"
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uDC00owner' }); // "owner"
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD835aowner' }); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD835\uFF21owner' }); // null
+  ```
+
 - In `"word"` mode, any occurrence of the phrase can be the one that counts.
 
   ```ts
@@ -1912,6 +1931,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("<b>bold</b> x"; "html")'); // "bold x"
   await evalOk('PLAIN_TEXT("<1>x"; "html")'); // "<1>x"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a href="x" title="a > b">link</a>' }); // "link"
+  await evalOk('PLAIN_TEXT("<a b=>x"; "html")'); // "x"
   ```
 
 - In `"html"`, a quoted attribute value is one in double or single quotes that directly follows an attribute name and `=`, with spaces, tabs, line breaks or form feeds allowed around the `=`.
@@ -1923,6 +1943,9 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b=c d="x>y">z' }); // "z"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a "b>c">d' }); // "c\">d"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b=="x>y">z' }); // "y\">z"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a /="x>y">z' }); // "y\">z"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b/="x>y">z' }); // "y\">z"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title="it\'s > b">x</a>' }); // "x"
   ```
 
 - In `"html"`, tag names are read in either letter case.
@@ -1947,6 +1970,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("a<p>x</p>b"; "html")'); // "a\nx\nb"
   await evalOk('PLAIN_TEXT("a<!-- x --->b"; "html")'); // "ab"
   await evalOk('PLAIN_TEXT("a<!-- x --!>b<!-- y --!z -->c"; "html")'); // "abc"
+  await evalOk('PLAIN_TEXT("a<!---!>b"; "html")'); // "a"
   ```
 
 - In `"html"`, `<!-->` and `<!--->` are whole comments.
@@ -1964,6 +1988,7 @@ Unspecified: nothing.
     value: "<!DOCTYPE html><?xml version='1.0'?><p>x</p>",
   }); // "x"
   await evalOk('PLAIN_TEXT("a<!b>c"; "html")'); // "ac"
+  await evalOk('PLAIN_TEXT("a<!>b>c"; "html")'); // "ab>c"
   await evalOk('PLAIN_TEXT("a!b>c"; "html")'); // "a!b>c"
   ```
 
@@ -2205,6 +2230,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("snake_case_x"; "markdown")'); // "snake_case_x"
   await evalOk('PLAIN_TEXT("(_(a)_)"; "markdown")'); // "((a))"
   await evalOk('PLAIN_TEXT("a_(a)_a"; "markdown")'); // "a_(a)_a"
+  await evalOk('PLAIN_TEXT("_ a_"; "markdown")'); // "_ a_"
   ```
 
 - In `"markdown"`, a `_` run can close emphasis when it is right-flanking and either not left-flanking or before punctuation.
@@ -2212,6 +2238,7 @@ Unspecified: nothing.
   ```ts
   await evalOk('PLAIN_TEXT("_a_."; "markdown")'); // "a."
   await evalOk('PLAIN_TEXT("_a_b"; "markdown")'); // "_a_b"
+  await evalOk('PLAIN_TEXT("_a _"; "markdown")'); // "_a _"
   ```
 
 - In `"markdown"`, a run that can close is removed with the nearest earlier run of the same character that can open, whatever their lengths.
@@ -2273,6 +2300,14 @@ Unspecified: nothing.
   ```ts
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\*a\\* \\\\' }); // "*a* \\"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a\\b \\\u00E4' }); // "a\\b \\\u00e4"
+  ```
+
+- In `"markdown"`, a backtick that a backslash escapes is text and takes no part in a run of backticks.
+
+  ```ts
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\``x`' }); // "`x"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\\``x' }); // "``x"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '``x`' }); // "``x`"
   ```
 
 - In `"markdown"`, inside a code span or an autolink, a backslash stays.
@@ -2456,6 +2491,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# Titel\n   ### drei\n#\n#\tTab' }); // ["Titel", "drei", "", "Tab"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# ' }); // [""]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', {
     value: '#x\n####### x\n    # vier\n\t# tab',
   }); // ["#x ####### x # vier # tab"]
@@ -2522,6 +2558,8 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
     value: 'a\n---\nb\n* * *\nc\n   ___\nd\n-\t-\t-',
   }); // ["a", "b", "c", "d"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n--\nb\n    ---\nc\n-*-' }); // ["a -- b --- c -*-"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n--- \nb' }); // ["a", "b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n---x' }); // ["a ---x"]
   ```
 
 - A list item starts with `-`, `*`, `+`, or one to nine digits and `.` or `)`, after any spaces or tabs, followed by a space, a tab or the end of the line.
@@ -2531,6 +2569,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
     value: '- a\n  - b\n\t- c\n3) d\n+ e\n123456789. f\n*\tg',
   }); // ["a", "b", "c", "d", "e", "f", "g"]
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '-x\n1234567890. y\n1.y' }); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '- ' }); // []
   ```
 
 - A list item's text runs on over the lines after it up to a blank line or a line that starts another block.
@@ -2957,6 +2996,8 @@ Unspecified: whether a date, time, datetime or other object equals another.
   await evalOk('FILTER_BY(LIST("x"; "y"); LIST(""; "z"); "IS_EMPTY")'); // ["x"]
   await evalOk('FILTER_BY(LIST(1; 2); LIST(5; 0); ">"; value)', { value: 0 }); // [1]
   await evalOk('FILTER_BY(LIST(1; 2); LIST(5; 0); ">"; value)', { value: null }); // []
+  await evalOk('FILTER_BY(LIST(1; 2); LIST(TRUE; TRUE); "AND")'); // [1, 2]
+  await evalOk('FILTER_BY(LIST(1; 2); LIST(TRUE; TRUE); "AND"; value)', { value: null }); // []
   ```
 
 - A key that the operator answers `FALSE` or `null` for drops its item.
@@ -3041,6 +3082,8 @@ Unspecified: an operator that reaches the call as a value that is not text, or a
   await evalOk('DISTINCT(value)', { value: [[1], 2] }); // null with a TYPE warning
   await evalOk('DISTINCT(value)', { value: [[], 2] }); // null with a TYPE warning
   await evalOk('DISTINCT(value)', { value: [{ a: 1 }] }); // null with a TYPE warning
+  await evalOk('DISTINCT(value)', { value: [{ iso: '2024-01-02' }] }); // null with a TYPE warning
+  await evalOk('DISTINCT(value)', { value: [{ __formula_object_kind: 'date', iso: 5 }] }); // null with a TYPE warning
   await evalOk('DISTINCT(value)', { value: [1, 2] }); // [1, 2]
   ```
 

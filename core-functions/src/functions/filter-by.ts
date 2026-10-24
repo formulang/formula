@@ -6,8 +6,9 @@ import type {
   FormulaValueProvider,
   FunctionImplementation,
 } from '@formulang/definitions';
-import { makeOkList, makeOkNull, makeOkUnknown, withWarnings } from '@formulang/definitions';
-import { listTooLarge } from './argument-readers';
+import { makeOkList, makeOkNull, makeOkUnknown } from '@formulang/definitions';
+import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
+import { listTooLarge, typeWarning } from './argument-readers';
 
 function constProvider(value: unknown): FormulaValueProvider {
   const out = makeOkUnknown('const', value);
@@ -33,95 +34,60 @@ function resolveCallable(
     const implementation = ctx.resolver.get(def.signatureId);
     if (implementation) return implementation;
   }
-  return undefined;
 }
 
 /**
  * `FILTER_BY(list, keys, operator, operatorValue?)`: keeps the items of `list` whose key at the
  * same position in `keys` satisfies `operator(key)` or `operator(key, operatorValue)`.
  */
-export class FilterByImplementation implements FunctionImplementation {
-  constructor(private readonly config: BaseFunctionConfig) {
-    void config;
+export class FilterByImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
   }
 
   estimateCostsInSeconds(args: unknown[]): number {
     return 0.0003 + 0.00005 * (Array.isArray(args[0]) ? args[0].length : 10);
   }
 
-  async evaluateMultiple(
-    calls: BatchEvaluationCall[],
+  protected async evaluate(
+    args: unknown[],
     ctx: FormulaExecutionContext,
-  ): Promise<FormulaNodeOutput[]> {
-    const meta = { signatureId: this.config.signatureId };
-    const outs: FormulaNodeOutput[] = [];
-    for (const call of calls) {
-      const target = (await call.args[0]?.output())?.value;
-      const keys = (await call.args[1]?.output())?.value;
-      const opName = (await call.args[2]?.output())?.value;
-      const hasOpValue = call.args.length >= 4;
-      const opValue = hasOpValue ? (await call.args[3]?.output())?.value : undefined;
-
-      // The arguments in order, each in full: null, then the type, then the bound.
-      const typeRefusal = withWarnings(makeOkNull('FILTER_BY', meta), [
-        { code: 'TYPE', message: 'FILTER_BY expects (list, keys, operator)' },
-      ]);
-      if (target == null) {
-        outs.push(makeOkNull('FILTER_BY', meta));
-        continue;
-      }
-      if (!Array.isArray(target)) {
-        outs.push(typeRefusal);
-        continue;
-      }
-      if (target.length > ctx.limits.maxListLength) throw listTooLarge();
-      if (keys == null) {
-        outs.push(makeOkNull('FILTER_BY', meta));
-        continue;
-      }
-      if (!Array.isArray(keys)) {
-        outs.push(typeRefusal);
-        continue;
-      }
-      if (keys.length > ctx.limits.maxListLength) throw listTooLarge();
-      if (typeof opName !== 'string') {
-        outs.push(typeRefusal);
-        continue;
-      }
-      if (target.length !== keys.length) {
-        outs.push(
-          withWarnings(makeOkNull('FILTER_BY', meta), [
-            { code: 'TYPE', message: 'FILTER_BY expects as many keys as list items' },
-          ]),
-        );
-        continue;
-      }
-
-      const chosenImpl = resolveCallable(ctx, opName);
-      if (!chosenImpl) {
-        outs.push(
-          withWarnings(makeOkNull('FILTER_BY', meta), [
-            {
-              code: 'TYPE',
-              message: `FILTER_BY found no implementation of ${JSON.stringify(opName)}`,
-            },
-          ]),
-        );
-        continue;
-      }
-
-      const opValueProvider = opValue !== undefined ? constProvider(opValue) : undefined;
-      const predicateCalls: BatchEvaluationCall[] = keys.map((key, idx) => {
-        ctx.budget.consume(1);
-        return {
-          args: opValueProvider ? [constProvider(key), opValueProvider] : [constProvider(key)],
-          callId: `${idx}`,
-        };
-      });
-      const predicateOuts = await chosenImpl.evaluateMultiple(predicateCalls, ctx);
-      const kept = target.filter((_item, i) => predicateOuts[i]?.value === true);
-      outs.push(makeOkList('FILTER_BY', kept, meta));
+  ): Promise<FormulaNodeOutput> {
+    const [target, keys, opName, opValue] = args;
+    // The arguments in order, each in full: null, then the type, then the bound.
+    if (target == null) return makeOkNull('FILTER_BY');
+    if (!Array.isArray(target)) return typeWarning('FILTER_BY', 'FILTER_BY expects a list');
+    if (target.length > ctx.limits.maxListLength) throw listTooLarge();
+    if (keys == null) return makeOkNull('FILTER_BY');
+    if (!Array.isArray(keys)) return typeWarning('FILTER_BY', 'FILTER_BY expects a list of keys');
+    if (keys.length > ctx.limits.maxListLength) throw listTooLarge();
+    if (typeof opName !== 'string') {
+      return typeWarning('FILTER_BY', 'FILTER_BY expects the name of an operator');
     }
-    return outs;
+    if (target.length !== keys.length) {
+      return typeWarning('FILTER_BY', 'FILTER_BY expects as many keys as list items');
+    }
+    const chosenImpl = resolveCallable(ctx, opName);
+    if (!chosenImpl) {
+      return typeWarning(
+        'FILTER_BY',
+        `FILTER_BY found no implementation of ${JSON.stringify(opName)}`,
+      );
+    }
+
+    // An operatorValue given, null included, is passed on; an omitted one is not.
+    const opValueProvider = args.length >= 4 ? constProvider(opValue) : undefined;
+    const predicateCalls: BatchEvaluationCall[] = keys.map((key, idx) => {
+      ctx.budget.consume(1);
+      return {
+        args: opValueProvider ? [constProvider(key), opValueProvider] : [constProvider(key)],
+        callId: `${idx}`,
+      };
+    });
+    const predicateOuts = await chosenImpl.evaluateMultiple(predicateCalls, ctx);
+    return makeOkList(
+      'FILTER_BY',
+      target.filter((_item, i) => predicateOuts[i]?.value === true),
+    );
   }
 }
