@@ -678,6 +678,16 @@ describe('Text segmentation', () => {
       }
     });
 
+    it('splitSentences throws TypeError for a text or keep list that is not one, and only then', () => {
+      let sentences: string[] = [];
+      expect(() => (sentences = splitSentences('Dr. A. B.', 'punctuation', ['Dr.']))).not.toThrow();
+      expect(sentences).toStrictEqual(['Dr. A.', 'B.']);
+      expect(() => splitSentences(new String('A. B.') as never)).toThrow(TypeError);
+      expect(() => splitSentences('A. B.', 'punctuation', new Uint8Array(0) as never)).toThrow(
+        TypeError,
+      );
+    });
+
     it('comes from the package entry, and is not bounded by maxWildcardOutputLength', () => {
       expect(entry.splitWords).toBe(splitWords);
       expect(entry.splitSentences).toBe(splitSentences);
