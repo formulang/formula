@@ -4,7 +4,8 @@ import { observeWork } from './work-meter';
 /**
  * The work of the text functions whose loops docs/functions.md (_Text_, **Work**) says read their
  * input in linear time, counted by the meter those loops feed (`work-meter.ts`): one unit per step
- * of a loop and per code unit one of the code's own `indexOf` scans reads. For each function,
+ * of each loop that walks the input and per code unit one of them hands to the runtime to search
+ * (the short loops inside one tag name, run, cell or line are not counted). For each function,
  * inputs built to make one of its loops work hardest are evaluated at three sizes, each twice the
  * one before. The count must grow with the input and in proportion to it (between 1.8 and 2.2
  * times as much at twice the size), and stay within `UNITS_PER_CODE_UNIT` units per code unit of

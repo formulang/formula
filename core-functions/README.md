@@ -196,8 +196,8 @@ safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
 each text function, the work it does on its input, read from its code, and
 what bounds the input: a text the formula computes is bounded only by what the
 runtime bounds, as no formula limit applies to its length.
-`src/functions/work-bounds.spec.ts` counts the work of the functions' own
-loops through a meter they feed only while a spec observes an evaluation
+`src/functions/work-bounds.spec.ts` counts the work of the loops that walk
+each function's input through a meter they feed only while a spec observes an evaluation
 (`src/functions/work-meter.ts`, not part of the entry point) and holds it in
 proportion to the input on inputs built to make each loop work hardest; the
 work inside the runtime's regular expressions, substring search and

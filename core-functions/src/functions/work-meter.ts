@@ -1,10 +1,15 @@
 /**
- * A count of the work the text functions' own loops do, for the spec that bounds it on their real
- * code paths: one unit per step of a loop, and per code unit that one of the code's own scans
- * reads with the runtime's `indexOf`. What the runtime does inside a regular expression, its
- * substring search or `Intl.Segmenter` is not counted. Production code feeds the count only while
- * a spec observes an evaluation (`observeWork`); every other evaluation counts nothing, and the
- * module is not part of the package's entry point.
+ * A count of the work the text functions do on their input, for the spec that bounds it on their
+ * real code paths: one unit per step of each loop that walks the input or carries a position
+ * across it (the scans of the HTML and of the inline markdown, the lines of a markdown document,
+ * the runs of backticks and of emphasis markers, the Knuth-Morris-Pratt searches, and the matches,
+ * segments, positions and lines the segmentation reads), and per code unit that one of those scans
+ * hands to the runtime to search (`indexOf`, an end tag's expression). The short loops inside one
+ * tag name, run, cell or line are not counted, each running once for an element a counted loop
+ * reaches; nor is what the runtime does inside a regular expression, its substring search or
+ * `Intl.Segmenter`. Production code feeds the count only while a spec observes an evaluation
+ * (`observeWork`); every other evaluation counts nothing, and the module is not part of the
+ * package's entry point.
  */
 
 let observed: { units: number } | undefined;

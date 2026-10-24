@@ -73,8 +73,9 @@ arguments with `,` instead.
   that runs the examples checks the form of each such section: the signature
   line, whole, against the one the registry renders; one code block of
   examples under each bullet and no other prose between the rules; each
-  bullet one sentence by its punctuation, ending with `.` and holding no
-  other `.`, `!` or `?`, no `;`, `:` or dash, and no comma before "and",
+  bullet one sentence by its punctuation outside code and link targets,
+  ending with `.` and holding no other `.`, `!` or `?`, no `;`, `:` or dash
+  (the closing sentence the same), and no comma before "and",
   "or", "but", "nor", "so", "yet" or "then"; no bullet that equals, holds, is
   held in or starts with the same four words as a shared rule; and at least
   two examples under each bullet, each calling the section's function and
@@ -323,7 +324,11 @@ table states: the cost it adds against `maxFunctionCostUnits` and
 `maxTotalCostUnits`, charged before the function reads its arguments, so that
 a call that returns `null` or raises an error pays it too, and the steps it
 adds to the step budget, the step of its own node included (each argument
-adds the steps of its own nodes).
+adds the steps of its own nodes). Each of these functions is `pure`, so a
+call that the runtime answers from its cache, the same function called again
+with arguments it has already answered for without a warning (within the
+evaluation, or across evaluations where the host keeps a cache), charges no
+cost and takes no step but its node's.
 
 | Function                                                                                       | Cost of a call                                | Steps of a call |
 | ---------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------- |
@@ -337,8 +342,10 @@ adds the steps of its own nodes).
 `items`, or 0 when it is no list; `N` is the length of `list`, or 10 when it
 is no list; `M` is the number of keys `FILTER_BY` calls its operator for,
 which is the length of `keys` once every argument has passed its check and 0
-otherwise. The calls `FILTER_BY` makes of its operator charge nothing more,
-neither cost nor steps. A text function's cost stops at 0.05 however long its
+otherwise. `FILTER_BY` charges no cost for the calls it makes of its operator,
+and no steps beyond those the operator's own implementation takes, as `EACH`
+and `FILTER` take one for each item they read. A text function's cost stops
+at 0.05 however long its
 text and however many its phrases, so no cost limit refuses a long text
 before it runs: the wall-time limits stop a call that does more work than it
 is charged for
@@ -348,7 +355,8 @@ function to it through the limits: for inputs of each kind, a call raises no
 `FUNCTION_COST_LIMIT_EXCEEDED` under a `maxFunctionCostUnits` a billionth
 above the cost the table gives and raises it under one a billionth below, and
 a formula raises no `EVAL_LIMIT_EXCEEDED` under a `maxEvaluationSteps` of
-exactly its steps and raises it under one step fewer.
+exactly its steps and raises it under one step fewer; a call answered from the
+cache it holds, in the same way, to no cost and to its node's step alone.
 
 ## Operator aliases
 
@@ -929,11 +937,13 @@ and what bounds the input:
 | `PLAIN_TEXT` (`"markdown"`), `MARKDOWN_BLOCKS` | one pass over the lines, fixed expressions on each, then one scan of each block's inline text                                                                                                                         | the length of `markup`; `MARKDOWN_BLOCKS`: the result at most `maxWildcardOutputLength`                                                             |
 
 This is read from the code. `core-functions/src/functions/work-bounds.spec.ts`
-counts the work of the functions' own loops, one unit per step of a loop and
-per code unit that one of the code's own `indexOf` scans reads, through a
-meter the code feeds only while a spec observes an evaluation
+counts the work of the loops that walk each function's input, one unit per
+step and per code unit that one of them hands to the runtime to search,
+through a meter the code feeds only while a spec observes an evaluation
 (`core-functions/src/functions/work-meter.ts`, not part of the package's
-entry point). On inputs built to make each loop work hardest, each at three
+entry point); the short loops inside one tag name, run, cell or line, each
+run once for an element a counted loop reaches, are not counted. On inputs
+built to make each loop work hardest, each at three
 sizes, it holds the count in proportion to the input, between 1.8 and 2.2
 times as much at twice the size, and to at most six units per code unit; it
 holds each Knuth-Morris-Pratt search to at most twice the lengths of the text
@@ -1532,7 +1542,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
 
   ```ts
   await evalOk('LEN(LEADING_WORDS(value; 5001))', { value: 'w '.repeat(5001) }); // 10001
-  await evalOk('LEN(LEADING_WORDS(value; 5001))', { value: 'w '.repeat(5000) }); // null
+  await evalOk('LEN(LEADING_WORDS(value; 2))', { value: 'w '.repeat(6000) }); // 3
   ```
 
 Unspecified: what [WORDS](#words) leaves unspecified.
@@ -2143,7 +2153,7 @@ Unspecified: nothing.
   }); // "B"
   ```
 
-- In `"html"`, only the end tags `</head>`, `</body>`, `</html>` and `</br>` end the head.
+- In `"html"`, of the end tags only `</head>`, `</body>`, `</html>` and `</br>` end the head.
 
   ```ts
   await evalOk('PLAIN_TEXT("<head></head><noscript>N</noscript>"; "html")'); // "N"
@@ -2192,7 +2202,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "html")', { value: '</pre>a\nb' }); // "a b"
   ```
 
-- In `"html"`, a decimal or hexadecimal (`x` or `X`) numeric reference of one digit or more (leading zeros included) closed by `;` gives its code point.
+- In `"html"`, a decimal or hexadecimal (`x` or `X`) numeric reference of one digit or more (leading zeros included) closed by `;` gives its code point when no rule below names its number.
 
   ```ts
   await evalOk('PLAIN_TEXT("&#65;&#x42;&#X43;&#0067;"; "html")'); // "ABCC"
@@ -3117,7 +3127,7 @@ Unspecified: nothing.
   await evalOk('INDEX(value; INDEX_OF(value; "b"))', { value: ['a', 'b'] }); // "b"
   ```
 
-- A text that JavaScript's `Number` reads as a finite number once the text is trimmed compares as that number.
+- A text whose trimmed form is not empty and that JavaScript's `Number` reads as a finite number compares as that number.
 
   ```ts
   await evalOk('INDEX_OF(value; "2")', { value: [1, 2, 3] }); // 2
@@ -3125,6 +3135,7 @@ Unspecified: nothing.
   await evalOk('INDEX_OF(value; "1")', { value: ['01'] }); // 1
   await evalOk('INDEX_OF(value; "0x10")', { value: [16] }); // 1
   await evalOk('INDEX_OF(value; "2x")', { value: [1, 2] }); // null
+  await evalOk('INDEX_OF(value; " ")', { value: [0, ' '] }); // 2
   ```
 
 - A text that is `true` or `false` in any letter case once trimmed compares as that boolean.

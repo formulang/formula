@@ -277,4 +277,29 @@ describe('the charges of the added functions, as the table under "Charges" state
       }
     });
   }
+
+  it('charges no cost, and no step but its node, for a call the runtime answers from its cache', async () => {
+    // The outer call's list and keys are the same inner call twice: the second is answered from
+    // the evaluation's cache. Inner: three keys, two above 0; outer: those two items and keys.
+    const source = 'FILTER_BY(FILTER_BY(v0; v1; ">"; v3); FILTER_BY(v0; v1; ">"; v3); ">"; v4)';
+    const variables = { v0: [1, 2, 3], v1: [5, 0, 5], v3: 0, v4: 0 };
+    const row = CHARGES.get('FILTER_BY') as Row;
+    const cost = (N: number) => formula(row.cost)({ T: 0, E: 0, N, M: 0 });
+    const steps = (M: number) => formula(row.steps)({ T: 0, E: 0, N: 0, M });
+    const charged = cost(2) + cost(3);
+    // The outer and the first inner call, the cached call's node, and ten argument nodes.
+    const total = steps(2) + steps(3) + 1 + 10;
+    expect(
+      await errorsUnder(source, variables, { maxTotalCostUnits: charged * (1 + 1e-9) }),
+    ).not.toContain('COST_LIMIT_EXCEEDED');
+    expect(
+      await errorsUnder(source, variables, { maxTotalCostUnits: charged * (1 - 1e-9) }),
+    ).toContain('COST_LIMIT_EXCEEDED');
+    expect(await errorsUnder(source, variables, { maxEvaluationSteps: total })).not.toContain(
+      'EVAL_LIMIT_EXCEEDED',
+    );
+    expect(await errorsUnder(source, variables, { maxEvaluationSteps: total - 1 })).toContain(
+      'EVAL_LIMIT_EXCEEDED',
+    );
+  });
 });
