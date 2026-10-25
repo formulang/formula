@@ -707,6 +707,95 @@ describe('the enumerated-literal rule, generated', () => {
     );
   });
 
+  it('passes a null argument on as its table entry says, and none where the entry omits a null', async () => {
+    // The same recording callee, now given `null` at every position an entry forwards: an entry
+    // that omits a null (`nullOmitted`) passes nothing there, every other one passes the null.
+    const { registry, implementations } = createCoreFormulaRuntime();
+    registry.registerVariable({ name: 'rows', description: 'Rows of `p`.', type: anything });
+    registry.registerVariable({ name: 'nothing', description: 'A null.', type: anything });
+    registry.registerFunction({
+      signatureId: 'REC/v1',
+      name: 'REC',
+      category: 'custom',
+      description: 'Records the arguments it receives.',
+      params: [{ name: 'values', type: anything, variadic: true }],
+      returnType: anything,
+      purity: 'uncached',
+    });
+    let received: unknown[][] = [];
+    implementations.register('REC/v1', {
+      estimateCostsInSeconds: () => 0.0001,
+      evaluateMultiple: async (calls) => {
+        for (const call of calls) {
+          received.push(await Promise.all(call.args.map((arg) => arg.value())));
+        }
+        return calls.map(() => makeOkBoolean('REC/v1', true));
+      },
+    });
+    const supplied = Symbol('a value the function supplies');
+    const dropped = new Set<string>();
+    const passed = new Set<string>();
+    for (const vehicle of VEHICLES) {
+      const def = coreHigherOrder.find((candidate) => candidate.name.toUpperCase() === vehicle);
+      const entry = def && invocationOf(def);
+      if (def === undefined || entry === undefined) throw new Error(`no invocation: ${vehicle}`);
+      const callableAt = def.params.findIndex((p) => stripNullability(p.type).kind === 'callable');
+      const listed = entry.flatMap((source) => (source.kind === 'item' ? [source.of] : []));
+      const required = def.params.filter((param) => param.optional !== true).length;
+      const most = def.params.length + (def.params[def.params.length - 1]?.variadic ? 2 : 0);
+      for (let count = required; count <= most; count++) {
+        const types = Array.from({ length: count }, () => anything);
+        const forwarded = new Set(
+          invokedArguments(entry, types).flatMap((arg) =>
+            arg.forwards === undefined ? [] : [arg.forwards],
+          ),
+        );
+        const args = Array.from({ length: count }, (_, index) => {
+          if (index === callableAt) return '"REC"';
+          if (listed.includes(index)) return `LIST("item${index}")`;
+          if (forwarded.has(index)) return 'nothing';
+          return UNDESCRIBED[vehicle]?.[index] ?? `"arg${index}"`;
+        });
+        const source = `${vehicle}(${args.join('; ')})`;
+        const parsed = parseFormula(source, { registry });
+        expect(parsed.errors, source).toStrictEqual([]);
+        received = [];
+        await evaluateRuleOutputAsync(optimizeRule(parsed, { registry }), {
+          registry,
+          resolver: implementations,
+          variables: { rows: [{ p: 'property' }], nothing: null },
+        });
+        const expected: unknown[] = [];
+        for (const each of entry) {
+          for (const arg of invokedArguments([each], types)) {
+            if (arg.forwards !== undefined && each.kind === 'argument' && each.nullOmitted) {
+              dropped.add(vehicle);
+              continue;
+            }
+            if (arg.forwards !== undefined) passed.add(vehicle);
+            expected.push(
+              arg.forwards !== undefined
+                ? null
+                : each.kind === 'item'
+                  ? `item${each.of}`
+                  : supplied,
+            );
+          }
+        }
+        expect(received.length, source).toBe(1);
+        const [values] = received;
+        expect(values.length, source).toBe(expected.length);
+        expected.forEach((value, position) => {
+          if (value !== supplied) expect(values[position], `${source} ${position}`).toBe(value);
+        });
+      }
+    }
+    // Not vacuous: FILTER_BY drops its null operatorValue; EACH, FILTER and FILTER_PROPERTY pass
+    // theirs on.
+    expect([...dropped].sort()).toStrictEqual(['FILTER_BY']);
+    expect([...passed].sort()).toStrictEqual(['EACH', 'FILTER', 'FILTER_PROPERTY']);
+  });
+
   it('keeps FILTER_BY’s checks when it is registered again under another signature id', () => {
     const check = runtimeFor('reversioned', SETS[0] as OverloadSet, 'listed', []);
     expect(check.registry.getFunction('FILTER_BY/v2')).toBeDefined();

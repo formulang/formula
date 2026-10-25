@@ -117,7 +117,7 @@ A `FunctionDefinition` is data: name, aliases, params (each with `optional`, `va
 - **Purity** drives caching: `pure` results may be memoized across evaluations (keyed by signature id + arguments), `run_cached` results are cached only within a single evaluation run, and `uncached` results never are (`NOW`, `TODAY`).
 - **`controlFlow: true`** lets an implementation skip evaluating arguments (`IF`, `AND`, `OR`); arguments arrive as memoized, lazy `FormulaValueProvider`s.
 - **`redaction: 'mask'`** (available on functions and variables) masks the value in per-node debug output.
-- Implementations are **batch-first**: `evaluateMultiple(calls, ctx)` receives many calls at once and returns structured `FormulaNodeOutput`s (value, warnings, error, children) rather than throwing. The helpers in [`execution-helpers.ts`](src/execution-helpers.ts) (`makeOkNumber`, `makeError`, `expectText`, ...) keep implementations small. Optional hooks: `tryStaticEvaluate` for parse-time folding and `estimateCostsInSeconds` for cost limits.
+- Implementations are **batch-first**: `evaluateMultiple(calls, ctx)` receives many calls at once and returns structured `FormulaNodeOutput`s (value, warnings, error, children) rather than throwing. The helpers in [`execution-helpers.ts`](src/execution-helpers.ts) (`makeOkNumber`, `makeError`, `expectText`, ...) keep implementations small. Optional hooks: `tryStaticEvaluate` for parse-time folding and `estimateCostsInSeconds` for cost limits. The execution context's optional `chargeCall(signatureId, args)`, which the runner provides, charges a call that an implementation makes of another implementation itself, as the runner charges a call of a formula.
 
 ### Limits and errors
 

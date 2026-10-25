@@ -202,6 +202,7 @@ function protectedPositions(text: string, keep: readonly string[]): Uint8Array |
   // depth[p + 1] - depth[p]: how many protected ranges open (+) or close (-) at position p.
   const ranges: { depth: Int32Array | null } = { depth: null };
   for (const token of keep) {
+    chargeWork(1);
     const startsWithWordCharacter = isWordCharacterAt(token, 0);
     someOccurrence(text, token, (at) => {
       if (startsWithWordCharacter && isWordCharacterBefore(text, at)) return false;

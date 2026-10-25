@@ -70,4 +70,27 @@ Also present: root `README.md` (project overview), `SECURITY.md` (security model
 1. Add a signature id in `definitions/src/builtin-signature-ids.ts` and the portable definition (name, params, return type, purity — plus an operator registration if it has an operator form) in `definitions/src/register-core-definitions.ts`.
 2. Implement it in `core-functions/src/functions/<name>.ts` (most implementations extend `AbstractEagerBatchImplementation`) and register the implementation under its signature id in `core-functions/src/functions/register-primitive-implementations.ts`.
 3. Add a co-located `<name>.spec.ts` next to the implementation.
-4. Document the function in `docs/functions.md`: its signature, one bullet per rule, each one condition and its outcome in one sentence with at least two `evalOk`/`evalErrors` examples under it that call the function and give different results, and one closing `Unspecified:` sentence; rules every such function shares go under _Shared rules_, once, and no section states them again. For every function the 1.0.0 baseline does not name, `core-functions/src/functions/function-docs.spec.ts` runs every example on that page and checks exactly this much of that form: the signature line equals the one the registry renders; each bullet has one code block of at least two examples and is one sentence by its punctuation outside code and link targets (it ends with `.` and holds no other `.`, `!` or `?`, no `;`, `:` or dash, and no comma before "and", "or", "but", "nor", "so", "yet" or "then"); no bullet equals, holds, is held in or starts with the same four words as a shared rule; each example calls the function and gives what its comment states, and a bullet's examples do not all state one result. Whether a bullet states one condition, whether a rule holds beyond its examples, and a shared rule restated in other words remain the reviewer's to check. `core-functions/src/functions/shared-rules.spec.ts` runs each shared rule against every added function and every parameter the rule governs, read from the live registry.
+4. Document the function in `docs/functions.md`: its signature, one bullet per rule, each one condition and its outcome in one sentence with at least two `evalOk`/`evalErrors` examples under it that call the function and give different results, and one closing `Unspecified:` sentence; rules every such function shares go under _Shared rules_, once, and no section states them again. `core-functions/src/functions/shared-rules.spec.ts` runs each shared rule against every added function and every parameter the rule governs, read from the live registry.
+
+   `core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+
+   - Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
+   - Such a section opens with its signature line, the whole line as the live registry renders it.
+   - Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.
+   - With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.
+   - No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".
+   - Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
+   - The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.
+   - Each bullet has at least two examples.
+   - The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
+   - Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
+   - At least two of the examples of a bullet state different results.
+   - Every example statement on the page is read, each inside a function section or the shared rules.
+   - Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
+
+   It cannot decide these, which the reviewer decides:
+
+   - Whether a bullet states one condition and its outcome.
+   - Whether a rule holds beyond its examples.
+   - Whether the examples of a rule sit on either side of its condition.
+   - Whether a bullet restates a shared rule in other words.

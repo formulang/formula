@@ -175,6 +175,11 @@ result.errors[0]; // { kind: 'security', code: 'WALL_TIME_LIMIT_EXCEEDED',
 The cost budget works the same way: estimates come from implementations' `estimateCostsInSeconds`;
 calls without an estimator (including control-flow calls like `IF`) count 0.05 units, so
 `limits: { maxTotalCostUnits: 0.04 }` fails any formula containing `IF` with `COST_LIMIT_EXCEEDED`.
+An implementation that calls another implementation itself, as a higher-order function does, can
+have each such call charged the same way through the execution context's
+`chargeCall(signatureId, args)`, which the runner provides: `FILTER_BY` charges each call of its
+operator so, while `EACH`, `FILTER`, `FILTER_PROPERTY` and `REDUCE`, as in 1.0.0, charge only their
+own estimate.
 
 ### Tracing a run with the per-node output tree
 

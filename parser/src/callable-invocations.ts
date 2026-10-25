@@ -13,14 +13,18 @@ export type InvokedArgument = { type: FormulaType; forwards?: number };
  * One argument a higher-order function passes to the function its callable parameter names, by
  * where the value comes from; every index is the position of an argument in the call.
  * - `item`: an item of the list the call passes at `of`.
- * - `argument`: the call's argument at `at`, passed on unchanged; nothing when the call omits it.
+ * - `argument`: the call's argument at `at`, passed on unchanged; nothing when the call omits it,
+ *   and, with `nullOmitted`, nothing when its value is `null` as the call runs. The parser checks
+ *   the callable against the arguments as the call writes them, so a written argument that is
+ *   `null` when the call runs reaches the callable as an omitted one would, which the parser
+ *   checks only where the call omits it.
  * - `arguments`: every call argument from `from` on, each passed on unchanged.
  * - `value`: a value the function supplies when it runs, typed as the call's argument at `typeOf`,
  *   or of any type without it.
  */
 export type InvokedSource =
   | { kind: 'item'; of: number }
-  | { kind: 'argument'; at: number }
+  | { kind: 'argument'; at: number; nullOmitted?: true }
   | { kind: 'arguments'; from: number }
   | { kind: 'value'; typeOf?: number };
 
@@ -152,11 +156,11 @@ function canonical(head: (number | undefined)[], from: number, end: number): Pas
  * these names only through its `aliases`, as on 1.0.0. The table is closed: a definition cannot add
  * to it. Specs reconcile it, both ways, with every core definition that has a callable parameter,
  * with the implementations of those functions (what each passes its callable when it runs, at every
- * count of arguments), with what the parser does (each function registered again under another
- * signature id parses alike, and a call's type follows its result rule or, without one, the type a
- * plain copy gets), with the enumerated-literal matrix and with the compatibility harness, and check
- * that every entry passes the callable fewer arguments than its call holds whenever it passes one
- * on.
+ * count of arguments, and with `null` at each position its entry forwards), with what the parser
+ * does (each function registered again under another signature id parses alike, and a call's type
+ * follows its result rule or, without one, the type a plain copy gets), with the enumerated-literal
+ * matrix and with the compatibility harness, and check that every entry passes the callable fewer
+ * arguments than its call holds whenever it passes one on.
  */
 export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new Map<
   string,
@@ -190,12 +194,13 @@ export const INVOCATIONS_BY_NAME: ReadonlyMap<string, CallableInvocation> = new 
     ],
   ],
   // FILTER_BY(target; keys; operator; operatorValue?) calls operator(key[; operatorValue]), the key
-  // taken from `keys` at the item's position.
+  // taken from `keys` at the item's position, and operatorValue passed on unless it is null when
+  // the call runs, as a null optional argument counts as omitted in its rules.
   [
     'FILTER_BY',
     [
       { kind: 'item', of: 1 },
-      { kind: 'argument', at: 3 },
+      { kind: 'argument', at: 3, nullOmitted: true },
     ],
   ],
 ]);

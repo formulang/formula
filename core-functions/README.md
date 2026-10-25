@@ -146,16 +146,33 @@ function — is in **[docs/functions.md](../docs/functions.md)**. The sections o
 the functions added since 1.0.0 state each function as rules, one rule of one
 sentence per bullet with at least two examples that give different results,
 share the rules under _Shared rules_, and close with one sentence naming the
-inputs they leave unspecified. `src/functions/function-docs.spec.ts` runs the
-examples on that page through the runtime and checks the part of that form
-the _Rules_ convention of the reference lists: a wrong example, a rule with
-fewer than two examples or with examples that all give one result, an example
-that does not call the section's function, a signature line other than the
-one the registry renders, a bullet that is more than one sentence by its
-punctuation or that repeats a shared rule's words, and prose outside a rule
-each fail the suite; whether a bullet states one condition is for review to
-judge. `src/functions/shared-rules.spec.ts` runs each shared rule against
-every added function.
+inputs they leave unspecified. `src/functions/shared-rules.spec.ts` runs each
+shared rule against every added function and every parameter the rule
+governs, read from the live registry.
+
+`core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+
+- Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
+- Such a section opens with its signature line, the whole line as the live registry renders it.
+- Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.
+- With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.
+- No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".
+- Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
+- The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.
+- Each bullet has at least two examples.
+- The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
+- Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
+- At least two of the examples of a bullet state different results.
+- Every example statement on the page is read, each inside a function section or the shared rules.
+- Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
+
+It cannot decide these, which the reviewer decides:
+
+- Whether a bullet states one condition and its outcome.
+- Whether a rule holds beyond its examples.
+- Whether the examples of a rule sit on either side of its condition.
+- Whether a bullet restates a shared rule in other words.
+
 Overview:
 
 | Category           | Functions                                                                                                                                                                                                                                                                                                                                                                |
@@ -199,12 +216,17 @@ runtime bounds, as no formula limit applies to its length.
 `src/functions/work-bounds.spec.ts` counts the work of the loops that walk
 each function's input through a meter they feed only while a spec observes an evaluation
 (`src/functions/work-meter.ts`, not part of the entry point) and holds it in
-proportion to the input on inputs built to make each loop work hardest; the
+proportion to the input on inputs built to make each loop work hardest
+(`src/test-helpers/work-corpus.ts`), each observed with its bound as the
+meter's limit, so a loop that works past it stops at once; the
 work inside the runtime's regular expressions, substring search and
 `Intl.Segmenter` is not counted, and review owns the claim that the fixed
 patterns run in linear time. What a call charges against the cost and step
-budgets is in the reference's _Charges_ table, which
-`src/functions/charges.spec.ts` holds each function to.
+budgets is in the reference's _Charges_ table and the conditions under it (a
+call answered from the cache, the cache's keys and bounds, and a call that
+`EACH`, `FILTER`, `FILTER_PROPERTY` or `REDUCE` makes, which charges nothing of
+its own, as in 1.0.0), which `src/functions/charges.spec.ts` holds each
+function to, under each condition.
 `docs/functions.md` also records, measured, the four patterns of 1.0.0 code
 that read their input in more than linear time, among them the formula's own
 pattern in `"pattern"` mode, whose safe-regex rules, inherited from 1.0.0,

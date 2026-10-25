@@ -84,4 +84,27 @@ All packages share a single version, and contributors normally never touch it â€
 
 ## Adding a built-in function
 
-Adding a function touches four places: a definition (portable metadata in `@formulang/definitions`), an implementation (executable code in `@formulang/core-functions`), a co-located spec file, and an entry in [docs/functions.md](docs/functions.md). A function that 1.0.0 does not have is documented as its signature, one bullet per rule with examples under each, and one closing `Unspecified:` sentence naming the inputs the rules leave open; `core-functions/src/functions/function-docs.spec.ts` runs every example on that page and checks the part of that form a machine can see, which the _Rules_ convention of [docs/functions.md](docs/functions.md#conventions) lists; whether a bullet states one condition and whether a rule holds beyond its examples are the reviewer's to check. The full walkthrough is in [docs/extending.md](docs/extending.md).
+Adding a function touches four places: a definition (portable metadata in `@formulang/definitions`), an implementation (executable code in `@formulang/core-functions`), a co-located spec file, and an entry in [docs/functions.md](docs/functions.md). A function that 1.0.0 does not have is documented as its signature, one bullet per rule with examples under each, and one closing `Unspecified:` sentence naming the inputs the rules leave open. The full walkthrough is in [docs/extending.md](docs/extending.md).
+
+`core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+
+- Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
+- Such a section opens with its signature line, the whole line as the live registry renders it.
+- Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.
+- With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.
+- No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".
+- Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
+- The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.
+- Each bullet has at least two examples.
+- The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
+- Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
+- At least two of the examples of a bullet state different results.
+- Every example statement on the page is read, each inside a function section or the shared rules.
+- Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
+
+It cannot decide these, which the reviewer decides:
+
+- Whether a bullet states one condition and its outcome.
+- Whether a rule holds beyond its examples.
+- Whether the examples of a rule sit on either side of its condition.
+- Whether a bullet restates a shared rule in other words.

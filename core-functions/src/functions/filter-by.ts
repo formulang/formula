@@ -6,7 +6,7 @@ import type {
   FormulaValueProvider,
   FunctionImplementation,
 } from '@formulang/definitions';
-import { makeOkList, makeOkNull, makeOkUnknown } from '@formulang/definitions';
+import { makeError, makeOkList, makeOkNull, makeOkUnknown } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { listTooLarge, typeWarning } from './argument-readers';
 
@@ -19,20 +19,24 @@ function constProvider(value: unknown): FormulaValueProvider {
 }
 
 /**
- * The implementation `FILTER_BY` calls, found as `FILTER` finds its operator's: the function behind
- * an operator token, otherwise the first function of that name that has an implementation. That
- * need not be the overload the parser checked for the types of the keys and of the operator value,
- * which is why the parser checks a literal the call passes on against every overload of the name.
+ * The implementation `FILTER_BY` calls, with its signature id, found as `FILTER` finds its
+ * operator's: the function behind an operator token, otherwise the first function of that name
+ * that has an implementation. That need not be the overload the parser checked for the types of
+ * the keys and of the operator value, which is why the parser checks a literal the call passes on
+ * against every overload of the name.
  */
 function resolveCallable(
   ctx: FormulaExecutionContext,
   name: string,
-): FunctionImplementation | undefined {
+): { signatureId: string; implementation: FunctionImplementation } | undefined {
   const operator = ctx.registry.getOperator(name);
-  if (operator) return ctx.resolver.get(operator.functionSignatureId);
+  if (operator) {
+    const implementation = ctx.resolver.get(operator.functionSignatureId);
+    return implementation && { signatureId: operator.functionSignatureId, implementation };
+  }
   for (const def of ctx.registry.listFunctionsByName(name)) {
     const implementation = ctx.resolver.get(def.signatureId);
-    if (implementation) return implementation;
+    if (implementation) return { signatureId: def.signatureId, implementation };
   }
 }
 
@@ -67,8 +71,8 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
     if (target.length !== keys.length) {
       return typeWarning('FILTER_BY', 'FILTER_BY expects as many keys as list items');
     }
-    const chosenImpl = resolveCallable(ctx, opName);
-    if (!chosenImpl) {
+    const chosen = resolveCallable(ctx, opName);
+    if (!chosen) {
       return typeWarning(
         'FILTER_BY',
         `FILTER_BY found no implementation of ${JSON.stringify(opName)}`,
@@ -76,16 +80,29 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
     }
 
     // A null operatorValue counts as omitted, as a null optional argument does in every rules
-    // section: the operator is then called with the key alone.
+    // section: the operator is then called with the key alone. Each call of the operator is
+    // charged as the runner charges a call of a formula, and takes one step.
     const opValueProvider = opValue == null ? undefined : constProvider(opValue);
     const predicateCalls: BatchEvaluationCall[] = keys.map((key, idx) => {
       ctx.budget.consume(1);
+      ctx.chargeCall?.(chosen.signatureId, opValueProvider ? [key, opValue] : [key]);
       return {
         args: opValueProvider ? [constProvider(key), opValueProvider] : [constProvider(key)],
         callId: `${idx}`,
       };
     });
-    const predicateOuts = await chosenImpl.evaluateMultiple(predicateCalls, ctx);
+    const predicateOuts = await chosen.implementation.evaluateMultiple(predicateCalls, ctx);
+    // An error the operator gives for a key, as an output rather than thrown, is the call's: the
+    // first, in the order of the keys.
+    const failed = predicateOuts.find((out) => out?.ok === false && out.error !== undefined);
+    if (failed?.error) {
+      return makeError('FILTER_BY', {
+        kind: failed.error.kind,
+        code: failed.error.code,
+        message: failed.error.message,
+        meta: failed.error.meta,
+      });
+    }
     return makeOkList(
       'FILTER_BY',
       target.filter((_item, i) => predicateOuts[i]?.value === true),

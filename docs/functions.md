@@ -57,11 +57,6 @@ arguments with `,` instead.
   The comment after each call shows that value.
   `evalErrors(source, variables?)`, from the same file, returns instead the
   codes of the errors the formula reports, and its comment shows them.
-  `core-functions/src/functions/function-docs.spec.ts` runs the examples on
-  this page and compares each result with its comment, read as JSON less a note
-  in brackets after it, except six it names: two whose value is the current
-  date, three that name a variable they do not give, and one whose comment
-  marks its value with `~`.
 - **Rules.** Some sections state their function as rules. Each bullet states
   one condition and its outcome in one sentence, and its examples include one
   where the condition holds and one, on the nearest input, where it does not.
@@ -69,20 +64,30 @@ arguments with `,` instead.
   rules leave unspecified, and the [shared rules](#shared-rules) hold in each
   of them, stated there once. In those sections the comment of an `evalOk`
   call also names the warning the call attaches (`null with a TYPE warning`),
-  and a comment that names none states that the call attaches none. The spec
-  that runs the examples checks the form of each such section: the signature
-  line, whole, against the one the registry renders; one code block of
-  examples under each bullet and no other prose between the rules; each
-  bullet one sentence by its punctuation outside code and link targets,
-  ending with `.` and holding no other `.`, `!` or `?`, no `;`, `:` or dash
-  (the closing sentence the same), and no comma before "and",
-  "or", "but", "nor", "so", "yet" or "then"; no bullet that equals, holds, is
-  held in or starts with the same four words as a shared rule; and at least
-  two examples under each bullet, each calling the section's function and
-  giving what its comment states, not all stating one result. Whether a
-  bullet states one condition, whether a rule holds beyond its examples,
-  whether its examples sit on either side of its condition, and a shared rule
-  restated in other words are for review to judge.
+  and a comment that names none states that the call attaches none.
+
+  `core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+
+  - Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
+  - Such a section opens with its signature line, the whole line as the live registry renders it.
+  - Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.
+  - With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.
+  - No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".
+  - Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
+  - The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.
+  - Each bullet has at least two examples.
+  - The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
+  - Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
+  - At least two of the examples of a bullet state different results.
+  - Every example statement on the page is read, each inside a function section or the shared rules.
+  - Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
+
+  It cannot decide these, which the reviewer decides:
+
+  - Whether a bullet states one condition and its outcome.
+  - Whether a rule holds beyond its examples.
+  - Whether the examples of a rule sit on either side of its condition.
+  - Whether a bullet restates a shared rule in other words.
 
 ## Shared rules
 
@@ -319,44 +324,78 @@ These rules hold in every section that states its function as rules, for each ar
 
 ## Charges
 
-A call of a function whose section states it as rules charges what this
-table states: the cost it adds against `maxFunctionCostUnits` and
-`maxTotalCostUnits`, charged before the function reads its arguments, so that
-a call that returns `null` or raises an error pays it too, and the steps it
-adds to the step budget, the step of its own node included (each argument
-adds the steps of its own nodes). Each of these functions is `pure`, so a
-call that the runtime answers from its cache, the same function called again
-with arguments it has already answered for without a warning (within the
-evaluation, or across evaluations where the host keeps a cache), charges no
-cost and takes no step but its node's.
+A call of a function whose section states it as rules, written in a formula,
+charges what this table states: the cost it adds against `maxFunctionCostUnits`
+and `maxTotalCostUnits`, charged before the function reads its arguments, so
+that a call that returns `null` or raises an error pays it too, and the steps
+it adds to the step budget, the step of its own node included (each argument
+adds the steps of its own nodes).
 
 | Function                                                                                       | Cost of a call                                | Steps of a call |
 | ---------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------- |
 | `WORDS`, `WORD_COUNT`, `LEADING_WORDS`, `LINES`, `LINE_COUNT`, `PLAIN_TEXT`, `MARKDOWN_BLOCKS` | `min(0.05, 0.00001 + 0.000001 × T)`           | `1`             |
 | `SENTENCES`, `FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`                                 | `min(0.05, 0.00001 + 0.000001 × T × (1 + E))` | `1`             |
 | `TAKE`, `INDEX_OF`, `DISTINCT`, `GROUP_COUNTS`                                                 | `0.00002 + 0.00002 × N`                       | `1`             |
-| `FILTER_BY`                                                                                    | `0.0003 + 0.00005 × N`                        | `1 + M`         |
+| `FILTER_BY`                                                                                    | `0.0003 + 0.00005 × N + C`                    | `1 + M`         |
 
 `T` is the length in code units of `text` (of `markup` for `PLAIN_TEXT`), or
 50 when that argument is no text; `E` is the length of `keep`, `phrases` or
 `items`, or 0 when it is no list; `N` is the length of `list`, or 10 when it
 is no list; `M` is the number of keys `FILTER_BY` calls its operator for,
 which is the length of `keys` once every argument has passed its check and 0
-otherwise. `FILTER_BY` charges no cost for the calls it makes of its operator,
-and no steps beyond those the operator's own implementation takes, as `EACH`
-and `FILTER` take one for each item they read. A text function's cost stops
-at 0.05 however long its
+otherwise; and `C` is what those calls cost, each charged as the runtime
+charges a call it makes itself, the operator's own estimate or 0.05 when it has
+none, against both limits, before `FILTER_BY` makes any of them. The calls of
+the operator take no steps but the `M` of the table and those the operator's
+own implementation takes. A text function's cost stops at 0.05 however long its
 text and however many its phrases, so no cost limit refuses a long text
 before it runs: the wall-time limits stop a call that does more work than it
 is charged for
 ([best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)).
+
+The runtime charges a call otherwise under three conditions, which the table
+does not include:
+
+- A call that the runtime answers from its cache charges no cost and takes no
+  step but its node's. Each of these functions is `pure`, so a call is answered
+  from the cache when the same function was called with the same arguments,
+  in a position that expects the same type of its result (the type of the
+  parameter it is an argument of), earlier in the evaluation, or in an earlier
+  evaluation where the host passes a cache, and that call gave no warning and
+  no error.
+- Arguments are the same as the cache keys them: a text, a number or a boolean
+  by its value, a list of at most 50 members, each `null`, a text, a number or
+  a boolean, by its members' values, and any other value, a longer list or a
+  list that holds a list or an object among them, by its identity, so a
+  variable read twice gives the same list, and an equal list in another
+  variable does not. A call with a text argument longer than
+  `maxCacheableStringLength` (500 code units by default), or with a list
+  argument that holds such a text among the first 200 members the cache reads
+  of it, is never answered from the cache, so every such call is charged.
+- A call that `EACH`, `FILTER`, `FILTER_PROPERTY` or `REDUCE` makes through the
+  callable it is given charges neither the cost of its row nor its node's step,
+  as in 1.0.0: the higher-order function charges its own cost, which grows with
+  its list and not with the work of the calls, and one step for each item it
+  reads, so no cost limit refuses expensive calls made this way
+  ([best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)).
+  What such a call does inside is charged as ever: a `FILTER_BY` called so
+  takes the steps of `M` and charges `C`.
+
 `core-functions/src/functions/charges.spec.ts` reads this table and holds each
-function to it through the limits: for inputs of each kind, a call raises no
+function to it through the limits, for inputs of each kind: a call raises no
 `FUNCTION_COST_LIMIT_EXCEEDED` under a `maxFunctionCostUnits` a billionth
-above the cost the table gives and raises it under one a billionth below, and
-a formula raises no `EVAL_LIMIT_EXCEEDED` under a `maxEvaluationSteps` of
-exactly its steps and raises it under one step fewer; a call answered from the
-cache it holds, in the same way, to no cost and to its node's step alone.
+above the cost of its own call and raises it under one a billionth below, and
+a formula raises no `COST_LIMIT_EXCEEDED` under a `maxTotalCostUnits` a
+billionth above all it is charged, by the table and the conditions, and raises
+it under one a billionth below, and raises no `EVAL_LIMIT_EXCEEDED` under a
+`maxEvaluationSteps` of exactly its steps and raises it under one step fewer.
+It holds every function so under each condition: a call made twice with short
+arguments, made twice with a text past the cache's bound, made in two
+variables with equal values, short or of 51 members or holding a list, and made
+by `EACH`, as well as one call each by `FILTER`, `FILTER_PROPERTY` and
+`REDUCE`, and a call answered from a cache the host passes; and it runs the
+examples of [best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)
+under the default limits.
 
 ## Operator aliases
 
@@ -929,7 +968,7 @@ and what bounds the input:
 | Function                                       | Work                                                                                                                                                                                                                  | Bounded by                                                                                                                                          |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WORDS`, `WORD_COUNT`, `LEADING_WORDS`         | one fixed expression over the text (`"whitespace"`, `"letters"`), the runtime's `Intl.Segmenter` (`"locale"`), or the formula's own expression (`"pattern"`)                                                          | `"pattern"`: the [MATCH_EXPRESSION](#match_expression) rules and the text at most `maxRegexTextLength` (8,000), which do not bound the time (below) |
-| `SENTENCES`                                    | one fixed expression over the text (in `"terminators"` mode a second on each piece), and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token                                             | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
+| `SENTENCES`                                    | one fixed expression over the text (in `"terminators"` mode a second on each piece), and one Knuth-Morris-Pratt search per `keep` token, linear in the text and the token, one step for a token longer than the text  | `keep` at most `maxListLength`; the result at most `maxWildcardOutputLength`                                                                        |
 | `LINES`, `LINE_COUNT`                          | one scan for the line breaks with a fixed expression, each line trimmed in `"non-blank"` mode; `LINE_COUNT` counts the lines as it finds them                                                                         | `LINES`: the result at most `maxWildcardOutputLength`                                                                                               |
 | `FIRST_CONTAINED`, `CONTAINS_ANY`              | per phrase in list order, the runtime's own substring search (`"substring"`) or one Knuth-Morris-Pratt search (`"word"`): the text's length times the number of phrases, plus the phrases' lengths, in the worst case | `phrases` at most `maxListLength`, each at most 250 code units as searched for                                                                      |
 | `MISSING_FROM`                                 | the text normalised once, then per item its normalisation and the runtime's own substring search: the text's length times the number of items, plus the items' lengths, in the worst case                             | `items` at most `maxListLength`, each at most 250 code units once normalised                                                                        |
@@ -943,12 +982,16 @@ through a meter the code feeds only while a spec observes an evaluation
 (`core-functions/src/functions/work-meter.ts`, not part of the package's
 entry point); the short loops inside one tag name, run, cell or line, each
 run once for an element a counted loop reaches, are not counted. On inputs
-built to make each loop work hardest, each at three
+built to make each loop work hardest
+(`core-functions/src/test-helpers/work-corpus.ts`), each at three
 sizes, it holds the count in proportion to the input, between 1.8 and 2.2
 times as much at twice the size, and to at most six units per code unit; it
 holds each Knuth-Morris-Pratt search to at most twice the lengths of the text
-and the phrase together, and every input whose count is a fixed number of
-units per repetition to that exact count. The meter does not see the work inside the runtime's
+and the phrase together, every input whose count is a fixed number of
+units per repetition to that exact count, and `keep` tokens longer than
+their text to one unit each, 1,000 tokens of 1,000,000 code units among
+them. It observes each evaluation with its bound as the meter's limit, so a
+loop that works past the bound stops at once and fails the spec. The meter does not see the work inside the runtime's
 regular expressions, its substring search or `Intl.Segmenter`, and no spec
 measures time: that the fixed expressions run in linear time is what the code
 claims, and review owns that claim. Each cost but that of the formula's own
@@ -1503,7 +1546,6 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   await evalOk('LEADING_WORDS("eins zwei  drei vier"; 2)'); // "eins zwei"
   await evalOk('LEADING_WORDS("eins zwei  drei vier"; 3)'); // "eins zwei drei"
   await evalOk('LEADING_WORDS("Don\'t re-enter it"; 2; "letters")'); // "Don't re-enter"
-  await evalOk('EACH(LIST("a b"; "c d e"); "LEADING_WORDS"; 2)'); // ["a b", "c d"]
   ```
 
 - A text with fewer than `count` words returns `null`.
@@ -1631,6 +1673,7 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   ```ts
   await evalOk('SENTENCES("Africa. Ok."; "punctuation"; LIST("ca."))'); // ["Africa.", "Ok."]
   await evalOk('SENTENCES("(ca. 5) Ok."; "punctuation"; LIST("ca."))'); // ["(ca. 5) Ok."]
+  await evalOk('SENTENCES("\uD835\uDC00ca. Ok."; "punctuation"; LIST("ca."))'); // ["\ud835\udc00ca.", "Ok."]
   ```
 
 - A token that starts with any other character counts wherever it occurs.
@@ -1823,6 +1866,9 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED("Product Owner,"; LIST("product owner"); "word"; TRUE)'); // "product owner"
   await evalOk('FIRST_CONTAINED("STRASSE"; LIST("straße"); "substring"; TRUE)'); // null
   await evalOk('FIRST_CONTAINED("ISTANBUL"; LIST("istanbul"); "substring"; TRUE)'); // "istanbul"
+  await evalOk('FIRST_CONTAINED("istanbul"; LIST("ISTANBUL"); "substring"; TRUE)'); // "ISTANBUL"
+  await evalOk('FIRST_CONTAINED("\u00CC"; LIST("\u00EC"); "substring"; TRUE)'); // "\u00ec"
+  await evalOk('FIRST_CONTAINED("\u00EC"; LIST("\u00CC"); "substring"; TRUE)'); // "\u00cc"
   ```
 
 - A phrase longer than 250 code units as it is searched for, lower-cased when `ignoreCase` is `TRUE`, raises `PHRASE_TOO_LONG`.
@@ -1840,6 +1886,9 @@ Unspecified: nothing.
   }); // ["PHRASE_TOO_LONG"]
   await evalOk('FIRST_CONTAINED("x"; LIST(value); "substring"; FALSE)', {
     value: '\u0130'.repeat(126),
+  }); // null
+  await evalOk('FIRST_CONTAINED("x"; LIST(value); "substring"; TRUE)', {
+    value: '\u00CC'.repeat(100),
   }); // null
   ```
 
@@ -1918,6 +1967,9 @@ Unspecified: nothing.
   await evalOk('MISSING_FROM(LIST("Liefern  Schnell"); value; "whitespace")', {
     value: 'LIEFERN\nSCHNELL',
   }); // ["Liefern  Schnell"]
+  await evalOk('MISSING_FROM(LIST("\u00CC"); "\u00EC"; "loose")'); // []
+  await evalOk('MISSING_FROM(LIST("ISTANBUL"); "istanbul"; "loose")'); // []
+  await evalOk('MISSING_FROM(LIST("ISTANBUL"); "istanbul"; "whitespace")'); // ["ISTANBUL"]
   ```
 
 - In `"loose"` mode, the quotes `‘ ’ ‚ ‛ ‹ ›` become `'`.
@@ -2641,6 +2693,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '> > zitat\n>weiter' }); // ["zitat weiter"]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '   > # h' }); // ["h"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '    > x' }); // ["> x"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '> | A |\n> |---|\n> | 1 |' }); // ["A", "1"]
   ```
 
 - A tab after `>` stays in the line.
@@ -3198,6 +3251,8 @@ Unspecified: whether a date, time, datetime or other object equals another.
   await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 8)'); // ["a", "c"]
   await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(9; 3; 12); ">"; 10)'); // ["c"]
   await evalOk('FILTER_BY(LIST(); LIST(); ">"; 1)'); // []
+  await evalOk('FILTER_BY(LIST("a"; "b"); value; "INDEX"; 1)', { value: [[1], [2]] }); // []
+  await evalOk('FILTER_BY(LIST("a"; "b"); value; "INDEX"; 1)', { value: [[true], [2]] }); // ["a"]
   ```
 
 - The operator is called as `(key)` when `operatorValue` is omitted.
@@ -3225,6 +3280,10 @@ Unspecified: whether a date, time, datetime or other object equals another.
   await evalErrors('FILTER_BY(LIST(1); LIST("x"); "CONTAINS_ANY"; value)', {
     value: ['a'.repeat(250)],
   }); // []
+  await evalErrors('FILTER_BY(LIST(1); LIST(TRUE); "AND"; value)', { value: 'x' }); // ["EVAL_CRASH"]
+  await evalErrors('FILTER_BY(LIST(1); LIST(TRUE); "AND"; value)', { value: true }); // []
+  await evalErrors('FILTER_BY(LIST(1); value; "NOT")', { value: ['x'] }); // ["EVAL_CRASH"]
+  await evalErrors('FILTER_BY(LIST(1); value; "NOT")', { value: [true] }); // []
   ```
 
 - A key that the operator answers `FALSE` or `null` for drops its item.
@@ -3243,7 +3302,7 @@ Unspecified: whether a date, time, datetime or other object equals another.
   await evalOk('FILTER_BY(LIST("a"; "b"); LIST(1; 2); ">"; 0)'); // ["a", "b"]
   ```
 
-- The operator is called as [FILTER](#filter) calls it, the function behind an operator token or else the first function of that name that has an implementation.
+- The operator is the function that [FILTER](#filter) finds for the name, the function behind an operator token or else the first function of that name that has an implementation.
 
   ```ts
   await evalOk(
