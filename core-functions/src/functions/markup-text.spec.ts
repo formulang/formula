@@ -413,6 +413,9 @@ describe('Markup text', () => {
       expect(await markdown('*"a"*b')).toBe('*"a"*b');
       // Symbols count as punctuation.
       expect(await markdown('a*\u20ACb\u20AC*')).toBe('a*\u20ACb\u20AC*');
+      // A symbol beyond the Basic Multilingual Plane is one character, a symbol, on either side.
+      expect(await markdown('\u{1F600}_a_')).toBe('\u{1F600}a');
+      expect(await markdown('_a_\u{1F600}')).toBe('a\u{1F600}');
       // An underscore run that could open and close opens after punctuation, closes before it.
       expect(await markdown('"_"a_')).toBe('""a');
       expect(await markdown('_a"_"')).toBe('a""');
