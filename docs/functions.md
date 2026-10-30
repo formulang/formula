@@ -2394,6 +2394,8 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("a*€b€*c"; "markdown")'); // "a*€b€*c"
   await evalOk('PLAIN_TEXT("a*(b)*c"; "markdown")'); // "a*(b)*c"
   await evalOk('PLAIN_TEXT("a*b*c"; "markdown")'); // "abc"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: '\u{1F600}_a_' }); // "\ud83d\ude00a"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'x_a_' }); // "x_a_"
   ```
 
 - In `"markdown"`, a `*` run can open emphasis when it is left-flanking.
