@@ -354,6 +354,27 @@ async function holdsPair(where: string, first: Call, second: Call, cached: boole
   );
 }
 
+/**
+ * The cache's bounds as the conditions under the table state them: the longest text it keys, the
+ * longest list it keys by its members' values, and how many members of a list it reads for such
+ * texts. The cells below are built from these numbers, so a condition that states another bound
+ * than the runtime's fails them.
+ */
+function readCacheBounds(docs: string): { text: number; byValue: number; scanned: number } {
+  const section = docs.slice(docs.indexOf('## Charges'), docs.indexOf('## Operator aliases'));
+  const text = /`maxCacheableStringLength`\s+\((\d+)\s+code\s+units\s+by\s+default\)/.exec(section);
+  const byValue = /a\s+list\s+of\s+at\s+most\s+(\d+)\s+members/.exec(section);
+  const scanned = /among\s+the\s+first\s+(\d+)\s+members\s+the\s+cache\s+reads/.exec(section);
+  expect([text, byValue, scanned], 'the bounds the conditions state').not.toContain(null);
+  return {
+    text: Number((text as RegExpExecArray)[1]),
+    byValue: Number((byValue as RegExpExecArray)[1]),
+    scanned: Number((scanned as RegExpExecArray)[1]),
+  };
+}
+
+const BOUNDS = readCacheBounds(DOCS);
+
 /** The values of a call with each list it gives at `length` members (FILTER_BY's keys alike). */
 function widened(name: string, length: number): Record<string, unknown> {
   const params = paramsOf(name);
@@ -369,9 +390,10 @@ function widened(name: string, length: number): Record<string, unknown> {
 function long(name: string): Record<string, unknown> {
   const params = paramsOf(name);
   const text = paramOf(params, READS.T);
-  if (text) return { [text.name]: 'a'.repeat(501) };
+  const past = 'a'.repeat(BOUNDS.text + 1);
+  if (text) return { [text.name]: past };
   const list = paramOf(params, READS.N) as Param;
-  return { [list.name]: ['a'.repeat(501), ...(VALID[name][list.name] as unknown[]).slice(1)] };
+  return { [list.name]: [past, ...(VALID[name][list.name] as unknown[]).slice(1)] };
 }
 
 /** The values of a call whose list holds a list (FILTER_BY's keys one long alike). */
@@ -442,23 +464,23 @@ describe('the conditions under which the runtime charges a call otherwise, for e
         false,
         name,
       );
-      const wide = widened(name, 51);
+      const wide = widened(name, BOUNDS.byValue + 1);
       if (Object.keys(wide).length > 0) {
-        // Lists of 51 members are keyed by identity: the same variable is, an equal one is not.
-        await holdsPair('51 members, twice', callOf(name, wide), callOf(name, wide), true, name);
+        // Longer lists are keyed by identity: the same variable is, an equal one is not.
+        await holdsPair('a longer list, twice', callOf(name, wide), callOf(name, wide), true, name);
         await holdsPair(
-          '51 members, in two variables',
+          'a longer list, in two variables',
           callOf(name, wide),
           copied(name, wide),
           false,
           name,
         );
-        // At 50 members, equal lists in two variables are the same by value.
-        const fifty = widened(name, 50);
+        // At the bound, equal lists in two variables are the same by value.
+        const atBound = widened(name, BOUNDS.byValue);
         await holdsPair(
-          '50 members, in two variables',
-          callOf(name, fifty),
-          copied(name, fifty),
+          'a list at the bound, in two variables',
+          callOf(name, atBound),
+          copied(name, atBound),
           true,
           name,
         );
@@ -507,6 +529,29 @@ describe('the conditions under which the runtime charges a call otherwise, for e
       await holdsSteps(source, source, variables, steps);
     });
   }
+
+  it('reads a list for a long text only as far as the members the conditions state', async () => {
+    // SENTENCES' keep tokens carry no bound of their own, so a long one can stand in the list: in
+    // the members the cache reads, the call is never answered from it; past them, the same list
+    // read twice is.
+    const past = 'a'.repeat(BOUNDS.text + 1);
+    const within = [...Array<string>(BOUNDS.scanned - 1).fill('t'), past];
+    const beyond = [...Array<string>(BOUNDS.scanned).fill('t'), past];
+    await holdsPair(
+      'a long text among the members read',
+      callOf('SENTENCES', { keep: within }),
+      callOf('SENTENCES', { keep: within }),
+      false,
+      'SENTENCES',
+    );
+    await holdsPair(
+      'a long text past the members read',
+      callOf('SENTENCES', { keep: beyond }),
+      callOf('SENTENCES', { keep: beyond }),
+      true,
+      'SENTENCES',
+    );
+  });
 
   it('charges nothing of its own for a call FILTER, FILTER_PROPERTY or REDUCE makes', async () => {
     const texts = ['Ab c', 'x', 'c'];

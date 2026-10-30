@@ -179,7 +179,53 @@ type RunOptions = {
   through?: number;
   /** The admitted value each mode takes, by parameter name, where its default is not wanted. */
   modes?: Record<string, string>;
+  /**
+   * Calls the subject through `APPLY`, a host's higher-order function that passes on exactly the
+   * arguments it is given, so a required argument can be left out, as only such a function or a
+   * callable named when the call runs can leave it out.
+   */
+  apply?: boolean;
 };
+
+/**
+ * Registers `APPLY(name, args...)`: calls the function the name resolves to, as the core
+ * higher-order functions resolve it, with the other arguments, and answers that call's own output,
+ * warnings included.
+ */
+function withApply(runtime: Runtime): void {
+  runtime.registry.registerFunction({
+    signatureId: 'APPLY/v1',
+    name: 'APPLY',
+    category: 'custom',
+    description: 'Calls the named function with the other arguments and answers its output.',
+    params: [
+      { name: 'name', type: FormulaTypes.text(true) },
+      { name: 'args', type: FormulaTypes.any(true), optional: true, variadic: true },
+    ],
+    returnType: FormulaTypes.any(true),
+    purity: 'pure',
+  });
+  runtime.implementations.register('APPLY/v1', {
+    estimateCostsInSeconds: () => 0.0001,
+    evaluateMultiple: async (calls, ctx) => {
+      const outs = [];
+      for (const call of calls) {
+        const name = String(await call.args[0]?.value());
+        const def = ctx.registry
+          .listFunctionsByName(name)
+          .find((candidate) => ctx.resolver.get(candidate.signatureId) !== undefined);
+        const implementation = def && ctx.resolver.get(def.signatureId);
+        if (!implementation) throw new Error(`no implementation of ${name}`);
+        const [out] = await implementation.evaluateMultiple(
+          [{ args: call.args.slice(1), callId: '0' }],
+          ctx,
+        );
+        outs.push(out);
+      }
+      return outs;
+    },
+  });
+}
 
 /**
  * Runs the subject with the arguments given by position; every other parameter up to the last
@@ -216,9 +262,12 @@ async function run(
       : subject.valid[param.name];
     args.push(variable);
   }
-  const source = `${name}(${args.join('; ')})`;
+  const source = options.apply
+    ? `APPLY(${[JSON.stringify(name), ...args].join('; ')})`
+    : `${name}(${args.join('; ')})`;
   const runtime = createTestRuntime(setup);
   subject.fixture?.(runtime);
+  if (options.apply) withApply(runtime);
   const parsed = parseFormula(source, { registry: runtime.registry });
   expect(
     parsed.errors.map((error) => error.code),
@@ -284,13 +333,20 @@ type Cell = { title: string; rules: readonly string[]; run: (subject: Subject) =
 
 const CELLS: readonly Cell[] = [
   {
-    title: 'returns null, with no warning, for a null required argument',
+    title:
+      'returns null, with no warning, for a null required argument, and for one a host leaves out',
     rules: ['A `null` given for an argument the function requires returns `null`.'],
     run: async (subject) => {
       for (const param of subject.governed.filter((param) => !param.optional)) {
         expect(await run(subject, new Map([[param.index, null]])), param.name).toStrictEqual(
           NULL_ONLY,
         );
+        // Left out, as a host's function can leave it out, it is read as `null`, as the page's
+        // convention on empty values states: the same answer.
+        expect(
+          await run(subject, new Map(), { through: param.index - 1, apply: true }),
+          `${param.name} left out`,
+        ).toStrictEqual(NULL_ONLY);
       }
     },
   },
@@ -337,6 +393,12 @@ const CELLS: readonly Cell[] = [
         expect(
           await run(subject, new Map([[param.index, [null, '', ...valid]]])),
           param.name,
+        ).toStrictEqual(plain);
+        // A host's list can hold `undefined`, which no formula writes: read as `null`, as the
+        // page's convention on empty values states, it is skipped as `null` is.
+        expect(
+          await run(subject, new Map([[param.index, [undefined, ...valid]]])),
+          `${param.name} with undefined`,
         ).toStrictEqual(plain);
         for (const other of [5, [], true]) {
           expect(

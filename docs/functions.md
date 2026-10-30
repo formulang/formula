@@ -18,7 +18,10 @@ arguments with `,` instead.
   an empty list. Many functions skip empty items or short-circuit to `null` on
   empty input. The functions whose sections state them as rules read only
   `null` as absent, and `""` and `[]` as values, as
-  [Shared rules](#shared-rules) says.
+  [Shared rules](#shared-rules) says. They read a host's `undefined`, which no
+  formula writes, as `null`, and a required argument that a call leaves out as
+  `null` too, as a host's function can leave one out, and `FILTER_BY` leaves out
+  its operator's second for a `null` `operatorValue`.
 - **Warnings vs. errors.** Type mismatches that the parser can catch (for
   example `POW("x"; 2)`) are compile-time errors with code
   `ARGUMENT_TYPE_MISMATCH`. Type problems only visible at runtime usually return
@@ -390,11 +393,14 @@ billionth above all it is charged, by the table and the conditions, and raises
 it under one a billionth below, and raises no `EVAL_LIMIT_EXCEEDED` under a
 `maxEvaluationSteps` of exactly its steps and raises it under one step fewer.
 It holds every function so under each condition: a call made twice with short
-arguments, made twice with a text past the cache's bound, made in two
-variables with equal values, short or of 51 members or holding a list, and made
-by `EACH`, as well as one call each by `FILTER`, `FILTER_PROPERTY` and
-`REDUCE`, and a call answered from a cache the host passes; and it runs the
-examples of [best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)
+arguments, made twice with a text one code unit past the cache's bound, made in
+two variables with equal values, short, of as many members as the bound above
+and of one more, or holding a list, and made by `EACH`, as well as one call each
+by `FILTER`, `FILTER_PROPERTY` and `REDUCE`, a `SENTENCES` call whose long
+`keep` token stands among the members the cache reads and one past them, and a
+call answered from a cache the host passes. It reads those bounds from the
+conditions above, and it runs the examples of
+[best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)
 under the default limits.
 
 ## Operator aliases
