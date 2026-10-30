@@ -18,10 +18,11 @@ arguments with `,` instead.
   an empty list. Many functions skip empty items or short-circuit to `null` on
   empty input. The functions whose sections state them as rules read only
   `null` as absent, and `""` and `[]` as values, as
-  [Shared rules](#shared-rules) says. They read a host's `undefined`, which no
-  formula writes, as `null`, and a required argument that a call leaves out as
-  `null` too, as a host's function can leave one out, and `FILTER_BY` leaves out
-  its operator's second for a `null` `operatorValue`.
+  [Shared rules](#shared-rules) says. They skip a host's `undefined` in a list
+  of texts, which no formula writes, as they skip `null`. They read a required
+  argument that a call leaves out as `null`: a host's function can leave one
+  out, and `FILTER_BY` leaves out its operator's second for a `null`
+  `operatorValue`.
 - **Warnings vs. errors.** Type mismatches that the parser can catch (for
   example `POW("x"; 2)`) are compile-time errors with code
   `ARGUMENT_TYPE_MISMATCH`. Type problems only visible at runtime usually return

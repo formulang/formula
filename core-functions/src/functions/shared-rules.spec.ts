@@ -394,8 +394,8 @@ const CELLS: readonly Cell[] = [
           await run(subject, new Map([[param.index, [null, '', ...valid]]])),
           param.name,
         ).toStrictEqual(plain);
-        // A host's list can hold `undefined`, which no formula writes: read as `null`, as the
-        // page's convention on empty values states, it is skipped as `null` is.
+        // A host's list can hold `undefined`, which no formula writes: it is skipped as `null` is,
+        // as the page's convention on empty values states.
         expect(
           await run(subject, new Map([[param.index, [undefined, ...valid]]])),
           `${param.name} with undefined`,
