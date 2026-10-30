@@ -2842,6 +2842,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n1. eins' }); // ["eins"]
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n01. eins' }); // ["eins"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n2. zwei\n0. null\n-' }); // ["Text 2. zwei 0. null -"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n- \u00A0' }); // ["Text -"]
   ```
 
 - A table starts at a line that holds `|` and whose next line, also holding `|`, is a delimiter row of one cell for each header cell.
@@ -2922,6 +2923,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n| 1 | 2' }); // ["A B", "1 2"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n|| 1 | 2' }); // ["A B", "1"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '|A|B|\n|-|-|\n|1|2|' }); // ["A B", "1 2"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '  | A | B |\n|---|---|' }); // ["A B"]
   ```
 
 - A row's trailing `|` is dropped unless a backslash precedes it.
@@ -2931,6 +2933,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
     value: '| A | B |\n|---|---|\n| 1 | 2 \\|',
   }); // ["A B", "1 2 |"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B | \n|---|---|' }); // ["A B"]
   ```
 
 - A paragraph is a run of lines that start no other block, joined by one space.
