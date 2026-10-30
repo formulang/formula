@@ -102,8 +102,12 @@ export const REVIEWER_CHECKS: readonly Check[] = [
   { id: 'restated', sentence: 'Whether a bullet restates a shared rule in other words.' },
 ];
 
-/** The line that opens the list of `DOCS_CHECKS` wherever the repository lists them. */
-export const LEAD_IN = '`core-functions/src/functions/function-docs.spec.ts` checks exactly these:';
+/**
+ * The line that opens the list of `DOCS_CHECKS` wherever the repository lists them: the checks of
+ * the page, beside which the spec holds its own reports and the files that list them to this table.
+ */
+export const LEAD_IN =
+  '`core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:';
 
 /** The line that opens the list of `REVIEWER_CHECKS`, after the first list. */
 export const REVIEW_LEAD_IN = 'It cannot decide these, which the reviewer decides:';

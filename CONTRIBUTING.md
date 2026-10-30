@@ -86,7 +86,7 @@ All packages share a single version, and contributors normally never touch it â€
 
 Adding a function touches four places: a definition (portable metadata in `@formulang/definitions`), an implementation (executable code in `@formulang/core-functions`), a co-located spec file, and an entry in [docs/functions.md](docs/functions.md). A function that 1.0.0 does not have is documented as its signature, one bullet per rule with examples under each, and one closing `Unspecified:` sentence naming the inputs the rules leave open. The full walkthrough is in [docs/extending.md](docs/extending.md).
 
-`core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+`core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
 
 - Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
 - Such a section opens with its signature line, the whole line as the live registry renders it.

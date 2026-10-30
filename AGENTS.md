@@ -72,7 +72,7 @@ Also present: root `README.md` (project overview), `SECURITY.md` (security model
 3. Add a co-located `<name>.spec.ts` next to the implementation.
 4. Document the function in `docs/functions.md`: its signature, one bullet per rule, each one condition and its outcome in one sentence with at least two `evalOk`/`evalErrors` examples under it that call the function and give different results, and one closing `Unspecified:` sentence; rules every such function shares go under _Shared rules_, once, and no section states them again. `core-functions/src/functions/shared-rules.spec.ts` runs each shared rule against every added function and every parameter the rule governs, read from the live registry.
 
-   `core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+   `core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
 
    - Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
    - Such a section opens with its signature line, the whole line as the live registry renders it.

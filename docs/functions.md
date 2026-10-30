@@ -69,7 +69,7 @@ arguments with `,` instead.
   call also names the warning the call attaches (`null with a TYPE warning`),
   and a comment that names none states that the call attaches none.
 
-  `core-functions/src/functions/function-docs.spec.ts` checks exactly these:
+  `core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
 
   - Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
   - Such a section opens with its signature line, the whole line as the live registry renders it.
