@@ -25,7 +25,7 @@ import {
   writeNodeValue,
 } from './per-node';
 import type { RunnerState } from './state';
-import { addCostOrThrow, checkWallTime, estimateCallCostUnits } from './state';
+import { addCostOrThrow, callChargeUnits, checkWallTime } from './state';
 import {
   expectedCastForComparison,
   nodeName,
@@ -413,7 +413,10 @@ export async function evalNodeOutputAsync(
           cache: state.pureCache,
           pending: state.purePending,
           chargeCall: (calledId, args) =>
-            addCostOrThrow(state, estimateCallCostUnits(ctx.resolver, calledId, args)),
+            addCostOrThrow(
+              state,
+              callChargeUnits(ctx.registry.getFunction(calledId), ctx.resolver, calledId, args),
+            ),
         };
 
         const calls: BatchEvaluationCall[] = [

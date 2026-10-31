@@ -280,11 +280,7 @@ describe('FILTER_BY', () => {
         value: null,
         errors: ['security:LIST_TOO_LARGE'],
       });
-      // A missing output fails alike; an output that is ok is read for its value alone.
-      const missing = hostRuntime((key) => (key === 2 ? undefined : makeOkBoolean('HOST', true)));
-      expect(
-        await evaluate(missing, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")'),
-      ).toStrictEqual({ value: null, errors: ['runtime:EVAL_CRASH'] });
+      // An output that is ok is read for its value alone.
       const okWithError = hostRuntime(
         () =>
           ({
@@ -295,6 +291,42 @@ describe('FILTER_BY', () => {
       expect(
         await evaluate(okWithError, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")'),
       ).toStrictEqual({ value: ['p', 'q'], errors: [] });
+    });
+
+    it('reads a missing output of its operator as the runner reads the same call written', async () => {
+      // The runner reads a pure call's missing output, answered through its cache, as `null`
+      // (readCallOutput); FILTER_BY reads each of its operator's with the same function, so the
+      // key whose output is missing drops its item and raises nothing.
+      const missing = hostRuntime((key) => (key === 2 ? undefined : makeOkBoolean('HOST', true)));
+      expect(await evaluate(missing, 'HOST(2)')).toStrictEqual({ value: null, errors: [] });
+      expect(
+        await evaluate(missing, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")'),
+      ).toStrictEqual({ value: ['p'], errors: [] });
+      expect(await evaluate(missing, 'HOST(1)')).toStrictEqual({ value: true, errors: [] });
+    });
+
+    it('charges a control-flow operator a flat 0.05 a call, as the runner charges it written', async () => {
+      // AND, OR, NOT and SWITCH are control flow: each call costs 0.05 whatever its estimate, as
+      // the Charges conditions state, made by FILTER_BY or written in the formula.
+      const cases = [
+        ['FILTER_BY(LIST(1); LIST(TRUE); "AND"; TRUE)', 'AND(TRUE; TRUE)', [1]],
+        ['FILTER_BY(LIST(1); LIST(TRUE); "OR"; FALSE)', 'OR(TRUE; FALSE)', [1]],
+        ['FILTER_BY(LIST(1); LIST(FALSE); "NOT")', 'NOT(FALSE)', [1]],
+        ['FILTER_BY(LIST(1); LIST(1); "SWITCH"; 1)', 'SWITCH(1; 1)', []],
+      ] as const;
+      for (const [byFilter, written, kept] of cases) {
+        const runtime = hostRuntime(() => makeOkBoolean('HOST', true));
+        for (const source of [byFilter, written]) {
+          expect(
+            (await evaluate(runtime, source, { maxFunctionCostUnits: 0.0499 })).errors,
+            `${source} under 0.0499`,
+          ).toStrictEqual(['security:FUNCTION_COST_LIMIT_EXCEEDED']);
+        }
+        expect(
+          await evaluate(runtime, byFilter, { maxFunctionCostUnits: 0.05 }),
+          `${byFilter} under 0.05`,
+        ).toStrictEqual({ value: kept, errors: [] });
+      }
     });
 
     it('charges each call of its operator the estimate for the key and the operator value', async () => {

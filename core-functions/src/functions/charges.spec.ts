@@ -185,16 +185,39 @@ function signatureOf(name: string): string {
   return (found as { signatureId: string }).signatureId;
 }
 
-/** A callee's own estimate for these arguments, or 0.05 without one, as the runner reads it. */
+/**
+ * The charge of a call of a function the table does not hold, as the text under the table states
+ * it, read from that text: a control-flow function a flat charge whatever its arguments, any other
+ * function its implementation's estimate, or a fallback when it has none.
+ */
+function readChargeRule(docs: string): { flat: number; fallback: number } {
+  const section = docs.slice(docs.indexOf('## Charges'), docs.indexOf('## Operator aliases'));
+  const flat = /a\s+control-flow\s+function\s+\([^)]*\)\s+a\s+flat\s+([0-9.]+)\s+whatever/.exec(
+    section,
+  );
+  const fallback = /estimate,\s+or\s+([0-9.]+)\s+when\s+it\s+has\s+none/.exec(section);
+  expect([flat, fallback], 'the charge of a call as the text states it').not.toContain(null);
+  return {
+    flat: Number((flat as RegExpExecArray)[1]),
+    fallback: Number((fallback as RegExpExecArray)[1]),
+  };
+}
+
+const RULE = readChargeRule(DOCS);
+
+/** A callee's own estimate for these arguments, or the stated fallback without one. */
 function estimateOf(name: string, args: unknown[]): number {
   const implementation = runtime.implementations.get(signatureOf(name));
   const raw = implementation?.estimateCostsInSeconds?.(args);
-  return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : 0.05;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : RULE.fallback;
 }
 
-/** What the runner charges a call of a function the table does not hold, written in a formula. */
+/**
+ * What a call of a function the table does not hold is charged, written in a formula or made by
+ * `FILTER_BY`, by the rule the text states: a control-flow function the flat charge.
+ */
 function chargeOf(name: string, args: unknown[]): number {
-  return registry.getFunction(signatureOf(name))?.controlFlow ? 0.05 : estimateOf(name, args);
+  return registry.getFunction(signatureOf(name))?.controlFlow ? RULE.flat : estimateOf(name, args);
 }
 
 /** A call of `name`: its source and its variables, under a prefix, and the values it gives. */
@@ -260,8 +283,7 @@ function quantitiesOf(name: string, values: Map<string, unknown>): Quantities {
     N: Array.isArray(list) ? list.length : 10,
     M: called.length,
     C: called.reduce<number>(
-      (sum, key) =>
-        sum + estimateOf(operator, operatorValue == null ? [key] : [key, operatorValue]),
+      (sum, key) => sum + chargeOf(operator, operatorValue == null ? [key] : [key, operatorValue]),
       0,
     ),
   };
@@ -583,6 +605,35 @@ describe('the conditions under which the runtime charges a call otherwise, for e
     for (const { source, variables, cost, steps } of cases) {
       await holdsCost(source, source, variables, cost);
       await holdsSteps(source, source, variables, steps);
+    }
+  });
+
+  it("charges FILTER_BY's control-flow operator the flat charge the text states, a call", async () => {
+    // Each control-flow function that compiles as FILTER_BY's operator: its calls charged the
+    // flat charge each, by the rule as the text states it, not by the operator's estimate.
+    const cases = [
+      { operator: 'AND', keys: [true, true], operatorValue: true },
+      { operator: 'OR', keys: [true, false], operatorValue: false },
+      { operator: 'NOT', keys: [false, false], operatorValue: undefined },
+      { operator: 'SWITCH', keys: [1, 1], operatorValue: 1 },
+    ];
+    const row = formula((CHARGES.get('FILTER_BY') as Row).cost);
+    for (const { operator, keys, operatorValue } of cases) {
+      expect(registry.getFunction(signatureOf(operator))?.controlFlow, operator).toBe(true);
+      const list = keys.map((_key, i) => i);
+      const written = operatorValue === undefined ? '' : '; v3';
+      const source = `FILTER_BY(v0; v1; "${operator}"${written})`;
+      const variables = { v0: list, v1: keys, v3: operatorValue };
+      const cost = row({ T: 50, E: 0, N: list.length, M: keys.length, C: keys.length * RULE.flat });
+      await holdsCost(source, source, variables, cost);
+      expect(
+        await errorsUnder(source, variables, { maxFunctionCostUnits: RULE.flat * (1 - 1e-9) }),
+        `${source}: an operator call under the flat charge`,
+      ).toContain('FUNCTION_COST_LIMIT_EXCEEDED');
+      expect(
+        await errorsUnder(source, variables, { maxFunctionCostUnits: RULE.flat * (1 + 1e-9) }),
+        `${source}: an operator call at the flat charge`,
+      ).not.toContain('FUNCTION_COST_LIMIT_EXCEEDED');
     }
   });
 

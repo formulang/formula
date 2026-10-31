@@ -349,8 +349,11 @@ adds the steps of its own nodes).
 is no list; `M` is the number of keys `FILTER_BY` calls its operator for,
 which is the length of `keys` once every argument has passed its check and 0
 otherwise; and `C` is what those calls cost, each charged as the runtime
-charges a call it makes itself, the operator's own estimate or 0.05 when it has
-none, against both limits, before `FILTER_BY` makes any of them. The calls of
+charges every call, written or made through `chargeCall`: a control-flow
+function (`AND`, `OR`, `NOT`, `IF`, `SWITCH` and `REDUCE` among the core ones) a
+flat 0.05 whatever its arguments, any other function its implementation's
+estimate, or 0.05 when it has none, against both limits, before `FILTER_BY`
+makes any of them. The calls of
 the operator take no steps but the `M` of the table and those the operator's
 own implementation takes. A text function's cost stops at 0.05 however long its
 text and however many its phrases, so no cost limit refuses a long text
@@ -379,9 +382,11 @@ does not include:
   of it, is never answered from the cache, so every such call is charged.
 - A call that `EACH`, `FILTER`, `FILTER_PROPERTY` or `REDUCE` makes through the
   callable it is given charges neither the cost of its row nor its node's step,
-  as in 1.0.0: the higher-order function charges its own cost, which grows with
-  its list and not with the work of the calls, and one step for each item it
-  reads, so no cost limit refuses expensive calls made this way
+  as in 1.0.0: the higher-order function is charged its own call alone, `EACH`,
+  `FILTER` and `FILTER_PROPERTY` their estimate, which grows with their list,
+  and `REDUCE`, a control-flow function, a flat 0.05 whatever its list, and
+  takes one step for each item it reads, and not the work of the calls, so no
+  cost limit refuses expensive calls made this way
   ([best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)).
   What such a call does inside is charged as ever: a `FILTER_BY` called so
   takes the steps of `M` and charges `C`.
@@ -399,9 +404,11 @@ arguments, made twice with a text one code unit past the cache's bound, made in
 two variables with equal values, short, of as many members as the bound above
 and of one more, or holding a list, and made by `EACH`, as well as one call each
 by `FILTER`, `FILTER_PROPERTY` and `REDUCE`, a `SENTENCES` call whose long
-`keep` token stands among the members the cache reads and one past them, and a
-call answered from a cache the host passes. It reads those bounds from the
-conditions above, and it runs the examples of
+`keep` token stands among the members the cache reads and one past them, a
+call answered from a cache the host passes, and a `FILTER_BY` whose operator is
+each control-flow function that can be one (`AND`, `OR`, `NOT` and `SWITCH`),
+under a `maxFunctionCostUnits` at the flat charge and just below it. It reads
+those bounds and the flat charge from the text above, and it runs the examples of
 [best practices §4.4](best-practices.md#44-wall-time-limits-catch-what-estimates-miss)
 under the default limits.
 

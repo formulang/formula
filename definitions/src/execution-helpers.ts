@@ -115,6 +115,20 @@ export function makeOkUnknown(
   return makeOkOutput(name, { value, valueKind: 'unknown', ...extra, children: extra?.children });
 }
 
+/**
+ * The output of one call, read from what an implementation gives for it: that output, or, where
+ * it gives none, the value `null`. The runner reads what an implementation gives for a call it
+ * answers through its pure cache with this function, and so does `FILTER_BY` for each call of its
+ * operator; an output that is not ok stays as it is, for the runner to read as a failed call's.
+ */
+export function readCallOutput(
+  name: string,
+  signatureId: string,
+  output: FormulaNodeOutput | null | undefined,
+): FormulaNodeOutput {
+  return output ?? makeOkUnknown(name, null, { signatureId });
+}
+
 export function makeError(
   name: string,
   input: {

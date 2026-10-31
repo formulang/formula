@@ -173,13 +173,15 @@ result.errors[0]; // { kind: 'security', code: 'WALL_TIME_LIMIT_EXCEEDED',
 ```
 
 The cost budget works the same way: estimates come from implementations' `estimateCostsInSeconds`;
-calls without an estimator (including control-flow calls like `IF`) count 0.05 units, so
+calls without an estimator, and every call of a control-flow function such as `IF`, count 0.05
+units, so
 `limits: { maxTotalCostUnits: 0.04 }` fails any formula containing `IF` with `COST_LIMIT_EXCEEDED`.
 An implementation that calls another implementation itself, as a higher-order function does, can
 have each such call charged the same way through the execution context's
-`chargeCall(signatureId, args)`, which the runner provides: `FILTER_BY` charges each call of its
-operator so, while `EACH`, `FILTER`, `FILTER_PROPERTY` and `REDUCE`, as in 1.0.0, charge only their
-own estimate.
+`chargeCall(signatureId, args)`, which the runner provides and which charges by the same rule, a
+control-flow callee 0.05 included: `FILTER_BY` charges each call of its operator so, while `EACH`,
+`FILTER`, `FILTER_PROPERTY` and `REDUCE`, as in 1.0.0, are charged only their own call, the
+estimate of the first three and the flat 0.05 of `REDUCE`, a control-flow function.
 
 ### Tracing a run with the per-node output tree
 
@@ -275,14 +277,14 @@ in the output tree, `error` in `perNode`). Typical codes: `UNBOUND_FUNCTION`, `N
 All limits live in `FormulaLimits` (`@formulang/definitions`) and can be overridden per run via
 `ctx.limits`. The eval-time controls:
 
-| Limit                                                                                                                                | Error code                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `maxEvaluationSteps` (step budget, also consumed per list item)                                                                      | `EVAL_LIMIT_EXCEEDED`                                  |
-| `maxWallTimeMs` (whole run)                                                                                                          | `WALL_TIME_LIMIT_EXCEEDED`                             |
-| `maxFunctionWallTimeMs` (per call, incl. variable resolvers)                                                                         | `WALL_TIME_LIMIT_EXCEEDED`                             |
-| `maxFunctionCostUnits` / `maxTotalCostUnits` (from implementations' `estimateCostsInSeconds`; calls without an estimator count 0.05) | `FUNCTION_COST_LIMIT_EXCEEDED` / `COST_LIMIT_EXCEEDED` |
-| `maxListLength` (wildcard / `EACH` / `FILTER` inputs)                                                                                | `LIST_TOO_LARGE`                                       |
-| `maxWildcardOutputLength` (flattened `list.*.prop` output)                                                                           | `WILDCARD_OUTPUT_TOO_LARGE`                            |
+| Limit                                                                                                                                                                  | Error code                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `maxEvaluationSteps` (step budget, also consumed per list item)                                                                                                        | `EVAL_LIMIT_EXCEEDED`                                  |
+| `maxWallTimeMs` (whole run)                                                                                                                                            | `WALL_TIME_LIMIT_EXCEEDED`                             |
+| `maxFunctionWallTimeMs` (per call, incl. variable resolvers)                                                                                                           | `WALL_TIME_LIMIT_EXCEEDED`                             |
+| `maxFunctionCostUnits` / `maxTotalCostUnits` (from implementations' `estimateCostsInSeconds`; a call without an estimator, or of a control-flow function, counts 0.05) | `FUNCTION_COST_LIMIT_EXCEEDED` / `COST_LIMIT_EXCEEDED` |
+| `maxListLength` (wildcard / `EACH` / `FILTER` inputs)                                                                                                                  | `LIST_TOO_LARGE`                                       |
+| `maxWildcardOutputLength` (flattened `list.*.prop` output)                                                                                                             | `WILDCARD_OUTPUT_TOO_LARGE`                            |
 
 Cost and function-wall-time overruns surface as `security`-kind errors; a call that exceeds its
 estimated cost cap is rejected before it runs.

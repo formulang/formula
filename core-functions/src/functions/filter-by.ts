@@ -6,13 +6,7 @@ import type {
   FormulaValueProvider,
   FunctionImplementation,
 } from '@formulang/definitions';
-import {
-  FormulaErrorCodes,
-  makeError,
-  makeOkList,
-  makeOkNull,
-  makeOkUnknown,
-} from '@formulang/definitions';
+import { makeOkList, makeOkNull, makeOkUnknown, readCallOutput } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { listTooLarge, typeWarning } from './argument-readers';
 
@@ -98,22 +92,18 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
       };
     });
     const predicateOuts = await chosen.implementation.evaluateMultiple(predicateCalls, ctx);
-    // An operator's output for a key that is not ok is an error of the call, the first in the
-    // order of the keys, read as the runner reads the output of a call it makes itself: its
-    // error, or EVAL_CRASH where it carries none, and an output that is missing fails alike.
-    const failed = keys.findIndex((_key, i) => !predicateOuts[i]?.ok);
-    if (failed >= 0) {
-      const error = predicateOuts[failed]?.error;
-      return makeError('FILTER_BY', {
-        kind: error?.kind ?? 'runtime',
-        code: error?.code ?? FormulaErrorCodes.EVAL_CRASH,
-        message: error?.message ?? 'Evaluation error',
-        meta: error?.meta,
-      });
-    }
+    // Each operator output is read as the runner reads what an implementation gives for a call
+    // (readCallOutput): a missing one is `null`. The first that is not ok, in the order of the
+    // keys, is returned as the call's own output, for the runner to read as it reads a failed
+    // call's: its error, or EVAL_CRASH where it carries none.
+    const outs = keys.map((_key, i) =>
+      readCallOutput(opName, chosen.signatureId, predicateOuts[i]),
+    );
+    const failed = outs.find((out) => !out.ok);
+    if (failed) return failed;
     return makeOkList(
       'FILTER_BY',
-      target.filter((_item, i) => predicateOuts[i]?.value === true),
+      target.filter((_item, i) => outs[i].value === true),
     );
   }
 }
