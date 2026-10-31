@@ -142,3 +142,33 @@ describe('the work of the text functions whose loops read their input in linear 
     expect(outer.units).toBe(alone);
   });
 });
+
+describe('the checks the shared rules put before the search', () => {
+  // The shared rule "The result is computed only once every check has passed": a phrase longer than
+  // the bound is refused before any phrase is searched for, so an evaluation that raises
+  // PHRASE_TOO_LONG counts no work, however long its text; the same call with short phrases does.
+  it('refuses a phrase longer than the bound before any search work, on 1,000,000 code units', async () => {
+    const text = 'a'.repeat(1_000_000);
+    const long = 'b' + 'a'.repeat(250);
+    const sources = [
+      'FIRST_CONTAINED(value; other)',
+      'FIRST_CONTAINED(value; other; "word")',
+      'CONTAINS_ANY(value; other)',
+      'CONTAINS_ANY(value; other; "word")',
+      'MISSING_FROM(other; value)',
+      'MISSING_FROM(other; value; "exact")',
+    ];
+    for (const source of sources) {
+      const refused = await observeWork(() =>
+        evalFormulaOutput(source, { value: text, other: ['x', long] }, { setup: withOther }),
+      );
+      expect(
+        refused.result.errors.map((error) => error.code),
+        source,
+      ).toStrictEqual(['PHRASE_TOO_LONG']);
+      expect(refused.units, `${source}: work before the refusal`).toBe(0);
+      const searched = await unitsOf(source, text, ['x', 'y'], Number.POSITIVE_INFINITY);
+      expect(searched, `${source}: the same search with short phrases`).toBeGreaterThan(0);
+    }
+  });
+});

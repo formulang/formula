@@ -15,11 +15,13 @@ import {
 
 /**
  * docs/functions.md states each function added to 1.0.0 as rules, and the rules all of them share
- * once, under "Shared rules". This spec reads the document as the repository holds it, runs every
- * example through the real runtime, and makes the checks of `DOCS_CHECKS`, each reported under its
- * id; what it cannot decide is in `REVIEWER_CHECKS`. Every file of the repository that names this
- * spec lists exactly those sentences, and the last tests below hold each file, and the checks this
- * file reports, to the table.
+ * once, under "Shared rules". This spec reads the page as the repository holds it, by a closed
+ * grammar of its lines: every line of a rules section must be the one production the grammar
+ * expects there, and any other line fails. It runs every example through the real runtime and
+ * makes the checks of `DOCS_CHECKS`, each reported under its id; what it cannot decide is in
+ * `REVIEWER_CHECKS`. Each check carries a fixture, an edit of a small page built from the real one,
+ * that the check must turn red, so a check that stops checking fails this spec. Every file of the
+ * repository that names this spec lists exactly those sentences, by a closed grammar too.
  */
 
 type Check = { id: string; sentence: string };
@@ -29,7 +31,7 @@ export const DOCS_CHECKS: readonly Check[] = [
   {
     id: 'sections',
     sentence:
-      'Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.',
+      'Each function the 1.0.0 baseline does not name has one section, under a heading of its name that no other heading repeats, and no other section has a line that, read with every whitespace character as one space, starts with `Unspecified:`.',
   },
   {
     id: 'signature',
@@ -39,27 +41,27 @@ export const DOCS_CHECKS: readonly Check[] = [
   {
     id: 'form',
     sentence:
-      'Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.',
+      'Read line by line up to the next heading, after NFKC normalisation, with every whitespace character as one space and format characters dropped, such a section is its signature line, then rules, each a top-level bullet of one line followed by one code block every line of which belongs to an example, then one line that starts with `Unspecified:`, with only blank lines between them, and any other line fails, a `---` rule, a line after the closing one and a nested or numbered item among them.',
   },
   {
     id: 'characters',
     sentence:
-      'With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.',
+      'With its code spans taken out, the target of each link that a `[` opens taken out with it, every whitespace character read as one space and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, the closing line is held to the same, with the colon of `Unspecified:` at its start, and a `](` that no `[` opens fails.',
   },
   {
     id: 'conjunction',
     sentence:
-      'No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".',
+      'No bullet holds a comma followed, after any whitespace or none, by "and", "or", "but", "nor", "so", "yet" or "then".',
   },
   {
     id: 'shared-overlap',
     sentence:
-      'Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.',
+      'Read with the target of each link that a `[` opens taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.',
   },
   {
     id: 'shared-once',
     sentence:
-      'The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.',
+      'The shared rules stand once, under their heading, opened by their one sentence and read by the same grammar as a section, with no signature line and no closing line.',
   },
   {
     id: 'examples-count',
@@ -78,6 +80,11 @@ export const DOCS_CHECKS: readonly Check[] = [
   {
     id: 'examples-differ',
     sentence: 'At least two of the examples of a bullet state different results.',
+  },
+  {
+    id: 'examples-unique',
+    sentence:
+      'No code block shows one call twice, the same source with the same variables, under either helper.',
   },
   {
     id: 'examples-read',
@@ -104,7 +111,7 @@ export const REVIEWER_CHECKS: readonly Check[] = [
 
 /**
  * The line that opens the list of `DOCS_CHECKS` wherever the repository lists them: the checks of
- * the page, beside which the spec holds its own reports and the files that list them to this table.
+ * the page, beside which the spec holds its own checks and the files that list them to this table.
  */
 export const LEAD_IN =
   '`core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:';
@@ -131,9 +138,6 @@ const DOCS = readFileSync(new URL('../../../docs/functions.md', import.meta.url)
 /** The names the core registry adds to those of 1.0.0, read from the live registry. */
 const ADDED: string[] = harness.addedFunctionNames({ coreFunctions }, baseline.functionNames);
 
-/** The sentence that closes each added function's section. */
-const UNSPECIFIED = 'Unspecified: ';
-
 /** The heading of the rules every added function follows, and the one sentence that opens them. */
 const SHARED_HEADING = '## Shared rules';
 const SHARED_INTRO =
@@ -152,6 +156,26 @@ const NOT_RUN: Record<string, string> = {
   'FILTER_PROPERTY(value; "a.b"; "="; 2)': 'the variable is named, not given',
 };
 
+/**
+ * A line as the grammar reads it: NFKC-normalised, every whitespace character one space, every
+ * format character dropped.
+ */
+function normalLine(line: string): string {
+  return line
+    .normalize('NFKC')
+    .replace(/[\s\p{White_Space}]/gu, ' ')
+    .replace(/\p{Cf}/gu, '');
+}
+
+/** A heading of the page: the end of the section before it. */
+const HEADING = /^#{1,6} /;
+
+/** The productions of a rules section, besides a blank line, as they read a normalised line. */
+const BULLET = /^- \S/;
+const FENCE_OPEN = /^ {2}(`{3,})ts$/;
+const CLOSING = /^Unspecified:( |$)/;
+const EXAMPLE_START = /^\s*await (evalOk|evalErrors)\(/;
+
 type Section = { name: string; line: number; lines: string[] };
 
 type Example = {
@@ -168,27 +192,27 @@ type Example = {
 
 type Bullet = { line: number; prose: string; examples: Example[] };
 
-/** The sections that start with `### NAME`, each running to the next heading or rule. */
-function readSections(docs: string): Section[] {
-  const all = docs.split('\n');
+/** The sections of a page that start with `### NAME`, each running to the next heading. */
+function readSections(page: string): Section[] {
+  const all = page.split('\n');
   const found: Section[] = [];
   for (let index = 0; index < all.length; index++) {
-    const heading = /^### ([A-Z0-9_]+)$/.exec(all[index]);
+    const heading = /^### ([A-Z0-9_]+)$/.exec(normalLine(all[index]).trimEnd());
     if (heading === null) continue;
     let end = index + 1;
-    while (end < all.length && !/^(#{1,3} |---$)/.test(all[end])) end += 1;
+    while (end < all.length && !HEADING.test(all[end])) end += 1;
     found.push({ name: heading[1], line: index + 1, lines: all.slice(index + 1, end) });
   }
   return found;
 }
 
-/** The shared rules: the lines after their heading, up to the next heading or rule. */
-function readShared(docs: string): Section | undefined {
-  const all = docs.split('\n');
+/** The shared rules: the lines after their heading, up to the next heading. */
+function readShared(page: string): Section | undefined {
+  const all = page.split('\n');
   const start = all.indexOf(SHARED_HEADING);
   if (start < 0) return undefined;
   let end = start + 1;
-  while (end < all.length && !/^(#{1,3} |---$)/.test(all[end])) end += 1;
+  while (end < all.length && !HEADING.test(all[end])) end += 1;
   return { name: 'Shared rules', line: start + 1, lines: all.slice(start + 1, end) };
 }
 
@@ -213,13 +237,13 @@ function readCall(call: string): { source: string; variables?: Record<string, un
 
 /**
  * The example statements of `lines` (numbered from `first`): `await evalOk(source, variables?);`
- * or `await evalErrors(source, variables?);`, as a rule followed by `// ` and what it gives,
- * written on one line or across several.
+ * or `await evalErrors(source, variables?);`, followed by `// ` and what it gives, written on one
+ * line or across several.
  */
 function readExamples(lines: string[], first: number): Example[] {
   const found: Example[] = [];
   for (let index = 0; index < lines.length; index++) {
-    const start = /^\s*await (evalOk|evalErrors)\(/.exec(lines[index]);
+    const start = EXAMPLE_START.exec(lines[index]);
     if (start === null) continue;
     let end = index;
     while (end < lines.length && !/\);\s*(\/\/ .*)?$/.test(lines[end])) end += 1;
@@ -242,21 +266,110 @@ function readExamples(lines: string[], first: number): Example[] {
 }
 
 /**
- * Prose with its code spans and link targets taken out, then NFKC-normalised, so that only its own
- * words remain, each character as the compatibility decomposition reads it (a full-width or small
- * form becomes the mark it stands for).
+ * The rules of a section, read by the grammar of its lines: for a function's section, after blank
+ * lines, its signature line; for the shared rules, their one opening sentence; then, separated by
+ * blank lines only, rules, each a top-level bullet of one line followed by one code block of
+ * examples, and, in a function's section, one closing line. A line the grammar does not expect
+ * where it stands is a problem.
+ */
+function readRules(
+  section: Section,
+  kind: 'function' | 'shared',
+  problems: string[],
+): { opening: string | undefined; bullets: Bullet[]; closing: string | undefined } {
+  const raw = section.lines;
+  const lines = raw.map(normalLine);
+  const at = (index: number) => section.line + 1 + index;
+  const where = (index: number) => `${section.name}, line ${at(index)}`;
+  const bullets: Bullet[] = [];
+  let index = 0;
+  const skipBlank = () => {
+    while (index < lines.length && lines[index].trim() === '') index += 1;
+  };
+  skipBlank();
+  const opening = index < lines.length ? raw[index] : undefined;
+  index += 1;
+  let closing: string | undefined;
+  for (;;) {
+    skipBlank();
+    if (index >= lines.length) break;
+    const line = lines[index];
+    if (closing !== undefined) {
+      problems.push(
+        problem('form', `${where(index)}: a line after the closing one: ${raw[index]}`),
+      );
+      index += 1;
+      continue;
+    }
+    if (CLOSING.test(line)) {
+      if (kind === 'shared') {
+        problems.push(problem('shared-once', `${where(index)}: a closing line`));
+      }
+      closing = raw[index];
+      index += 1;
+      continue;
+    }
+    if (!BULLET.test(line)) {
+      problems.push(
+        problem('form', `${where(index)}: a line the grammar does not take here: ${raw[index]}`),
+      );
+      index += 1;
+      continue;
+    }
+    const bullet: Bullet = { line: at(index), prose: line.slice(2), examples: [] };
+    bullets.push(bullet);
+    index += 1;
+    skipBlank();
+    const fence = index < lines.length ? FENCE_OPEN.exec(lines[index]) : null;
+    if (fence === null) {
+      problems.push(
+        problem('form', `${where(bullet.line - section.line - 1)}: a rule without a code block`),
+      );
+      continue;
+    }
+    const open = index;
+    index += 1;
+    while (index < lines.length && lines[index] !== `  ${fence[1]}`) index += 1;
+    if (index >= lines.length) {
+      problems.push(problem('form', `${where(open)}: a code block that is not closed`));
+    }
+    const block = raw.slice(open + 1, index);
+    bullet.examples = readExamples(block, at(open + 1));
+    const covered = new Set<number>();
+    for (const example of bullet.examples) {
+      for (let line = example.first; line <= example.last; line++) covered.add(line);
+    }
+    block.forEach((text, line) => {
+      if (!covered.has(line)) {
+        problems.push(
+          problem(
+            'form',
+            `${where(open + 1 + line)}: a line of a code block that is no example: ${text}`,
+          ),
+        );
+      }
+    });
+    index += 1;
+  }
+  return { opening, bullets, closing };
+}
+
+/**
+ * Prose with its code spans taken out, the target of each link a `[` opens taken out with it,
+ * NFKC-normalised and every whitespace character one space, so that only its own words remain;
+ * format characters stay, for `strayCharacters` to name.
  */
 function words(prose: string): string {
   return prose
     .replace(/(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, 'C')
-    .replace(/\]\([^)\s]*\)/g, ']')
+    .replace(/\[([^[\]]*)\]\([^)\s]*\)/g, '[$1]')
     .normalize('NFKC')
-    .replace(/\s+/g, ' ')
+    .replace(/[\s\p{White_Space}]+/gu, ' ')
     .trim();
 }
 
-/** A comma that joins two clauses into one bullet: one directly followed by a conjunction. */
-const JOINED = /,\s+(?:and|or|but|nor|so|yet|then)\b/i;
+/** A comma that joins two clauses into one bullet: one followed by a conjunction. */
+const JOINED = /,\s*(?:and|or|but|nor|so|yet|then)\b/i;
 
 /**
  * The characters of `text` (prose as `words` leaves it) outside those the rules may hold: letters,
@@ -278,12 +391,15 @@ function named(character: string): string {
   return `"${character}" (U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')})`;
 }
 
-/** The problems of a rule's prose, or of the closing sentence's: its characters and its end. */
+/** The problems of a rule's prose, or of the closing line's: its characters, its end, its joins. */
 function sentenceProblems(text: string, closing: boolean): string[] {
   const problems: string[] = [];
   const stray = strayCharacters(text, closing);
   if (stray.length > 0) {
     problems.push(problem('characters', `it holds ${stray.map(named).join(', ')}`));
+  }
+  if (text.includes('](')) {
+    problems.push(problem('characters', 'a "](" that no "[" opens'));
   }
   if (!text.endsWith('.')) problems.push(problem('characters', 'it does not end with "."'));
   if (!closing && JOINED.test(text)) {
@@ -293,20 +409,20 @@ function sentenceProblems(text: string, closing: boolean): string[] {
 }
 
 /**
- * A rule's words for comparison: link targets out, NFKC-normalised, format characters, code and
- * emphasis marks dropped, every other punctuation mark or symbol read as a space, and case folded
- * (upper case, then lower case, which folds `ß` to `ss` as well).
+ * A rule's words for comparison: the target of each link a `[` opens out, NFKC-normalised, format
+ * characters, code and emphasis marks dropped, every other punctuation mark or symbol read as a
+ * space, and case folded (upper case, then lower case, which folds `ß` to `ss` as well).
  */
 function normal(prose: string): string[] {
   return prose
-    .replace(/\]\([^)\s]*\)/g, ']')
+    .replace(/\[([^[\]]*)\]\([^)\s]*\)/g, '[$1]')
     .normalize('NFKC')
     .replace(/\p{Cf}/gu, '')
     .replace(/[`*_~]/g, '')
     .replace(/[\p{P}\p{S}]/gu, ' ')
     .toUpperCase()
     .toLowerCase()
-    .split(/\s+/)
+    .split(/[\s\p{White_Space}]+/u)
     .filter((word) => word !== '');
 }
 
@@ -349,93 +465,6 @@ function signatureLine(name: string): string {
       `${param.variadic ? '...' : ''}${param.name}${param.optional ? '?' : ''}: ${typeText(param.type)}`,
   );
   return `\`${name}(${params.join(', ')}) -> ${typeText(definition.returnType)}\``;
-}
-
-/**
- * The rules of a section's lines, from `from` on: top-level bullets, each one sentence of prose,
- * then one indented code block of examples, and at most a closing `Unspecified: ` sentence.
- * Every departure from that form is a problem: prose outside a bullet, a nested bullet, a bullet
- * without a code block, a line of a code block that is no example, prose after a code block, and
- * text after the closing sentence.
- */
-function readRules(
-  section: Section,
-  from: number,
-  problems: string[],
-): { bullets: Bullet[]; unspecified: string | null } {
-  const lines = section.lines;
-  const where = (offset: number) => `${section.name}, line ${section.line + 1 + offset}`;
-  const bullets: Bullet[] = [];
-  let unspecified: string | null = null;
-  let index = from;
-  const skipBlank = () => {
-    while (index < lines.length && lines[index].trim() === '') index += 1;
-  };
-  skipBlank();
-  while (index < lines.length) {
-    const line = lines[index];
-    if (unspecified !== null) {
-      problems.push(
-        problem('form', `${where(index)}: text after the unspecified sentence: ${line}`),
-      );
-      index += 1;
-      skipBlank();
-      continue;
-    }
-    if (line.startsWith(UNSPECIFIED)) {
-      const start = index;
-      while (index < lines.length && lines[index].trim() !== '') index += 1;
-      unspecified = lines.slice(start, index).join(' ');
-      skipBlank();
-      continue;
-    }
-    if (!line.startsWith('- ')) {
-      problems.push(problem('form', `${where(index)}: prose outside a rule bullet: ${line}`));
-      index += 1;
-      skipBlank();
-      continue;
-    }
-    const bulletLine = section.line + 1 + index;
-    const proseLines = [line.slice(2)];
-    index += 1;
-    while (index < lines.length && lines[index].trim() !== '') {
-      if (!lines[index].startsWith('  ') || /^\s+[-*+] /.test(lines[index])) {
-        problems.push(problem('form', `${where(index)}: a line of a rule that is no part of it`));
-      }
-      proseLines.push(lines[index].trim());
-      index += 1;
-    }
-    skipBlank();
-    const fence = index < lines.length ? /^ {2}(`{3,})ts$/.exec(lines[index]) : null;
-    const examples: Example[] = [];
-    if (fence === null) {
-      problems.push(problem('form', `line ${bulletLine}: a rule bullet without a code block`));
-    } else {
-      const open = index;
-      index += 1;
-      while (index < lines.length && lines[index] !== `  ${fence[1]}`) index += 1;
-      if (index >= lines.length) {
-        problems.push(problem('form', `${where(open)}: a code block that is not closed`));
-      }
-      const block = lines.slice(open + 1, index);
-      examples.push(...readExamples(block, section.line + 2 + open));
-      const covered = new Set<number>();
-      for (const example of examples) {
-        for (let at = example.first; at <= example.last; at++) covered.add(at);
-      }
-      block.forEach((text, at) => {
-        if (text.trim() !== '' && !covered.has(at)) {
-          problems.push(
-            problem('form', `${where(open + 1 + at)}: a line of a code block that is no example`),
-          );
-        }
-      });
-      index += 1;
-      skipBlank();
-    }
-    bullets.push({ line: bulletLine, prose: proseLines.join(' '), examples });
-  }
-  return { bullets, unspecified };
 }
 
 /** The names of the functions a formula calls, as the parser binds each call node. */
@@ -486,37 +515,51 @@ function stated(example: Example): { ok: true; value: unknown } | { ok: false } 
   return { ok: true, value: { value: value.value, warnings: withWarning ? [withWarning[2]] : [] } };
 }
 
-/** What an example gives when it runs, in the shape `stated` reads from its comment. */
-async function given(example: Example): Promise<unknown> {
-  if (example.helper === 'evalErrors') {
-    return { errors: await evalErrors(example.source, example.variables) };
+/** The call an example makes, whichever helper makes it: its source and its variables. */
+function callKey(example: Example): string {
+  return JSON.stringify([example.source, example.variables ?? null]);
+}
+
+/** What examples give when they run, each call run once for this spec, in the shape `stated` reads. */
+const GIVEN = new Map<string, Promise<unknown>>();
+
+function given(example: Example): Promise<unknown> {
+  const key = `${example.helper} ${callKey(example)}`;
+  let found = GIVEN.get(key);
+  if (found === undefined) {
+    found = (async () => {
+      if (example.helper === 'evalErrors') {
+        return { errors: await evalErrors(example.source, example.variables) };
+      }
+      const { parsed, compiled, output, errors } = await evalFormulaOutput(
+        example.source,
+        example.variables,
+      );
+      const all = [...parsed.errors, ...compiled.errors, ...errors].map((error) => error.code);
+      if (all.length > 0) return { errors: all };
+      return {
+        value: output.value ?? null,
+        warnings: (output.warnings ?? []).map((warning) => warning.code),
+      };
+    })();
+    GIVEN.set(key, found);
   }
-  const { parsed, compiled, output, errors } = await evalFormulaOutput(
-    example.source,
-    example.variables,
-  );
-  const all = [...parsed.errors, ...compiled.errors, ...errors].map((error) => error.code);
-  if (all.length > 0) return { errors: all };
-  return {
-    value: output.value ?? null,
-    warnings: (output.warnings ?? []).map((warning) => warning.code),
-  };
+  return found;
 }
 
 /**
- * Every problem of a block of rules: the form of each bullet and of the closing sentence, a
- * bullet that states one of `shared` again, the examples each bullet needs, and every example
- * that does not give what its comment states.
+ * Every problem of the rules of a section: its grammar, the form of each bullet and of the closing
+ * line, a bullet that states one of `shared` again, the examples each bullet needs, each call shown
+ * once in its block, and every example that does not give what its comment states.
  */
 async function ruleProblems(
   section: Section,
-  from: number,
+  kind: 'function' | 'shared',
   calls: readonly string[],
-  closing: boolean,
   shared: readonly string[],
-): Promise<string[]> {
+): Promise<{ problems: string[]; opening: string | undefined; bullets: Bullet[] }> {
   const problems: string[] = [];
-  const { bullets, unspecified } = readRules(section, from, problems);
+  const { opening, bullets, closing } = readRules(section, kind, problems);
   if (bullets.length === 0) problems.push(problem('form', `${section.name}: no rule bullets`));
   for (const bullet of bullets) {
     const at = `line ${bullet.line}`;
@@ -534,9 +577,14 @@ async function ruleProblems(
         problem('examples-count', `${at}: ${bullet.examples.length} example(s), two needed`),
       );
     }
+    const shown = new Set<string>();
     const outcomes = new Set<string>();
     for (const example of bullet.examples) {
       const where = `line ${example.line}: ${example.source}`;
+      if (shown.has(callKey(example))) {
+        problems.push(problem('examples-unique', `${where}: the same call shown again`));
+      }
+      shown.add(callKey(example));
       if (example.variables === undefined) {
         problems.push(problem('examples-give', `${where}: a variable named but not given`));
         continue;
@@ -569,24 +617,20 @@ async function ruleProblems(
       problems.push(problem('examples-differ', `${at}: every example states the same result`));
     }
   }
-  if (!closing) {
-    if (unspecified !== null) {
-      problems.push(problem('shared-once', `${section.name}: an unspecified sentence`));
+  if (kind === 'function') {
+    if (closing === undefined) {
+      problems.push(problem('form', `${section.name}: no closing line`));
+    } else {
+      const sentence = words(normalLine(closing));
+      if (sentence.split('Unspecified:').length !== 2) {
+        problems.push(problem('form', `${section.name}: "Unspecified:" more than once`));
+      }
+      for (const found of sentenceProblems(sentence, true)) {
+        problems.push(`${section.name}, the closing line: ${found}`);
+      }
     }
-    return problems;
   }
-  if (unspecified === null) {
-    problems.push(problem('form', `${section.name}: no unspecified sentence`));
-    return problems;
-  }
-  const sentence = words(unspecified);
-  if (sentence.split('Unspecified:').length !== 2) {
-    problems.push(problem('form', `${section.name}: "Unspecified:" more than once`));
-  }
-  for (const found of sentenceProblems(sentence, true)) {
-    problems.push(`${section.name}, the unspecified sentence: ${found}`);
-  }
-  return problems;
+  return { problems, opening, bullets };
 }
 
 /** The problems of one example of 1.0.0, whose comment may add a note in brackets after the value. */
@@ -608,18 +652,187 @@ async function baselineProblems(example: Example): Promise<string[]> {
     : [problem('baseline', `${where}: gives ${JSON.stringify(actual)}, not ${example.comment}`)];
 }
 
-const SECTIONS = readSections(DOCS);
-const BY_NAME = new Map(SECTIONS.map((section) => [section.name, section]));
-const SHARED = readShared(DOCS);
-
 /** The prose of each shared rule, as the rules of a section are read. */
 function readSharedRules(shared: Section | undefined): string[] {
   if (shared === undefined) return [];
-  const first = shared.lines.findIndex((line) => line.trim() !== '');
-  return readRules(shared, first + 1, []).bullets.map((bullet) => bullet.prose);
+  return readRules(shared, 'shared', []).bullets.map((bullet) => bullet.prose);
 }
 
-const SHARED_RULES = readSharedRules(SHARED);
+/** Every problem of a page by the checks of `DOCS_CHECKS`, each under its id. */
+async function checkPage(page: string): Promise<string[]> {
+  const sections = readSections(page);
+  const shared = readShared(page);
+  const sharedRules = readSharedRules(shared);
+  const problems: string[] = [];
+
+  // sections: each added function has one section, and no 1.0.0 section has a closing line.
+  for (const name of ADDED) {
+    const count = sections.filter((section) => section.name === name).length;
+    if (count !== 1) problems.push(problem('sections', `${name}: ${count} section(s), one wanted`));
+  }
+  for (const section of sections.filter((section) => !ADDED.includes(section.name))) {
+    if (section.lines.some((line) => CLOSING.test(normalLine(line)))) {
+      problems.push(problem('sections', `${section.name}: a closing line in a 1.0.0 section`));
+    }
+  }
+  const named = sections.map((section) => section.name);
+  for (const name of new Set(named.filter((name, index) => named.indexOf(name) !== index))) {
+    if (!ADDED.includes(name)) {
+      problems.push(problem('sections', `${name}: a heading another heading repeats`));
+    }
+  }
+
+  // The shared rules: once, opened by their one sentence, read by the grammar of the rules.
+  if (shared === undefined) {
+    problems.push(problem('shared-once', `no heading ${SHARED_HEADING}`));
+  } else {
+    if (page.split('\n').filter((line) => line === SHARED_HEADING).length !== 1) {
+      problems.push(problem('shared-once', `${SHARED_HEADING} more than once`));
+    }
+    const read = await ruleProblems(shared, 'shared', ADDED, []);
+    if (read.opening !== SHARED_INTRO) {
+      problems.push(problem('shared-once', `the opening sentence: ${read.opening}`));
+    }
+    problems.push(...read.problems);
+    if (sharedRules.length === 0) problems.push(problem('shared-once', 'no shared rules'));
+    sharedRules.forEach((rule, index) => {
+      for (const other of sharedRules.slice(index + 1)) {
+        const how = overlap(rule, other, false);
+        if (how !== null) {
+          problems.push(problem('shared-overlap', `the shared rule "${rule}" ${how} "${other}"`));
+        }
+      }
+    });
+  }
+
+  // Each section of an added function, every one of them where a heading repeats.
+  for (const section of sections.filter((section) => ADDED.includes(section.name))) {
+    const read = await ruleProblems(section, 'function', [section.name], sharedRules);
+    const expected = signatureLine(section.name);
+    if (read.opening !== expected) {
+      problems.push(problem('signature', `${section.name}: ${read.opening}, not ${expected}`));
+    }
+    problems.push(...read.problems);
+  }
+
+  // Every example statement on the page is read inside a section or the shared rules.
+  const statements = page.split('\n').filter((line) => EXAMPLE_START.test(line)).length;
+  const read = [...sections, ...(shared ? [shared] : [])].flatMap((section) =>
+    readExamples(section.lines, section.line + 1),
+  );
+  if (statements === 0) problems.push(problem('examples-read', 'no example statements'));
+  if (read.length !== statements) {
+    problems.push(problem('examples-read', `${statements} statements, ${read.length} read`));
+  }
+
+  // The examples of 1.0.0's functions give what their comments state.
+  const others = sections.filter((section) => !ADDED.includes(section.name));
+  const examples = others.flatMap((section) => readExamples(section.lines, section.line + 1));
+  const sources = examples.map((example) => example.source);
+  for (const source of Object.keys(NOT_RUN).filter((source) => !sources.includes(source))) {
+    problems.push(problem('baseline', `${source}: listed as not run, and not on the page`));
+  }
+  for (const example of examples) {
+    if (example.source in NOT_RUN) continue;
+    problems.push(...(await baselineProblems(example)));
+  }
+  return problems;
+}
+
+/**
+ * The text of a section of the real page, from its heading up to the next heading, for the small
+ * page the fixtures edit.
+ */
+function sectionText(heading: string): string {
+  const lines = DOCS.split('\n');
+  const start = lines.indexOf(heading);
+  expect(start, heading).toBeGreaterThan(-1);
+  let end = start + 1;
+  while (end < lines.length && !HEADING.test(lines[end])) end += 1;
+  return lines.slice(start, end).join('\n');
+}
+
+/**
+ * A small page built from the real one: the shared rules, the section of one added function
+ * (`TAKE`) and of one function of 1.0.0 (`LEN`). Each fixture edits it, and the check it belongs to
+ * must report a problem the unedited page does not have.
+ */
+const SMALL_PAGE = [
+  '# Functions',
+  '',
+  sectionText(SHARED_HEADING),
+  '## Lists',
+  '',
+  sectionText('### TAKE'),
+  sectionText('### LEN'),
+].join('\n');
+
+/** A fixture: text to find once in the small page and what to put in its place. */
+type Fixture = { find: string; replace: string };
+
+const TAKE_RULE = '- Items are taken as they are, `null` and `""` included.';
+const TAKE_CLOSING = 'Unspecified: nothing.';
+const LEN_EXAMPLE = 'await evalOk(\'LEN("abc")\'); // 3';
+
+/** One fixture for each check of `DOCS_CHECKS`: an edit the check turns red. */
+const FIXTURES: Record<string, Fixture> = {
+  sections: { find: '### TAKE', replace: `${sectionText('### TAKE')}\n### TAKE` },
+  signature: {
+    find: '`TAKE(list: list<T>, count: number, start?: number) -> list<T>`',
+    replace: '`TAKE(list: list<T>, count: number, start: number) -> list<T>`',
+  },
+  form: {
+    find: TAKE_CLOSING,
+    replace: `${TAKE_CLOSING}\n\n---\n\n- A count of 9 gives every item.`,
+  },
+  characters: {
+    find: TAKE_RULE,
+    replace: '- Items are taken as they are; `null` and `""` included.',
+  },
+  conjunction: {
+    find: TAKE_RULE,
+    replace: '- Items are taken as they are,and `null` and `""` are included.',
+  },
+  'shared-overlap': {
+    find: TAKE_RULE,
+    replace: '- A `null` given for an argument the function requires returns `null`.',
+  },
+  'shared-once': {
+    find: SHARED_INTRO,
+    replace: 'These rules hold in the sections that state their function as rules.',
+  },
+  'examples-count': {
+    find: TAKE_RULE,
+    replace: `- A list of one item gives that item.\n\n  \`\`\`ts\n  await evalOk('TAKE(LIST(1); 1)'); // [1]\n  \`\`\`\n\n${TAKE_RULE}`,
+  },
+  'examples-call': {
+    find: TAKE_RULE,
+    replace: `- A list of two items gives two.\n\n  \`\`\`ts\n  await evalOk('TAKE(LIST(1; 2); 2)'); // [1, 2]\n  await evalOk('LEN("ab")'); // 2\n  \`\`\`\n\n${TAKE_RULE}`,
+  },
+  'examples-give': {
+    find: TAKE_RULE,
+    replace: `- A list of two items gives two.\n\n  \`\`\`ts\n  await evalOk('TAKE(LIST(1; 2); 2)'); // [2, 1]\n  await evalOk('TAKE(LIST(1; 2); 1)'); // [1]\n  \`\`\`\n\n${TAKE_RULE}`,
+  },
+  'examples-differ': {
+    find: TAKE_RULE,
+    replace: `- A list of two items gives two.\n\n  \`\`\`ts\n  await evalOk('TAKE(LIST(1; 2); 2)'); // [1, 2]\n  await evalOk('TAKE(LIST(1; 2); 3)'); // [1, 2]\n  \`\`\`\n\n${TAKE_RULE}`,
+  },
+  'examples-unique': {
+    find: TAKE_RULE,
+    replace: `- A list of two items gives two.\n\n  \`\`\`ts\n  await evalOk('TAKE(LIST(1; 2); 2)'); // [1, 2]\n  await evalErrors('TAKE(LIST(1; 2); 2)'); // []\n  \`\`\`\n\n${TAKE_RULE}`,
+  },
+  'examples-read': {
+    find: '# Functions',
+    replace: `# Functions\n\n\`\`\`ts\nawait evalOk('TAKE(LIST(1); 1)'); // [1]\n\`\`\``,
+  },
+  baseline: { find: LEN_EXAMPLE, replace: 'await evalOk(\'LEN("abc")\'); // 4' },
+};
+
+/** The small page with one fixture applied. */
+function edited(fixture: Fixture): string {
+  expect(SMALL_PAGE.split(fixture.find).length, `${fixture.find}: found once`).toBe(2);
+  return SMALL_PAGE.replace(fixture.find, () => fixture.replace);
+}
 
 /**
  * The markdown files of the repository, by their path from its root, outside its dependencies,
@@ -641,157 +854,92 @@ function markdownFiles(directory: URL, prefix = ''): string[] {
   return found;
 }
 
-/** The bullets of the list that follows line `at`, each joined across its lines, and where it ends. */
-function listAfter(lines: string[], at: number): { items: string[]; end: number } {
-  const items: string[] = [];
-  let index = at + 1;
-  while (index < lines.length && lines[index].trim() === '') index += 1;
-  while (index < lines.length && /^\s*- /.test(lines[index])) {
-    const parts = [lines[index].replace(/^\s*- /, '')];
-    index += 1;
-    while (index < lines.length && lines[index].trim() !== '' && !/^\s*- /.test(lines[index])) {
-      parts.push(lines[index].trim());
-      index += 1;
-    }
-    items.push(parts.join(' ').replace(/\s+/g, ' ').trim());
-  }
-  return { items, end: index };
-}
-
 /**
- * Where a file departs from the table: each line that names this spec must open the list of
- * `DOCS_CHECKS` sentences, followed by the line that opens the list of `REVIEWER_CHECKS`; a
- * sentence the table lacks and a sentence of the table the file lacks are both departures.
+ * Where a file departs from the grammar of a claim site: the one line that names this spec is the
+ * lead-in, then a blank line, the table's sentences as one list of one line each, a blank line,
+ * the reviewer's lead-in, a blank line, the reviewer's sentences as one list, and nothing but blank
+ * lines after them up to the next heading or the end of the file, all at the lead-in's indent.
  */
 function claimProblems(path: string, text: string): string[] {
   const problems: string[] = [];
   const lines = text.split('\n');
-  const spec = (checks: readonly Check[]) => checks.map((check) => check.sentence);
-  const compare = (what: string, listed: string[], table: string[]) => {
-    for (const sentence of listed.filter((item) => !table.includes(item))) {
-      problems.push(`${path}: ${what} lists a check the table does not hold: ${sentence}`);
+  const naming = lines.flatMap((line, index) =>
+    line.includes('function-docs.spec.ts') ? [index] : [],
+  );
+  if (naming.length !== 1) {
+    problems.push(`${path}: names this spec on ${naming.length} lines, one wanted`);
+  }
+  for (const start of naming) {
+    if (lines[start].trim() !== LEAD_IN) {
+      problems.push(`${path}:${start + 1}: names the spec outside the line "${LEAD_IN}"`);
+      continue;
     }
-    for (const sentence of table.filter((item) => !listed.includes(item))) {
-      problems.push(`${path}: ${what} does not list the check: ${sentence}`);
+    const indent = lines[start].length - lines[start].trimStart().length;
+    const pad = ' '.repeat(indent);
+    let index = start + 1;
+    const blank = () => {
+      if (lines[index]?.trim() !== '') {
+        problems.push(`${path}:${index + 1}: a blank line wanted: ${lines[index] ?? '<end>'}`);
+      }
+      index += 1;
+    };
+    const list = (table: readonly Check[], what: string) => {
+      const items: string[] = [];
+      while (index < lines.length && lines[index].startsWith(`${pad}- `)) {
+        items.push(lines[index].slice(indent + 2));
+        index += 1;
+      }
+      if (
+        !isDeepStrictEqual(
+          items,
+          table.map((check) => check.sentence),
+        )
+      ) {
+        problems.push(`${path}: ${what} does not list exactly the table's sentences, in its order`);
+      }
+    };
+    blank();
+    list(DOCS_CHECKS, 'the list of checks');
+    blank();
+    if (lines[index] !== `${pad}${REVIEW_LEAD_IN}`) {
+      problems.push(`${path}:${index + 1}: "${REVIEW_LEAD_IN}" wanted: ${lines[index] ?? '<end>'}`);
     }
-    if (problems.length === 0 && !isDeepStrictEqual(listed, table)) {
-      problems.push(`${path}: ${what} lists the checks in another order than the table`);
+    index += 1;
+    blank();
+    list(REVIEWER_CHECKS, "the reviewer's list");
+    while (index < lines.length && !HEADING.test(lines[index])) {
+      if (lines[index].trim() !== '') {
+        problems.push(
+          `${path}:${index + 1}: a line after the lists, before the next heading: ${lines[index]}`,
+        );
+      }
+      index += 1;
     }
-  };
-  lines.forEach((line, index) => {
-    if (!line.includes('function-docs.spec.ts')) return;
-    if (line.trim() !== LEAD_IN) {
-      problems.push(`${path}:${index + 1}: names the spec outside the line "${LEAD_IN}"`);
-      return;
-    }
-    const checks = listAfter(lines, index);
-    compare(`line ${index + 1}`, checks.items, spec(DOCS_CHECKS));
-    let next = checks.end;
-    while (next < lines.length && lines[next].trim() === '') next += 1;
-    if (lines[next]?.trim() !== REVIEW_LEAD_IN) {
-      problems.push(`${path}:${next + 1}: the list is not followed by "${REVIEW_LEAD_IN}"`);
-      return;
-    }
-    compare(`line ${next + 1}`, listAfter(lines, next).items, spec(REVIEWER_CHECKS));
-  });
+  }
   return problems;
 }
 
-describe('docs/functions.md examples', () => {
-  it('reads every example statement on the page, each inside a function section or the shared rules', () => {
-    const statements = DOCS.split('\n').filter((line) => /^\s*await /.test(line)).length;
-    const read = [...SECTIONS, ...(SHARED ? [SHARED] : [])].flatMap((section) =>
-      readExamples(section.lines, section.line + 1),
-    );
-    const problems: string[] = [];
-    if (statements === 0) problems.push(problem('examples-read', 'no example statements'));
-    if (read.length !== statements) {
-      problems.push(problem('examples-read', `${statements} statements, ${read.length} read`));
-    }
+describe('docs/functions.md', () => {
+  it('departs from none of the checks of DOCS_CHECKS', async () => {
+    expect(ADDED.length).toBeGreaterThan(0);
+    const problems = await checkPage(DOCS);
     expect(problems, problems.join('\n')).toStrictEqual([]);
   });
 });
 
-describe('docs/functions.md for the functions added to 1.0.0', () => {
-  it('documents each added function, and states rules this way for no other', () => {
-    expect(ADDED.length).toBeGreaterThan(0);
-    const problems = ADDED.filter((name) => !BY_NAME.has(name)).map((name) =>
-      problem('sections', `${name}: no section`),
-    );
-    const stated = SECTIONS.filter((section) =>
-      section.lines.some((line) => line.startsWith(UNSPECIFIED)),
-    ).map((section) => section.name);
-    for (const name of stated.filter((name) => !ADDED.includes(name))) {
-      problems.push(problem('sections', `${name}: an unspecified sentence in a 1.0.0 section`));
-    }
-    expect(problems, problems.join('\n')).toStrictEqual([]);
+describe('the checks prove themselves', () => {
+  it('has one fixture for each check of the table, and none for a check it does not hold', () => {
+    expect(Object.keys(FIXTURES).sort()).toStrictEqual(DOCS_CHECKS.map((check) => check.id).sort());
   });
 
-  it('states the shared rules once, opened by their one sentence, in the form of the rules', async () => {
-    const problems: string[] = [];
-    if (SHARED === undefined) {
-      problems.push(problem('shared-once', `no heading ${SHARED_HEADING}`));
-    } else {
-      const first = SHARED.lines.findIndex((line) => line.trim() !== '');
-      if (SHARED.lines[first] !== SHARED_INTRO) {
-        problems.push(problem('shared-once', `the opening sentence: ${SHARED.lines[first]}`));
-      }
-      if (DOCS.split('\n').filter((line) => line === SHARED_HEADING).length !== 1) {
-        problems.push(problem('shared-once', `${SHARED_HEADING} more than once`));
-      }
-      problems.push(...(await ruleProblems(SHARED, first + 1, ADDED, false, [])));
-      if (SHARED_RULES.length === 0) problems.push(problem('shared-once', 'no shared rules'));
-      SHARED_RULES.forEach((rule, index) => {
-        for (const other of SHARED_RULES.slice(index + 1)) {
-          const how = overlap(rule, other, false);
-          if (how !== null) {
-            problems.push(problem('shared-overlap', `the shared rule "${rule}" ${how} "${other}"`));
-          }
-        }
-      });
-    }
-    expect(problems, problems.join('\n')).toStrictEqual([]);
-  });
-
-  for (const name of ADDED) {
-    it(`${name}: one rule per bullet, each with examples that tell it apart, each answering as written`, async () => {
-      const section = BY_NAME.get(name);
-      expect(section, `${name}: its section`).toBeDefined();
-      const lines = (section as Section).lines;
-      const signature = lines.findIndex((line) => line.trim() !== '');
-      const problems: string[] = [];
-      if (lines[signature] !== signatureLine(name)) {
-        problems.push(
-          problem('signature', `${name}: ${lines[signature]}, not ${signatureLine(name)}`),
-        );
-      }
-      problems.push(
-        ...(await ruleProblems(section as Section, signature + 1, [name], true, SHARED_RULES)),
-      );
-      expect(problems, problems.join('\n')).toStrictEqual([]);
+  for (const check of DOCS_CHECKS) {
+    it(`${check.id}: turns its fixture red`, async () => {
+      const before = new Set(await checkPage(SMALL_PAGE));
+      const after = await checkPage(edited(FIXTURES[check.id]));
+      const found = after.filter((text) => !before.has(text) && text.includes(`${check.id}: `));
+      expect(found, `${check.id}: no problem of its own on its fixture`).not.toStrictEqual([]);
     });
   }
-});
-
-describe('docs/functions.md for the functions of 1.0.0', () => {
-  it('runs every example but those listed as not run, and lists only examples it finds', async () => {
-    const others = SECTIONS.filter((section) => !ADDED.includes(section.name));
-    const examples = others.flatMap((section) => readExamples(section.lines, section.line + 1));
-    expect(others.length).toBeGreaterThan(0);
-    expect(examples.length).toBeGreaterThan(Object.keys(NOT_RUN).length);
-    const sources = examples.map((example) => example.source);
-    const problems = Object.keys(NOT_RUN)
-      .filter((source) => !sources.includes(source))
-      .map((source) => problem('baseline', `${source}: listed as not run, and not on the page`));
-    let ran = 0;
-    for (const example of examples) {
-      if (example.source in NOT_RUN) continue;
-      problems.push(...(await baselineProblems(example)));
-      ran += 1;
-    }
-    expect(problems, problems.join('\n')).toStrictEqual([]);
-    expect(ran).toBe(examples.length - Object.keys(NOT_RUN).length);
-  });
 });
 
 describe('the checks, as the table states them and as the repository lists them', () => {
@@ -809,7 +957,7 @@ describe('the checks, as the table states them and as the repository lists them'
     expect([...reported].sort()).toStrictEqual([...ids].sort());
   });
 
-  it('is listed, sentence for sentence, by every file of the repository that names this spec', () => {
+  it('is listed by every file of the repository that names this spec, by the grammar of a claim site', () => {
     const root = new URL('../../../', import.meta.url);
     const naming = markdownFiles(root).filter((path) =>
       readFileSync(new URL(path, root), 'utf8').includes('function-docs.spec.ts'),
@@ -819,5 +967,27 @@ describe('the checks, as the table states them and as the repository lists them'
       claimProblems(path, readFileSync(new URL(path, root), 'utf8')),
     );
     expect(problems, problems.join('\n')).toStrictEqual([]);
+  });
+
+  it('refuses a claim site that lists more than the table or claims a check in prose', () => {
+    const site = (tail: string) =>
+      [
+        '# A site',
+        '',
+        LEAD_IN,
+        '',
+        ...DOCS_CHECKS.map((check) => `- ${check.sentence}`),
+        '',
+        REVIEW_LEAD_IN,
+        '',
+        ...REVIEWER_CHECKS.map((check) => `- ${check.sentence}`),
+        tail,
+      ].join('\n');
+    expect(claimProblems('site', site(''))).toStrictEqual([]);
+    expect(claimProblems('site', site('\n## Next\n\nAnything.'))).toStrictEqual([]);
+    expect(claimProblems('site', site('\n- Whether a rule is true.'))).not.toStrictEqual([]);
+    expect(
+      claimProblems('site', site('\nIt also checks that the examples sit on either side.')),
+    ).not.toStrictEqual([]);
   });
 });

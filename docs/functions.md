@@ -73,17 +73,18 @@ arguments with `,` instead.
 
   `core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
 
-  - Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
+  - Each function the 1.0.0 baseline does not name has one section, under a heading of its name that no other heading repeats, and no other section has a line that, read with every whitespace character as one space, starts with `Unspecified:`.
   - Such a section opens with its signature line, the whole line as the live registry renders it.
-  - Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.
-  - With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.
-  - No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".
-  - Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
-  - The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.
+  - Read line by line up to the next heading, after NFKC normalisation, with every whitespace character as one space and format characters dropped, such a section is its signature line, then rules, each a top-level bullet of one line followed by one code block every line of which belongs to an example, then one line that starts with `Unspecified:`, with only blank lines between them, and any other line fails, a `---` rule, a line after the closing one and a nested or numbered item among them.
+  - With its code spans taken out, the target of each link that a `[` opens taken out with it, every whitespace character read as one space and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, the closing line is held to the same, with the colon of `Unspecified:` at its start, and a `](` that no `[` opens fails.
+  - No bullet holds a comma followed, after any whitespace or none, by "and", "or", "but", "nor", "so", "yet" or "then".
+  - Read with the target of each link that a `[` opens taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
+  - The shared rules stand once, under their heading, opened by their one sentence and read by the same grammar as a section, with no signature line and no closing line.
   - Each bullet has at least two examples.
   - The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
   - Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
   - At least two of the examples of a bullet state different results.
+  - No code block shows one call twice, the same source with the same variables, under either helper.
   - Every example statement on the page is read, each inside a function section or the shared rules.
   - Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
 
@@ -440,8 +441,6 @@ under the default limits.
 - **Control flow:** [IF](#if) · [SWITCH](#switch)
 - **Type predicates & empty:** [IS_EMPTY](#is_empty) · [EMPTY](#empty) · [ISNUMBER](#isnumber) · [ISTEXT](#istext) · [ISDATE](#isdate)
 
----
-
 ## Math
 
 ### ADD
@@ -746,8 +745,6 @@ await evalOk('RANGE_SCORE(5; 0; 3; 7; 10)'); // 1  (inside warn band)
 await evalOk('RANGE_SCORE(-1; 0; 3; 7; 10)'); // 0  (outside bad bound)
 ```
 
----
-
 ## Aggregation
 
 ### AVG
@@ -820,8 +817,6 @@ primitives and by structural key for other values.
 ```ts
 await evalOk('COUNT_UNIQUE("a"; "a"; "b"; ""; 1/0)'); // 2
 ```
-
----
 
 ## Logic & comparison
 
@@ -935,8 +930,6 @@ a runtime error, not `null`.
 await evalOk('NOT("false")'); // true
 ```
 
----
-
 ## Text
 
 Most text functions return `null` (often with a `TYPE` warning) when given a
@@ -1005,8 +998,13 @@ holds each Knuth-Morris-Pratt search to at most twice the lengths of the text
 and the phrase together, every input whose count is a fixed number of
 units per repetition to that exact count, and `keep` tokens longer than
 their text to one unit each, 1,000 tokens of 1,000,000 code units among
-them. It observes each evaluation with its bound as the meter's limit, so a
-loop that works past the bound stops at once and fails the spec. The meter does not see the work inside the runtime's
+them. A call of `FIRST_CONTAINED`, `CONTAINS_ANY` or `MISSING_FROM` that
+refuses a phrase longer than 250 code units counts no work at all on a text of
+1,000,000 code units, as the [shared rules](#shared-rules) compute the result
+only once every check has passed, while the same call with short phrases
+counts the text it searches. It observes each evaluation with its bound as the
+meter's limit, so a loop that works past the bound stops at once and fails the
+spec. The meter does not see the work inside the runtime's
 regular expressions, its substring search or `Intl.Segmenter`, and no spec
 measures time: that the fixed expressions run in linear time is what the code
 claims, and review owns that claim. Each cost but that of the formula's own
@@ -1646,6 +1644,8 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   ```ts
   await evalOk('SENTENCES(" Ja. ")'); // ["Ja."]
   await evalOk('SENTENCES(" Ja. Nein "; "terminators")'); // ["Ja.", "Nein"]
+  await evalOk('SENTENCES("Hi. Ok  ")'); // ["Hi.", "Ok"]
+  await evalOk('SENTENCES("  Ok")'); // ["Ok"]
   ```
 
 - In `"punctuation"` mode, a piece that is empty once trimmed is no sentence.
@@ -1894,6 +1894,8 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED("istanbul"; LIST("ISTANBUL"); "substring"; TRUE)'); // "ISTANBUL"
   await evalOk('FIRST_CONTAINED("\u00CC"; LIST("\u00EC"); "substring"; TRUE)'); // "\u00ec"
   await evalOk('FIRST_CONTAINED("\u00EC"; LIST("\u00CC"); "substring"; TRUE)'); // "\u00cc"
+  await evalOk('FIRST_CONTAINED("Straße"; LIST("strasse"); "substring"; TRUE)'); // null
+  await evalOk('FIRST_CONTAINED("Fußball"; LIST("fussball"); "word"; TRUE)'); // null
   ```
 
 - A phrase longer than 250 code units as it is searched for, lower-cased when `ignoreCase` is `TRUE`, raises `PHRASE_TOO_LONG`.
@@ -1995,6 +1997,7 @@ Unspecified: nothing.
   await evalOk('MISSING_FROM(LIST("\u00CC"); "\u00EC"; "loose")'); // []
   await evalOk('MISSING_FROM(LIST("ISTANBUL"); "istanbul"; "loose")'); // []
   await evalOk('MISSING_FROM(LIST("ISTANBUL"); "istanbul"; "whitespace")'); // ["ISTANBUL"]
+  await evalOk('MISSING_FROM(LIST("Straße"); "STRASSE"; "loose")'); // ["Straße"]
   ```
 
 - In `"loose"` mode, the quotes `‘ ’ ‚ ‛ ‹ ›` become `'`.
@@ -2037,6 +2040,7 @@ Unspecified: nothing.
   await evalOk('MISSING_FROM(LIST("ss"); "STRAẞE"; "loose")'); // ["ss"]
   await evalOk('MISSING_FROM(LIST("a"); value; "loose")', { value: '\u00E0' }); // ["a"]
   await evalOk('MISSING_FROM(LIST("a-b"); value; "loose")', { value: 'A\u2212B' }); // []
+  await evalOk('MISSING_FROM(value; "FILE"; "loose")', { value: ['\uFB01le'] }); // ["\ufb01le"]
   ```
 
 - In `"loose"` mode, a composed letter and its decomposed form stay apart unless both lower-case to the same text.
@@ -2986,8 +2990,6 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
 
 Unspecified: in a block's text, what [PLAIN_TEXT](#plain_text) leaves unspecified in `"markdown"`.
 
----
-
 ## Lists
 
 Higher-order list functions (`FILTER`, `FILTER_PROPERTY`, `FILTER_BY`, `EACH`,
@@ -3441,8 +3443,6 @@ Unspecified: nothing.
 
 Unspecified: nothing.
 
----
-
 ## Date & time
 
 `DATE`, `TIME`, and `NOW` produce structured values, not plain strings. A date
@@ -3650,8 +3650,6 @@ ISO week with no argument.
 await evalOk('ISOWEEKNUM(DATE(2024; 1; 4))'); // 1
 ```
 
----
-
 ## Control flow
 
 ### IF
@@ -3680,8 +3678,6 @@ await evalOk('SWITCH(2; 1; "a"; 2; "b"; "d")'); // "b"
 await evalOk('SWITCH(3; 1; "a"; 2; "b"; "d")'); // "d"  (default)
 await evalOk('SWITCH("1"; 1; "ok"; "no")'); // "ok" (coerced)
 ```
-
----
 
 ## Type predicates & empty
 

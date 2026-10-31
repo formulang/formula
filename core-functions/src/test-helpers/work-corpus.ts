@@ -1,8 +1,7 @@
 /**
  * The inputs on which the work of the text functions is counted: built to make each loop that walks
- * the input work hardest, each at three sizes, with the exact count where the loops give one. Read
- * by `work-bounds.spec.ts`, and by the judge that times a surviving mutant on each input at its
- * largest size before calling it equivalent (`WORST_CASES`).
+ * the input work hardest, each at three sizes, with the exact count where the loops give one, as
+ * `work-bounds.spec.ts` reads them.
  */
 
 /** The most units of work any of these functions may count per code unit of its input. */
@@ -273,31 +272,3 @@ export const KEEP_LONG = {
   build: (tokens: number, tokenLength: number): string[] =>
     Array<string>(tokens).fill('x'.repeat(tokenLength)),
 };
-
-/** One input at its largest size: what the judge of equivalence times on the head and a mutant. */
-export type WorstCase = { name: string; source: string; value: unknown; other: unknown };
-
-/** Every input of the corpus at its largest size, the families, the searches and `KEEP_LONG`. */
-export function worstCases(): WorstCase[] {
-  const size = SIZES[SIZES.length - 1];
-  return [
-    ...FAMILIES.map((family) => ({
-      name: family.name,
-      source: family.source,
-      value: family.build(size),
-      other: size,
-    })),
-    ...SEARCHES.map((search) => ({
-      name: search.name,
-      source: search.source,
-      value: search.build(size),
-      other: search.phrase,
-    })),
-    {
-      name: KEEP_LONG.name,
-      source: KEEP_LONG.source,
-      value: KEEP_LONG.build(KEEP_LONG.tokens, KEEP_LONG.tokenLength),
-      other: null,
-    },
-  ];
-}

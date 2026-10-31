@@ -21,6 +21,7 @@ import {
 } from './argument-readers';
 import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { someOccurrence } from './text-search';
+import { chargeWork } from './work-meter';
 
 /**
  * The longest phrase, in code units as searched for, that the phrase functions take. Each phrase
@@ -117,8 +118,13 @@ function firstContained(
   const haystack = ignoreCase ? text.toLowerCase() : text;
   for (let index = 0; index < phrases.length; index++) {
     const needle = needles[index];
-    const found = match === 'word' ? containsAsWord(haystack, needle) : haystack.includes(needle);
-    if (found) return phrases[index];
+    if (match === 'word') {
+      if (containsAsWord(haystack, needle)) return phrases[index];
+      continue;
+    }
+    // The runtime's own search: one unit for each code unit of the text handed to it.
+    chargeWork(haystack.length);
+    if (haystack.includes(needle)) return phrases[index];
   }
   return null;
 }
@@ -211,9 +217,12 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
     const needles = items.map((item) => normalise(item, mode));
     checkPhraseLengths('MISSING_FROM', needles);
     const haystack = normalise(text, mode);
-    const missing = items.filter(
-      (_item, index) => needles[index].length > 0 && !haystack.includes(needles[index]),
-    );
+    const missing = items.filter((_item, index) => {
+      if (needles[index].length === 0) return false;
+      // The runtime's own search: one unit for each code unit of the text handed to it.
+      chargeWork(haystack.length);
+      return !haystack.includes(needles[index]);
+    });
     return makeOkList('MISSING_FROM', missing);
   }
 }

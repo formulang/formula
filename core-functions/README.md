@@ -141,38 +141,6 @@ registers just the definitions when you only need to parse and validate.
 
 ## Function categories
 
-The full reference — signatures, edge cases, and a runnable example per
-function — is in **[docs/functions.md](../docs/functions.md)**. The sections of
-the functions added since 1.0.0 state each function as rules, one rule of one
-sentence per bullet with at least two examples that give different results,
-share the rules under _Shared rules_, and close with one sentence naming the
-inputs they leave unspecified. `src/functions/shared-rules.spec.ts` runs each
-shared rule against every added function and every parameter the rule
-governs, read from the live registry.
-
-`core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
-
-- Each function the 1.0.0 baseline does not name has a section, and no other section closes with an `Unspecified:` sentence.
-- Such a section opens with its signature line, the whole line as the live registry renders it.
-- Its rules are top-level bullets, each followed by one code block of examples, and it closes with one sentence that starts with `Unspecified:`, and prose outside a rule, a nested bullet, a line of a code block that is no example and text after the closing sentence each fail.
-- With its code spans and link targets taken out and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, and the closing sentence is held to the same, with the colon of `Unspecified:` at its start.
-- No bullet holds a comma directly followed by "and", "or", "but", "nor", "so", "yet" or "then".
-- Read with link targets taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
-- The shared rules stand once, under their heading, opened by their one sentence, as bullets with examples in the form of the rules and with no closing sentence.
-- Each bullet has at least two examples.
-- The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
-- Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
-- At least two of the examples of a bullet state different results.
-- Every example statement on the page is read, each inside a function section or the shared rules.
-- Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
-
-It cannot decide these, which the reviewer decides:
-
-- Whether a bullet states one condition and its outcome.
-- Whether a rule holds beyond its examples.
-- Whether the examples of a rule sit on either side of its condition.
-- Whether a bullet restates a shared rule in other words.
-
 Overview:
 
 | Category           | Functions                                                                                                                                                                                                                                                                                                                                                                |
@@ -185,6 +153,39 @@ Overview:
 | Date & time        | `DATE` `DATEVALUE` `TIME` `TIMEVALUE` `NOW` `TODAY` `DAY` `MONTH` `YEAR` `HOUR` `MINUTE` `SECOND` `DAYS` `DATEDIF` `WEEKDAY` `WEEKNUM` `ISOWEEKNUM`                                                                                                                                                                                                                      |
 | Control flow       | `IF` `SWITCH`                                                                                                                                                                                                                                                                                                                                                            |
 | Type & empty       | `IS_EMPTY` `EMPTY` `ISNUMBER` `ISTEXT` `ISDATE`                                                                                                                                                                                                                                                                                                                          |
+
+The full reference — signatures, edge cases, and a runnable example per
+function — is in **[docs/functions.md](../docs/functions.md)**. The sections of
+the functions added since 1.0.0 state each function as rules, one rule of one
+sentence per bullet with at least two examples that give different results,
+share the rules under _Shared rules_, and close with one sentence naming the
+inputs they leave unspecified. `src/functions/shared-rules.spec.ts` runs each
+shared rule against every added function and every parameter the rule
+governs, read from the live registry.
+
+`core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
+
+- Each function the 1.0.0 baseline does not name has one section, under a heading of its name that no other heading repeats, and no other section has a line that, read with every whitespace character as one space, starts with `Unspecified:`.
+- Such a section opens with its signature line, the whole line as the live registry renders it.
+- Read line by line up to the next heading, after NFKC normalisation, with every whitespace character as one space and format characters dropped, such a section is its signature line, then rules, each a top-level bullet of one line followed by one code block every line of which belongs to an example, then one line that starts with `Unspecified:`, with only blank lines between them, and any other line fails, a `---` rule, a line after the closing one and a nested or numbered item among them.
+- With its code spans taken out, the target of each link that a `[` opens taken out with it, every whitespace character read as one space and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, the closing line is held to the same, with the colon of `Unspecified:` at its start, and a `](` that no `[` opens fails.
+- No bullet holds a comma followed, after any whitespace or none, by "and", "or", "but", "nor", "so", "yet" or "then".
+- Read with the target of each link that a `[` opens taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
+- The shared rules stand once, under their heading, opened by their one sentence and read by the same grammar as a section, with no signature line and no closing line.
+- Each bullet has at least two examples.
+- The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
+- Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
+- At least two of the examples of a bullet state different results.
+- No code block shows one call twice, the same source with the same variables, under either helper.
+- Every example statement on the page is read, each inside a function section or the shared rules.
+- Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
+
+It cannot decide these, which the reviewer decides:
+
+- Whether a bullet states one condition and its outcome.
+- Whether a rule holds beyond its examples.
+- Whether the examples of a rule sit on either side of its condition.
+- Whether a bullet restates a shared rule in other words.
 
 ### The text tokenisers outside a formula
 
@@ -218,7 +219,9 @@ each function's input through a meter they feed only while a spec observes an ev
 (`src/functions/work-meter.ts`, not part of the entry point) and holds it in
 proportion to the input on inputs built to make each loop work hardest
 (`src/test-helpers/work-corpus.ts`), each observed with its bound as the
-meter's limit, so a loop that works past it stops at once; the
+meter's limit, so a loop that works past it stops at once; each code unit of
+text handed to the runtime's substring search counts one unit, and a call
+that refuses a phrase longer than 250 code units counts none; the
 work inside the runtime's regular expressions, substring search and
 `Intl.Segmenter` is not counted, and review owns the claim that the fixed
 patterns run in linear time. What a call charges against the cost and step
