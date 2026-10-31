@@ -2756,6 +2756,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# Titel #\n# a ##  \n# #' }); // ["Titel", "a", ""]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# Titel#\n# C#' }); // ["Titel#", "C#"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# \u00a0#' }); // ["#"]
   ```
 
 - There are no headings underlined with `===` or `---`.
