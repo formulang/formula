@@ -4,8 +4,9 @@
  * across it (the scans of the HTML and of the inline markdown, the lines of a markdown document,
  * the runs of backticks and of emphasis markers, the Knuth-Morris-Pratt searches, the `keep`
  * tokens `SENTENCES` searches for, and the matches, segments, positions and lines the segmentation
- * reads), and per code unit that one of those scans hands to the runtime to search (`indexOf`, an
- * end tag's expression). The short loops inside one tag name, run, cell or line are not counted,
+ * reads), and per code unit that one of those scans, or the phrase functions' loop over their
+ * phrases, hands to the runtime to search (`indexOf`, `includes`, an end tag's expression). The
+ * short loops inside one tag name, run, cell or line are not counted,
  * each running once for an element a counted loop reaches; nor is what the runtime does inside a
  * regular expression, its substring search or `Intl.Segmenter`. Production code feeds the count
  * only while a spec observes an evaluation (`observeWork`); every other evaluation counts nothing,

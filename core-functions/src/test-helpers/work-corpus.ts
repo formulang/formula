@@ -262,7 +262,7 @@ export const NOT_EXACT: Record<string, string> = {
 /**
  * `keep` tokens longer than the text they protect: none can occur in it, so each costs the search
  * one step whatever its length, and SENTENCES works in proportion to the text and the number of
- * tokens, not to their length. `TOKENS` tokens of `TOKEN_LENGTH` code units, the same text each.
+ * tokens, not to their length. `tokens` tokens of `tokenLength` code units, the same text each.
  */
 export const KEEP_LONG = {
   name: 'keep tokens longer than the text',
