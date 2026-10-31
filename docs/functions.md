@@ -18,8 +18,9 @@ arguments with `,` instead.
   an empty list. Many functions skip empty items or short-circuit to `null` on
   empty input. The functions whose sections state them as rules read only
   `null` as absent, and `""` and `[]` as values, as
-  [Shared rules](#shared-rules) says. They skip a host's `undefined` in a list
-  of texts, which no formula writes, as they skip `null`. They read a required
+  [Shared rules](#shared-rules) says. They read a host's `undefined`, which no
+  formula writes, as `null` where a host's function gives it for an argument,
+  and skip it in a list of texts as they skip `null`. They read a required
   argument that a call leaves out as `null`: a host's function can leave one
   out, and `FILTER_BY` leaves out its operator's second for a `null`
   `operatorValue`.
@@ -1840,6 +1841,10 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\uD835\uDC00' }); // null
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: 'owner\uD840\uDC00' }); // null
   await evalOk('FIRST_CONTAINED(value; LIST("owner"); "word")', { value: '\uD83D\uDE00owner' }); // "owner"
+  await evalOk('FIRST_CONTAINED(value; LIST("a\u{1F600}"); "word")', {
+    value: 'I said a\u{1F600}',
+  }); // "a\ud83d\ude00"
+  await evalOk('FIRST_CONTAINED(value; LIST("a\u{1F600}"); "word")', { value: 'I said a\uD83D' }); // null
   ```
 
 - In `"word"` mode, a lone surrogate is a character that is no letter, mark or number.
@@ -1856,6 +1861,12 @@ Unspecified: nothing.
   ```ts
   await evalOk('FIRST_CONTAINED("the homeowner, the owner"; LIST("owner"); "word")'); // "owner"
   await evalOk('FIRST_CONTAINED("the homeowner, the owners"; LIST("owner"); "word")'); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("a\u{1F600}a\u{1F600}"); "word")', {
+    value: 'ba\u{1F600}a\u{1F600}a\u{1F600}',
+  }); // "a\ud83d\ude00a\ud83d\ude00"
+  await evalOk('FIRST_CONTAINED(value; LIST("a\u{1F600}a\u{1F600}"); "word")', {
+    value: 'ba\u{1F600}a\u{1F600}',
+  }); // null
   ```
 
 - An omitted `ignoreCase` is `FALSE`.

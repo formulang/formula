@@ -5,7 +5,12 @@ import type {
   FunctionParamDefinition,
   MutableFormulaRegistry,
 } from '@formulang/definitions';
-import { BuiltinSignatureIds, FormulaTypes, optimizeRule } from '@formulang/definitions';
+import {
+  BuiltinSignatureIds,
+  FormulaTypes,
+  makeOkUnknown,
+  optimizeRule,
+} from '@formulang/definitions';
 import { parseFormula } from '@formulang/parser';
 import { evaluateRuleOutputAsync } from '@formulang/runner';
 import { readFileSync } from 'node:fs';
@@ -182,15 +187,28 @@ type RunOptions = {
   /**
    * Calls the subject through `APPLY`, a host's higher-order function that passes on exactly the
    * arguments it is given, so a required argument can be left out, as only such a function or a
-   * callable named when the call runs can leave it out.
+   * callable named when the call runs can leave it out, and an argument given as `HOST_UNDEFINED`
+   * reaches the subject as `undefined`.
    */
   apply?: boolean;
 };
 
 /**
+ * What a cell gives `APPLY` for an argument that a host's function hands on as `undefined`, which
+ * no formula writes and no variable carries (the runner reads a variable's `undefined` as `null`).
+ */
+const HOST_UNDEFINED = Object.freeze({ hostUndefined: true });
+
+/** An argument whose value is `undefined`, as a host's function can hand one on. */
+const UNDEFINED_ARGUMENT = {
+  output: async () => makeOkUnknown('const', undefined),
+  value: async () => undefined,
+};
+
+/**
  * Registers `APPLY(name, args...)`: calls the function the name resolves to, as the core
- * higher-order functions resolve it, with the other arguments, and answers that call's own output,
- * warnings included.
+ * higher-order functions resolve it, with the other arguments, each given as `HOST_UNDEFINED`
+ * handed on as `undefined`, and answers that call's own output, warnings included.
  */
 function withApply(runtime: Runtime): void {
   runtime.registry.registerFunction({
@@ -216,10 +234,14 @@ function withApply(runtime: Runtime): void {
           .find((candidate) => ctx.resolver.get(candidate.signatureId) !== undefined);
         const implementation = def && ctx.resolver.get(def.signatureId);
         if (!implementation) throw new Error(`no implementation of ${name}`);
-        const [out] = await implementation.evaluateMultiple(
-          [{ args: call.args.slice(1), callId: '0' }],
-          ctx,
+        const args = await Promise.all(
+          call.args
+            .slice(1)
+            .map(async (arg) =>
+              (await arg.value()) === HOST_UNDEFINED ? UNDEFINED_ARGUMENT : arg,
+            ),
         );
+        const [out] = await implementation.evaluateMultiple([{ args, callId: '0' }], ctx);
         outs.push(out);
       }
       return outs;
@@ -341,11 +363,15 @@ const CELLS: readonly Cell[] = [
         expect(await run(subject, new Map([[param.index, null]])), param.name).toStrictEqual(
           NULL_ONLY,
         );
-        // Left out, as a host's function can leave it out, it is read as `null`, as the page's
-        // convention on empty values states: the same answer.
+        // Left out, or given as `undefined`, as a host's function can do, it is read as `null`, as
+        // the page's convention on empty values states: the same answer.
         expect(
           await run(subject, new Map(), { through: param.index - 1, apply: true }),
           `${param.name} left out`,
+        ).toStrictEqual(NULL_ONLY);
+        expect(
+          await run(subject, new Map([[param.index, HOST_UNDEFINED]]), { apply: true }),
+          `${param.name} given as undefined`,
         ).toStrictEqual(NULL_ONLY);
       }
     },
@@ -360,6 +386,15 @@ const CELLS: readonly Cell[] = [
         expect(
           await run(subject, new Map([[param.index, null]]), { through: param.index }),
           param.name,
+        ).toStrictEqual(omitted);
+        // Given as `undefined` by a host's function, it is read as `null`, as the page's
+        // convention on empty values states.
+        expect(
+          await run(subject, new Map([[param.index, HOST_UNDEFINED]]), {
+            through: param.index,
+            apply: true,
+          }),
+          `${param.name} given as undefined`,
         ).toStrictEqual(omitted);
       }
     },

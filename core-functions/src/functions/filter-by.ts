@@ -6,7 +6,13 @@ import type {
   FormulaValueProvider,
   FunctionImplementation,
 } from '@formulang/definitions';
-import { makeError, makeOkList, makeOkNull, makeOkUnknown } from '@formulang/definitions';
+import {
+  FormulaErrorCodes,
+  makeError,
+  makeOkList,
+  makeOkNull,
+  makeOkUnknown,
+} from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { listTooLarge, typeWarning } from './argument-readers';
 
@@ -92,15 +98,17 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
       };
     });
     const predicateOuts = await chosen.implementation.evaluateMultiple(predicateCalls, ctx);
-    // An error the operator gives for a key, as an output rather than thrown, is the call's: the
-    // first, in the order of the keys.
-    const failed = predicateOuts.find((out) => out?.ok === false && out.error !== undefined);
-    if (failed?.error) {
+    // An operator's output for a key that is not ok is an error of the call, the first in the
+    // order of the keys, read as the runner reads the output of a call it makes itself: its
+    // error, or EVAL_CRASH where it carries none, and an output that is missing fails alike.
+    const failed = keys.findIndex((_key, i) => !predicateOuts[i]?.ok);
+    if (failed >= 0) {
+      const error = predicateOuts[failed]?.error;
       return makeError('FILTER_BY', {
-        kind: failed.error.kind,
-        code: failed.error.code,
-        message: failed.error.message,
-        meta: failed.error.meta,
+        kind: error?.kind ?? 'runtime',
+        code: error?.code ?? FormulaErrorCodes.EVAL_CRASH,
+        message: error?.message ?? 'Evaluation error',
+        meta: error?.meta,
       });
     }
     return makeOkList(

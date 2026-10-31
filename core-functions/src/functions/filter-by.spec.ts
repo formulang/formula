@@ -201,6 +201,126 @@ describe('FILTER_BY', () => {
     });
   });
 
+  describe('with an operator of the host', () => {
+    // HOST(key, value?) answers each key as `answer` says and estimates its cost as `estimate` says.
+    function hostRuntime(
+      answer: (key: unknown) => FormulaNodeOutput | undefined,
+      estimate: (args: unknown[]) => number = () => 0.0001,
+    ) {
+      const runtime = createTestRuntime();
+      runtime.registry.registerFunction({
+        signatureId: 'HOST/v1',
+        name: 'HOST',
+        category: 'custom',
+        description: 'An operator of the host.',
+        params: [
+          { name: 'key', type: FormulaTypes.any(true) },
+          { name: 'value', type: FormulaTypes.any(true), optional: true },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+      runtime.implementations.register('HOST/v1', {
+        estimateCostsInSeconds: estimate,
+        evaluateMultiple: async (calls) => {
+          const outs: FormulaNodeOutput[] = [];
+          for (const call of calls)
+            outs.push(answer(await call.args[0]?.value()) as FormulaNodeOutput);
+          return outs;
+        },
+      });
+      return runtime;
+    }
+
+    async function evaluate(
+      runtime: ReturnType<typeof hostRuntime>,
+      source: string,
+      limits: Record<string, number> = {},
+    ) {
+      const compiled = optimizeRule(parseFormula(source, { registry: runtime.registry }), {
+        registry: runtime.registry,
+      });
+      const out = await evaluateRuleOutputAsync(compiled, {
+        registry: runtime.registry,
+        resolver: runtime.implementations,
+        limits,
+      });
+      return {
+        value: out.output.value ?? null,
+        errors: out.errors.map((error) => `${error.kind}:${error.code}`),
+      };
+    }
+
+    const NOT_OK = { ok: false, name: 'HOST', children: [] } as FormulaNodeOutput;
+
+    it('raises an output of its operator that is not ok, as the runner reads one', async () => {
+      // Not ok and with no error: EVAL_CRASH, as for the same output of a call written directly.
+      const silent = hostRuntime((key) => (key === 2 ? NOT_OK : makeOkBoolean('HOST', true)));
+      expect(await evaluate(silent, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")')).toStrictEqual(
+        { value: null, errors: ['runtime:EVAL_CRASH'] },
+      );
+      expect(await evaluate(silent, 'HOST(2)')).toStrictEqual({
+        value: null,
+        errors: ['runtime:EVAL_CRASH'],
+      });
+      // The first output that is not ok decides, in the order of the keys, with or without an error.
+      const both = hostRuntime((key) =>
+        key === 1
+          ? NOT_OK
+          : ({
+              ...NOT_OK,
+              error: { kind: 'security', code: FormulaErrorCodes.LIST_TOO_LARGE, message: 'x' },
+            } as FormulaNodeOutput),
+      );
+      expect(await evaluate(both, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")')).toStrictEqual({
+        value: null,
+        errors: ['runtime:EVAL_CRASH'],
+      });
+      expect(await evaluate(both, 'FILTER_BY(LIST("q"); LIST(2); "HOST")')).toStrictEqual({
+        value: null,
+        errors: ['security:LIST_TOO_LARGE'],
+      });
+      // A missing output fails alike; an output that is ok is read for its value alone.
+      const missing = hostRuntime((key) => (key === 2 ? undefined : makeOkBoolean('HOST', true)));
+      expect(
+        await evaluate(missing, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")'),
+      ).toStrictEqual({ value: null, errors: ['runtime:EVAL_CRASH'] });
+      const okWithError = hostRuntime(
+        () =>
+          ({
+            ...makeOkBoolean('HOST', true),
+            error: { kind: 'runtime', code: FormulaErrorCodes.EVAL_CRASH, message: 'x' },
+          }) as FormulaNodeOutput,
+      );
+      expect(
+        await evaluate(okWithError, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")'),
+      ).toStrictEqual({ value: ['p', 'q'], errors: [] });
+    });
+
+    it('charges each call of its operator the estimate for the key and the operator value', async () => {
+      // The operator's estimate is its second argument: 0.3 for each of the two keys.
+      const priced = hostRuntime(
+        () => makeOkBoolean('HOST', true),
+        (args) => (typeof args[1] === 'number' ? args[1] : 0),
+      );
+      const source = 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST"; 0.3)';
+      expect(await evaluate(priced, source, { maxFunctionCostUnits: 0.29 })).toStrictEqual({
+        value: null,
+        errors: ['security:FUNCTION_COST_LIMIT_EXCEEDED'],
+      });
+      expect(await evaluate(priced, source, { maxFunctionCostUnits: 0.31 })).toStrictEqual({
+        value: ['p', 'q'],
+        errors: [],
+      });
+      // Without an operator value each call is charged the estimate for the key alone.
+      expect(
+        await evaluate(priced, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")', {
+          maxFunctionCostUnits: 0.29,
+        }),
+      ).toStrictEqual({ value: ['p', 'q'], errors: [] });
+    });
+  });
+
   it('types the result as the list it filters', async () => {
     expect(await evalOk('JOIN(FILTER_BY(LIST("a"; "b"); LIST(1; 2); ">"; 1); "-")')).toBe('b');
   });
