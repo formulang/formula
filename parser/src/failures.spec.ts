@@ -206,6 +206,67 @@ describe('parseFormula failures', () => {
     expect(rule.errors.some((e) => e.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD)).toBe(true);
   });
 
+  it('checks a callable that admits functions only, or operators only, against its own kind', () => {
+    // A host's FILTER of four parameters, which a call of four arguments binds beside the core one:
+    // the parser checks the callable it names as FILTER's entry passes it the item and `x`. The
+    // host's operator token LEN stands for MATCHES(text, number), beside the function LEN.
+    const codes = (reference: 'function' | 'operator', source: string) => {
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'MATCHES/v1',
+        name: 'MATCHES',
+        category: 'core',
+        description: 'Whether a text and a number match, behind the operator token LEN.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          { name: 'n', type: FormulaTypes.number(true) },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+      registry.registerOperator({
+        token: 'LEN',
+        precedence: 10,
+        associativity: 'left',
+        functionSignatureId: 'MATCHES/v1',
+      });
+      registry.registerFunction({
+        signatureId: 'FILTER/v9',
+        name: 'FILTER',
+        category: 'core',
+        description: `A host's FILTER whose callable admits ${reference}s only.`,
+        params: [
+          { name: 'target', type: FormulaTypes.list(FormulaTypes.text(true), true) },
+          { name: 'check', type: FormulaTypes.callable(reference), literalOnly: true },
+          { name: 'x', type: FormulaTypes.number(true) },
+          { name: 'y', type: FormulaTypes.number(true) },
+        ],
+        returnType: FormulaTypes.list(FormulaTypes.text(true), true),
+        purity: 'pure',
+      });
+      return parseFormula(source, { registry }).errors.map((e) => e.code);
+    };
+    // An operator token names no function: unknown, and ADD behind it is not checked.
+    expect(codes('function', 'FILTER(LIST("a"); "+"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+    ]);
+    expect(codes('function', 'FILTER(LIST("a"); "GT"; 1; 2)')).toStrictEqual([]);
+    // A function's name names no operator; the function behind an operator token is checked.
+    expect(codes('operator', 'FILTER(LIST("a"); "ADD"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+    ]);
+    expect(codes('operator', 'FILTER(LIST("a"); "+"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+    ]);
+    expect(codes('operator', 'FILTER(LIST("a"); ">"; 1; 2)')).toStrictEqual([]);
+    // LEN names a function, which takes one argument, and an operator token, behind which MATCHES
+    // takes two: a reference that admits functions only is checked against the function alone.
+    expect(codes('function', 'FILTER(LIST("a"); "LEN"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+    ]);
+    expect(codes('operator', 'FILTER(LIST("a"); "LEN"; 1; 2)')).toStrictEqual([]);
+  });
+
   describe('enumerated literal values (literalValues)', () => {
     function makeModeRegistry() {
       const registry = makeRegistry();

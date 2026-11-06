@@ -239,6 +239,10 @@ describe('callable invocations', () => {
       expect(invocationOf({ ...def, name: `${def.name}_COPY` }), def.signatureId).toBeUndefined();
     }
     expect(invocationOf({ name: 'LEN' })).toBeUndefined();
+    // The letter case is the one String.prototype.toUpperCase gives, whatever the host's locale: an i
+    // with a dot above stays a different name, though Lithuanian upper case drops the dot.
+    expect(invocationOf({ name: 'fi\u0307lter' })).toBeUndefined();
+    expect('fi\u0307lter'.toLocaleUpperCase('lt')).toBe('FILTER');
   });
 
   it('checks every definition under a table name, and a copy under another name as plain', () => {
