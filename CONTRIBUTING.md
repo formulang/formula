@@ -88,12 +88,12 @@ Adding a function touches four places: a definition (portable metadata in `@form
 
 `core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
 
-- No two headings of the page, at any level, read the same once NFKC-normalised, with every whitespace character read as one space and the ends trimmed.
+- No two headings of the page, at any level, read the same once NFKC-normalised, with format characters dropped, each run of whitespace characters read as one space and the ends trimmed.
 - Each function the 1.0.0 baseline does not name has one section, under a line `### NAME` of its name as written, which runs to the next heading of level one to three.
 - Such a section opens with its signature line, the whole line as the live registry renders it.
-- A line of the page that, read with every whitespace character as one space, starts with `Unspecified:` is the closing line of such a section.
+- A line of the page that, after NFKC normalisation, with every whitespace character read as one space and format characters dropped, starts with `Unspecified:` is the closing line of such a section.
 - Read line by line after NFKC normalisation, with every whitespace character as one space and format characters dropped, each line of such a section after its signature line, and of the shared rules after their opening sentence, up to its closing line is blank, a top-level bullet or a line of the code block that follows a bullet.
-- Read so, no line but a blank one follows the closing line of such a section, up to the next heading of level one to three.
+- Read so, no line but a blank one follows a closing line in such a section or in the shared rules, up to the next heading of level one to three.
 - Each bullet is followed, after blank lines only, by a code block that opens with two spaces, three or more backticks and `ts`.
 - Each code block closes with a line of its own fence inside its section.
 - Every line of a code block belongs to an example statement, `await evalOk(` or `await evalErrors(`, the call and `);`, with what it gives after `// `, on one line or across several.
@@ -107,7 +107,7 @@ Adding a function touches four places: a definition (portable metadata in `@form
 - Read so, no bullet of a section has all its words in a row inside a shared rule.
 - Read so, no bullet of a section starts with the same four words as a shared rule.
 - Read so, no shared rule holds all the words of another in a row.
-- One heading of the page, and no other, stands at level two and reads `Shared rules` once NFKC-normalised, with every whitespace character read as one space and the ends trimmed.
+- One heading of the page, and no other, stands at level two and reads `Shared rules` once NFKC-normalised, with format characters dropped, each run of whitespace characters read as one space and the ends trimmed.
 - The shared rules open with their one sentence, the one this spec states.
 - Each bullet has at least two examples.
 - The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.

@@ -861,7 +861,7 @@ export const DOCS_CHECKS: readonly Check<Page>[] = [
   {
     id: 'headings',
     sentence:
-      'No two headings of the page, at any level, read the same once NFKC-normalised, with every whitespace character read as one space and the ends trimmed.',
+      'No two headings of the page, at any level, read the same once NFKC-normalised, with format characters dropped, each run of whitespace characters read as one space and the ends trimmed.',
     check: checkHeadings,
   },
   {
@@ -879,7 +879,7 @@ export const DOCS_CHECKS: readonly Check<Page>[] = [
   {
     id: 'closing-lines',
     sentence:
-      'A line of the page that, read with every whitespace character as one space, starts with `Unspecified:` is the closing line of such a section.',
+      'A line of the page that, after NFKC normalisation, with every whitespace character read as one space and format characters dropped, starts with `Unspecified:` is the closing line of such a section.',
     check: checkClosingLines,
   },
   {
@@ -891,7 +891,7 @@ export const DOCS_CHECKS: readonly Check<Page>[] = [
   {
     id: 'after-closing',
     sentence:
-      'Read so, no line but a blank one follows the closing line of such a section, up to the next heading of level one to three.',
+      'Read so, no line but a blank one follows a closing line in such a section or in the shared rules, up to the next heading of level one to three.',
     check: checkAfterClosing,
   },
   {
@@ -967,7 +967,7 @@ export const DOCS_CHECKS: readonly Check<Page>[] = [
   {
     id: 'shared-heading',
     sentence:
-      'One heading of the page, and no other, stands at level two and reads `Shared rules` once NFKC-normalised, with every whitespace character read as one space and the ends trimmed.',
+      'One heading of the page, and no other, stands at level two and reads `Shared rules` once NFKC-normalised, with format characters dropped, each run of whitespace characters read as one space and the ends trimmed.',
     check: checkSharedHeading,
   },
   {
@@ -1253,22 +1253,27 @@ function sectionText(heading: string): string {
  * A small page built from the real one: the shared rules, the section of one added function
  * (`TAKE`), and sections of 1.0.0: `LEN`, and those that hold the statements this spec does not
  * run. Each fixture edits it, and the check it belongs to must report a problem the unedited page
- * does not have.
+ * does not have. It is built when a test first asks for it, so that a page it cannot be built from
+ * fails those tests, not the spec's loading.
  */
-const SMALL_PAGE = [
-  '# Functions',
-  '',
-  sectionText(`## ${SHARED_TITLE}`),
-  '## Lists',
-  '',
-  sectionText('### TAKE'),
-  sectionText('### LEN'),
-  sectionText('### ROUND'),
-  sectionText('### SORT_BY_PROPERTY'),
-  sectionText('### FILTER_PROPERTY'),
-  sectionText('### NOW'),
-  sectionText('### TODAY'),
-].join('\n');
+let small: string | undefined;
+function smallPage(): string {
+  small ??= [
+    '# Functions',
+    '',
+    sectionText(`## ${SHARED_TITLE}`),
+    '## Lists',
+    '',
+    sectionText('### TAKE'),
+    sectionText('### LEN'),
+    sectionText('### ROUND'),
+    sectionText('### SORT_BY_PROPERTY'),
+    sectionText('### FILTER_PROPERTY'),
+    sectionText('### NOW'),
+    sectionText('### TODAY'),
+  ].join('\n');
+  return small;
+}
 
 /** A fixture: text to find once in a page and what to put in its place. */
 type Fixture = { find: string; replace: string };
@@ -1286,7 +1291,10 @@ const block = (...examples: string[]) =>
 /** One fixture for each check of `DOCS_CHECKS`: an edit of the small page its function reports. */
 const FIXTURES: Record<string, Fixture> = {
   headings: { find: '## Lists', replace: '## TAKE\n\n## Lists' },
-  sections: { find: '### TAKE', replace: `${sectionText('### TAKE')}\n### TAKE` },
+  sections: {
+    find: TAKE_CLOSING,
+    replace: `${TAKE_CLOSING}\n\n### TAKE\n\n${TAKE_SIGNATURE}\n\n${TAKE_CLOSING}`,
+  },
   signature: {
     find: TAKE_SIGNATURE,
     replace: '`TAKE(list: list<T>, count: number, start: number) -> list<T>`',
@@ -1459,8 +1467,8 @@ describe('the checks prove themselves', () => {
 
   for (const { id } of DOCS_CHECKS) {
     it(`${id}: turns its fixture red`, async () => {
-      const before = new Set(await checkPage(SMALL_PAGE));
-      const after = await checkPage(edited(SMALL_PAGE, FIXTURES[id]));
+      const before = new Set(await checkPage(smallPage()));
+      const after = await checkPage(edited(smallPage(), FIXTURES[id]));
       const found = after.filter((text) => !before.has(text) && text.startsWith(`${id}: `));
       expect(found, `${id}: no problem of its own on its fixture`).not.toStrictEqual([]);
     });
