@@ -839,7 +839,8 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
 // the runner takes for it: a host function HOST(key) registered with each purity, called with a
 // short key, which the runner answers through its cache when the function is pure or run-cached,
 // and not when it is uncached, or the key is too long to cache, or the function is control flow.
-// Measured on 699d57e (BASELINE_COMMIT) with these answers and these registrations.
+// Measured on 699d57e (BASELINE_COMMIT) with these answers and these registrations; a number
+// that is not finite is read apart from null, which JSON would write it as.
 const RAW_ANSWERS: Record<string, () => unknown> = {
   false: () => false,
   zero: () => 0,
@@ -850,6 +851,9 @@ const RAW_ANSWERS: Record<string, () => unknown> = {
   five: () => 5,
   okTrue: () => definitions.makeOkUnknown('HOST', true),
   okFalse: () => definitions.makeOkUnknown('HOST', false),
+  okNaN: () => definitions.makeOkUnknown('HOST', Number.NaN),
+  okInfinity: () => definitions.makeOkUnknown('HOST', Number.POSITIVE_INFINITY),
+  okMinusInfinity: () => definitions.makeOkUnknown('HOST', Number.NEGATIVE_INFINITY),
   error: () =>
     definitions.makeError('HOST', {
       kind: 'runtime',
@@ -878,6 +882,9 @@ const ON_1_0_0: Record<
       five: 'runtime:EVAL_CRASH',
       okTrue: 'true',
       okFalse: 'false',
+      okNaN: 'null',
+      okInfinity: 'null',
+      okMinusInfinity: 'null',
       error: 'runtime:EVAL_CRASH',
       missing: 'null',
     },
@@ -894,6 +901,9 @@ const ON_1_0_0: Record<
       five: 'runtime:EVAL_CRASH',
       okTrue: 'true',
       okFalse: 'false',
+      okNaN: 'null',
+      okInfinity: 'null',
+      okMinusInfinity: 'null',
       error: 'runtime:EVAL_CRASH',
       missing: 'null',
     },
@@ -910,6 +920,9 @@ const ON_1_0_0: Record<
       five: 'runtime:EVAL_CRASH',
       okTrue: 'true',
       okFalse: 'false',
+      okNaN: 'null',
+      okInfinity: 'null',
+      okMinusInfinity: 'null',
       error: 'runtime:EVAL_CRASH',
       missing: 'runtime:EVAL_CRASH',
     },
@@ -926,6 +939,9 @@ const ON_1_0_0: Record<
       five: 'runtime:EVAL_CRASH',
       okTrue: 'true',
       okFalse: 'false',
+      okNaN: 'null',
+      okInfinity: 'null',
+      okMinusInfinity: 'null',
       error: 'runtime:EVAL_CRASH',
       missing: 'runtime:EVAL_CRASH',
     },
@@ -942,20 +958,47 @@ const ON_1_0_0: Record<
       five: 'runtime:EVAL_CRASH',
       okTrue: 'true',
       okFalse: 'false',
+      okNaN: 'null',
+      okInfinity: 'null',
+      okMinusInfinity: 'null',
       error: 'runtime:EVAL_CRASH',
       missing: 'runtime:EVAL_CRASH',
     },
   },
 };
 
-describe('a raw answer of a host function', () => {
-  it('gives what it gave on 1.0.0, on each path the runner takes', async () => {
-    let cells = 0;
-    for (const [path, { purity, controlFlow, key, outcomes }] of Object.entries(ON_1_0_0)) {
+// How a test reads what a call gives: its errors' kinds and codes, or else its value as JSON, with
+// a number that is not finite written as itself.
+function readOutcome(out: {
+  output: { value: unknown };
+  errors: { kind: string; code: string }[];
+}) {
+  if (out.errors.length) return out.errors.map((error) => `${error.kind}:${error.code}`).join(',');
+  const value = out.output.value;
+  return typeof value === 'number' && !Number.isFinite(value)
+    ? String(value)
+    : JSON.stringify(value ?? null);
+}
+
+describe('a raw answer of a host function gives what it gave on 1.0.0, on each path the runner takes', () => {
+  it('has a cell for each raw answer, and for no answer at all, on each of the five paths', () => {
+    expect(Object.keys(ON_1_0_0)).toStrictEqual([
+      'pure',
+      'runCached',
+      'uncached',
+      'pureLongKey',
+      'controlFlow',
+    ]);
+    for (const [path, { outcomes }] of Object.entries(ON_1_0_0)) {
       expect(Object.keys(outcomes).sort(), path).toStrictEqual(
         [...Object.keys(RAW_ANSWERS), 'missing'].sort(),
       );
-      for (const [answer, outcome] of Object.entries(outcomes)) {
+    }
+  });
+
+  for (const [path, { purity, controlFlow, key, outcomes }] of Object.entries(ON_1_0_0)) {
+    for (const [answer, outcome] of Object.entries(outcomes)) {
+      it(`${path}, ${answer}`, async () => {
         const { registry, implementations } = coreFunctions.createCoreFormulaRuntime();
         registry.registerFunction({
           signatureId: 'HOST/v1',
@@ -983,13 +1026,8 @@ describe('a raw answer of a host function', () => {
           resolver: implementations,
           variables: { long: 'a'.repeat(501) },
         });
-        const read = out.errors.length
-          ? out.errors.map((error) => `${error.kind}:${error.code}`).join(',')
-          : JSON.stringify(out.output.value ?? null);
-        expect(read, `${path}, ${answer}`).toBe(outcome);
-        cells += 1;
-      }
+        expect(readOutcome(out), source).toBe(outcome);
+      });
     }
-    expect(cells).toBe(55);
-  });
+  }
 });

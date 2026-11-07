@@ -346,36 +346,46 @@ describe('FILTER_BY', () => {
       return runtime;
     }
 
-    it('reads each answer of its operator as the runner reads the same call written, on every path', async () => {
+    describe('reads each answer of its operator as the runner reads the same call written, on every path', () => {
       // The runner reads an answer that is no output as `null` on a call it answers through its
       // cache, and as a failed call on every other path; FILTER_BY gives the written call's error,
       // or keeps the item exactly where the written call answers TRUE.
       const variables = { long: 'a'.repeat(501) };
-      const readings = new Set<string>();
       for (const path of Object.keys(PATHS) as (keyof typeof PATHS)[]) {
         for (const answer of [...Object.keys(ANSWERS), 'missing']) {
-          const runtime = pathRuntime(path, answer);
+          it(`${path}, ${answer}`, async () => {
+            const runtime = pathRuntime(path, answer);
+            const key = PATHS[path].key;
+            const written = await evaluate(runtime, `HOST(${key})`, {}, variables);
+            const byFilter = await evaluate(
+              runtime,
+              `FILTER_BY(LIST("p"); LIST(${key}); "HOST")`,
+              {},
+              variables,
+            );
+            const wanted =
+              written.errors.length > 0
+                ? { value: null, errors: written.errors }
+                : { value: written.value === true ? ['p'] : [], errors: [] };
+            expect(byFilter, `HOST(${key}) gives ${JSON.stringify(written)}`).toStrictEqual(wanted);
+          });
+        }
+      }
+
+      it('meets both readings of an answer that is no output: null, and a failed call', async () => {
+        const readings = new Set<string>();
+        for (const path of Object.keys(PATHS) as (keyof typeof PATHS)[]) {
           const key = PATHS[path].key;
-          const written = await evaluate(runtime, `HOST(${key})`, {}, variables);
-          const byFilter = await evaluate(
-            runtime,
-            `FILTER_BY(LIST("p"); LIST(${key}); "HOST")`,
+          const written = await evaluate(
+            pathRuntime(path, 'missing'),
+            `HOST(${key})`,
             {},
             variables,
           );
-          const wanted =
-            written.errors.length > 0
-              ? { value: null, errors: written.errors }
-              : { value: written.value === true ? ['p'] : [], errors: [] };
-          expect(
-            byFilter,
-            `${path}, ${answer}: HOST(${key}) gives ${JSON.stringify(written)}`,
-          ).toStrictEqual(wanted);
-          if (answer === 'missing') readings.add(`${written.value}/${written.errors.join(',')}`);
+          readings.add(`${written.value}/${written.errors.join(',')}`);
         }
-      }
-      // Both readings of an answer that is no output occur: null, and a failed call.
-      expect([...readings].sort()).toStrictEqual(['null/', 'null/runtime:EVAL_CRASH']);
+        expect([...readings].sort()).toStrictEqual(['null/', 'null/runtime:EVAL_CRASH']);
+      });
     });
 
     it('charges a control-flow operator exactly 0.05 a call, as the runner charges it written', async () => {
