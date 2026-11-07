@@ -83,21 +83,26 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
     // section: the operator is then called with the key alone. Each call of the operator is
     // charged as the runner charges a call of a formula, and takes one step.
     const opValueProvider = opValue == null ? undefined : constProvider(opValue);
+    const callArgs = keys.map((key) => (opValueProvider ? [key, opValue] : [key]));
     const predicateCalls: BatchEvaluationCall[] = keys.map((key, idx) => {
       ctx.budget.consume(1);
-      ctx.chargeCall?.(chosen.signatureId, opValueProvider ? [key, opValue] : [key]);
+      ctx.chargeCall?.(chosen.signatureId, callArgs[idx]);
       return {
         args: opValueProvider ? [constProvider(key), opValueProvider] : [constProvider(key)],
         callId: `${idx}`,
       };
     });
     const predicateOuts = await chosen.implementation.evaluateMultiple(predicateCalls, ctx);
-    // Each operator output is read as the runner reads what an implementation gives for a call
-    // (readCallOutput): a missing one is `null`. The first that is not ok, in the order of the
-    // keys, is returned as the call's own output, for the runner to read as it reads a failed
-    // call's: its error, or EVAL_CRASH where it carries none.
+    // Each answer of the operator is read as the runner reads the same call written in a formula
+    // (the context's readCall), on the path the runner would take for it: an answer that is no
+    // output is `null` where the runner answers the call through its cache and a failed call on
+    // every other path, and a failed call gives the error the runner raises for it. The first
+    // that is not ok, in the order of the keys, is returned as the call's own output. Outside the
+    // runner, with no readCall, an answer is read as the cache path reads it (readCallOutput).
     const outs = keys.map((_key, i) =>
-      readCallOutput(opName, chosen.signatureId, predicateOuts[i]),
+      ctx.readCall
+        ? ctx.readCall(chosen.signatureId, callArgs[i], predicateOuts[i])
+        : readCallOutput(opName, chosen.signatureId, predicateOuts[i]),
     );
     const failed = outs.find((out) => !out.ok);
     if (failed) return failed;

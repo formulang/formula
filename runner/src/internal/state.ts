@@ -17,7 +17,8 @@ export type RunnerState = {
   purePending: Map<string, Promise<unknown>>;
   runCache: Map<string, unknown>;
   runPending: Map<string, Promise<unknown>>;
-  totalCostUnits: number;
+  /** The units charged so far, which `addCostOrThrow` alone adds to. */
+  readonly totalCostUnits: number;
 };
 
 export function checkWallTime(state: RunnerState): void {
@@ -34,6 +35,16 @@ export function checkWallTime(state: RunnerState): void {
 /** The flat charge of a call of a control-flow function, and of one whose estimate is unusable. */
 const FLAT_CALL_UNITS = 0.05;
 
+declare const callCharge: unique symbol;
+
+/**
+ * What one call costs, as `callChargeUnits` answers it: the one thing `addCostOrThrow` takes. Its
+ * brand is declared in this module alone, so no other number is a charge: a second place that
+ * computes one, through `addCostOrThrow` or an alias of it, does not compile, and neither does
+ * arithmetic on a charge (`runner/src/charge-rule.spec.ts` type-checks both).
+ */
+export type CallCharge = number & { readonly [callCharge]: true };
+
 /**
  * What one call costs, the one rule by which the runner charges every call, written in the
  * formula or made by an implementation through `chargeCall`: a control-flow function a flat 0.05,
@@ -46,15 +57,20 @@ export function callChargeUnits(
   resolver: FunctionImplementationResolver,
   signatureId: string,
   args: unknown[],
-): number {
-  if (def?.controlFlow) return FLAT_CALL_UNITS;
+): CallCharge {
+  if (def?.controlFlow) return FLAT_CALL_UNITS as CallCharge;
   const impl = resolver.get(signatureId);
   const raw =
     typeof impl?.estimateCostsInSeconds === 'function' ? impl.estimateCostsInSeconds(args) : NaN;
-  return Number.isFinite(raw) && raw >= 0 ? raw : FLAT_CALL_UNITS;
+  return (Number.isFinite(raw) && raw >= 0 ? raw : FLAT_CALL_UNITS) as CallCharge;
 }
 
-export function addCostOrThrow(state: RunnerState, callCost: number): void {
+/**
+ * Charges one call against both cost limits: the call's own charge against
+ * `maxFunctionCostUnits`, and the running total against `maxTotalCostUnits`. The total is
+ * written here alone.
+ */
+export function addCostOrThrow(state: RunnerState, callCost: CallCharge): void {
   if (callCost > state.limits.maxFunctionCostUnits) {
     throw new FormulaRuntimeError(
       FormulaErrorCodes.FUNCTION_COST_LIMIT_EXCEEDED,
@@ -62,7 +78,7 @@ export function addCostOrThrow(state: RunnerState, callCost: number): void {
       'security',
     );
   }
-  state.totalCostUnits += callCost;
+  (state as { totalCostUnits: number }).totalCostUnits += callCost;
   if (state.totalCostUnits > state.limits.maxTotalCostUnits) {
     throw new FormulaRuntimeError(
       FormulaErrorCodes.COST_LIMIT_EXCEEDED,

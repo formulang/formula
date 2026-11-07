@@ -834,3 +834,162 @@ describe('a host function under a name 1.1.0 adds, at the head', () => {
     }
   });
 });
+
+// What a call written in a formula gives for each raw answer of its implementation, on each path
+// the runner takes for it: a host function HOST(key) registered with each purity, called with a
+// short key, which the runner answers through its cache when the function is pure or run-cached,
+// and not when it is uncached, or the key is too long to cache, or the function is control flow.
+// Measured on 699d57e (BASELINE_COMMIT) with these answers and these registrations.
+const RAW_ANSWERS: Record<string, () => unknown> = {
+  false: () => false,
+  zero: () => 0,
+  empty: () => '',
+  nan: () => Number.NaN,
+  null: () => null,
+  undefined: () => undefined,
+  five: () => 5,
+  okTrue: () => definitions.makeOkUnknown('HOST', true),
+  okFalse: () => definitions.makeOkUnknown('HOST', false),
+  error: () =>
+    definitions.makeError('HOST', {
+      kind: 'runtime',
+      code: 'DIVISION_BY_ZERO',
+      message: 'host says no',
+    }),
+};
+const ON_1_0_0: Record<
+  string,
+  {
+    purity: definitions.FunctionPurity;
+    controlFlow?: boolean;
+    key: string;
+    outcomes: Record<string, string>;
+  }
+> = {
+  pure: {
+    ...{ purity: 'pure', key: '1' },
+    outcomes: {
+      false: 'null',
+      zero: 'null',
+      empty: 'null',
+      nan: 'null',
+      null: 'null',
+      undefined: 'null',
+      five: 'runtime:EVAL_CRASH',
+      okTrue: 'true',
+      okFalse: 'false',
+      error: 'runtime:EVAL_CRASH',
+      missing: 'null',
+    },
+  },
+  runCached: {
+    ...{ purity: 'run_cached', key: '1' },
+    outcomes: {
+      false: 'null',
+      zero: 'null',
+      empty: 'null',
+      nan: 'null',
+      null: 'null',
+      undefined: 'null',
+      five: 'runtime:EVAL_CRASH',
+      okTrue: 'true',
+      okFalse: 'false',
+      error: 'runtime:EVAL_CRASH',
+      missing: 'null',
+    },
+  },
+  uncached: {
+    ...{ purity: 'uncached', key: '1' },
+    outcomes: {
+      false: 'runtime:EVAL_CRASH',
+      zero: 'runtime:EVAL_CRASH',
+      empty: 'runtime:EVAL_CRASH',
+      nan: 'runtime:EVAL_CRASH',
+      null: 'runtime:EVAL_CRASH',
+      undefined: 'runtime:EVAL_CRASH',
+      five: 'runtime:EVAL_CRASH',
+      okTrue: 'true',
+      okFalse: 'false',
+      error: 'runtime:EVAL_CRASH',
+      missing: 'runtime:EVAL_CRASH',
+    },
+  },
+  pureLongKey: {
+    ...{ purity: 'pure', key: 'long' },
+    outcomes: {
+      false: 'runtime:EVAL_CRASH',
+      zero: 'runtime:EVAL_CRASH',
+      empty: 'runtime:EVAL_CRASH',
+      nan: 'runtime:EVAL_CRASH',
+      null: 'runtime:EVAL_CRASH',
+      undefined: 'runtime:EVAL_CRASH',
+      five: 'runtime:EVAL_CRASH',
+      okTrue: 'true',
+      okFalse: 'false',
+      error: 'runtime:EVAL_CRASH',
+      missing: 'runtime:EVAL_CRASH',
+    },
+  },
+  controlFlow: {
+    ...{ purity: 'pure', controlFlow: true, key: '1' },
+    outcomes: {
+      false: 'runtime:EVAL_CRASH',
+      zero: 'runtime:EVAL_CRASH',
+      empty: 'runtime:EVAL_CRASH',
+      nan: 'runtime:EVAL_CRASH',
+      null: 'runtime:EVAL_CRASH',
+      undefined: 'runtime:EVAL_CRASH',
+      five: 'runtime:EVAL_CRASH',
+      okTrue: 'true',
+      okFalse: 'false',
+      error: 'runtime:EVAL_CRASH',
+      missing: 'runtime:EVAL_CRASH',
+    },
+  },
+};
+
+describe('a raw answer of a host function', () => {
+  it('gives what it gave on 1.0.0, on each path the runner takes', async () => {
+    let cells = 0;
+    for (const [path, { purity, controlFlow, key, outcomes }] of Object.entries(ON_1_0_0)) {
+      expect(Object.keys(outcomes).sort(), path).toStrictEqual(
+        [...Object.keys(RAW_ANSWERS), 'missing'].sort(),
+      );
+      for (const [answer, outcome] of Object.entries(outcomes)) {
+        const { registry, implementations } = coreFunctions.createCoreFormulaRuntime();
+        registry.registerFunction({
+          signatureId: 'HOST/v1',
+          name: 'HOST',
+          category: 'custom',
+          description: 'A host function answering with a raw value.',
+          params: [{ name: 'key', type: definitions.FormulaTypes.any(true) }],
+          returnType: definitions.FormulaTypes.boolean(true),
+          purity,
+          ...(controlFlow ? { controlFlow } : {}),
+        });
+        implementations.register('HOST/v1', {
+          estimateCostsInSeconds: () => 0.0001,
+          evaluateMultiple: async (calls) =>
+            (answer === 'missing'
+              ? []
+              : calls.map(() => RAW_ANSWERS[answer]())) as definitions.FormulaNodeOutput[],
+        });
+        const source = `HOST(${key})`;
+        const compiled = definitions.optimizeRule(parser.parseFormula(source, { registry }), {
+          registry,
+        });
+        const out = await runner.evaluateRuleOutputAsync(compiled, {
+          registry,
+          resolver: implementations,
+          variables: { long: 'a'.repeat(501) },
+        });
+        const read = out.errors.length
+          ? out.errors.map((error) => `${error.kind}:${error.code}`).join(',')
+          : JSON.stringify(out.output.value ?? null);
+        expect(read, `${path}, ${answer}`).toBe(outcome);
+        cells += 1;
+      }
+    }
+    expect(cells).toBe(55);
+  });
+});

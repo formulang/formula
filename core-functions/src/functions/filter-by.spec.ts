@@ -2,6 +2,7 @@ import type { FormulaNodeOutput, FormulaType } from '@formulang/definitions';
 import {
   FormulaErrorCodes,
   FormulaTypes,
+  makeError,
   makeOkBoolean,
   makeOkText,
   optimizeRule,
@@ -236,6 +237,7 @@ describe('FILTER_BY', () => {
       runtime: ReturnType<typeof hostRuntime>,
       source: string,
       limits: Record<string, number> = {},
+      variables: Record<string, unknown> = {},
     ) {
       const compiled = optimizeRule(parseFormula(source, { registry: runtime.registry }), {
         registry: runtime.registry,
@@ -244,6 +246,7 @@ describe('FILTER_BY', () => {
         registry: runtime.registry,
         resolver: runtime.implementations,
         limits,
+        variables,
       });
       return {
         value: out.output.value ?? null,
@@ -293,39 +296,118 @@ describe('FILTER_BY', () => {
       ).toStrictEqual({ value: ['p', 'q'], errors: [] });
     });
 
-    it('reads a missing output of its operator as the runner reads the same call written', async () => {
-      // The runner reads a pure call's missing output, answered through its cache, as `null`
-      // (readCallOutput); FILTER_BY reads each of its operator's with the same function, so the
-      // key whose output is missing drops its item and raises nothing.
-      const missing = hostRuntime((key) => (key === 2 ? undefined : makeOkBoolean('HOST', true)));
-      expect(await evaluate(missing, 'HOST(2)')).toStrictEqual({ value: null, errors: [] });
-      expect(
-        await evaluate(missing, 'FILTER_BY(LIST("p"; "q"); LIST(1; 2); "HOST")'),
-      ).toStrictEqual({ value: ['p'], errors: [] });
-      expect(await evaluate(missing, 'HOST(1)')).toStrictEqual({ value: true, errors: [] });
+    // What HOST's implementation answers for a call, on each path the runner takes for HOST(key)
+    // written in a formula: through its cache (a pure or run-cached function with a key it can
+    // cache), or not (an uncached function, a key too long to cache, a control-flow function).
+    const ANSWERS: Record<string, () => unknown> = {
+      false: () => false,
+      zero: () => 0,
+      empty: () => '',
+      nan: () => Number.NaN,
+      null: () => null,
+      undefined: () => undefined,
+      five: () => 5,
+      'ok TRUE': () => makeOkBoolean('HOST', true),
+      'ok FALSE': () => makeOkBoolean('HOST', false),
+      error: () =>
+        makeError('HOST', {
+          kind: 'runtime',
+          code: FormulaErrorCodes.PHRASE_TOO_LONG,
+          message: 'the host refuses',
+        }),
+    };
+    const PATHS = {
+      'pure, through the cache': { purity: 'pure', key: '1' },
+      'run-cached, through the cache': { purity: 'run_cached', key: '1' },
+      uncached: { purity: 'uncached', key: '1' },
+      'pure, a key too long to cache': { purity: 'pure', key: 'long' },
+      'control flow': { purity: 'pure', controlFlow: true, key: '1' },
+    } as const;
+
+    function pathRuntime(path: keyof typeof PATHS, answer: string) {
+      const shape: { purity: 'pure' | 'run_cached' | 'uncached'; controlFlow?: boolean } =
+        PATHS[path];
+      const runtime = createTestRuntime();
+      runtime.registry.registerFunction({
+        signatureId: 'HOST/v1',
+        name: 'HOST',
+        category: 'custom',
+        description: 'An operator of the host.',
+        params: [{ name: 'key', type: FormulaTypes.any(true) }],
+        returnType: FormulaTypes.boolean(true),
+        purity: shape.purity,
+        controlFlow: shape.controlFlow,
+      });
+      runtime.implementations.register('HOST/v1', {
+        estimateCostsInSeconds: () => 0.0001,
+        evaluateMultiple: async (calls) =>
+          (answer === 'missing' ? [] : calls.map(() => ANSWERS[answer]())) as FormulaNodeOutput[],
+      });
+      return runtime;
+    }
+
+    it('reads each answer of its operator as the runner reads the same call written, on every path', async () => {
+      // The runner reads an answer that is no output as `null` on a call it answers through its
+      // cache, and as a failed call on every other path; FILTER_BY gives the written call's error,
+      // or keeps the item exactly where the written call answers TRUE.
+      const variables = { long: 'a'.repeat(501) };
+      const readings = new Set<string>();
+      for (const path of Object.keys(PATHS) as (keyof typeof PATHS)[]) {
+        for (const answer of [...Object.keys(ANSWERS), 'missing']) {
+          const runtime = pathRuntime(path, answer);
+          const key = PATHS[path].key;
+          const written = await evaluate(runtime, `HOST(${key})`, {}, variables);
+          const byFilter = await evaluate(
+            runtime,
+            `FILTER_BY(LIST("p"); LIST(${key}); "HOST")`,
+            {},
+            variables,
+          );
+          const wanted =
+            written.errors.length > 0
+              ? { value: null, errors: written.errors }
+              : { value: written.value === true ? ['p'] : [], errors: [] };
+          expect(
+            byFilter,
+            `${path}, ${answer}: HOST(${key}) gives ${JSON.stringify(written)}`,
+          ).toStrictEqual(wanted);
+          if (answer === 'missing') readings.add(`${written.value}/${written.errors.join(',')}`);
+        }
+      }
+      // Both readings of an answer that is no output occur: null, and a failed call.
+      expect([...readings].sort()).toStrictEqual(['null/', 'null/runtime:EVAL_CRASH']);
     });
 
-    it('charges a control-flow operator a flat 0.05 a call, as the runner charges it written', async () => {
+    it('charges a control-flow operator exactly 0.05 a call, as the runner charges it written', async () => {
       // AND, OR, NOT and SWITCH are control flow: each call costs 0.05 whatever its estimate, as
-      // the Charges conditions state, made by FILTER_BY or written in the formula.
+      // the Charges conditions state, made by FILTER_BY or written in the formula. A call passes a
+      // maxFunctionCostUnits of 0.05 and is refused under the largest number below 0.05, so its
+      // charge is 0.05 exactly, from both sides; FILTER_BY's own call costs less than either.
+      const below = 0.049999999999999996;
+      // No number lies between it and 0.05: their midpoint rounds to one of the two.
+      expect(below).toBeLessThan(0.05);
+      expect([below, 0.05]).toContain((below + 0.05) / 2);
       const cases = [
-        ['FILTER_BY(LIST(1); LIST(TRUE); "AND"; TRUE)', 'AND(TRUE; TRUE)', [1]],
-        ['FILTER_BY(LIST(1); LIST(TRUE); "OR"; FALSE)', 'OR(TRUE; FALSE)', [1]],
-        ['FILTER_BY(LIST(1); LIST(FALSE); "NOT")', 'NOT(FALSE)', [1]],
-        ['FILTER_BY(LIST(1); LIST(1); "SWITCH"; 1)', 'SWITCH(1; 1)', []],
+        ['FILTER_BY(LIST(1); LIST(TRUE); "AND"; TRUE)', 'AND(TRUE; TRUE)', [1], true],
+        ['FILTER_BY(LIST(1); LIST(TRUE); "OR"; FALSE)', 'OR(TRUE; FALSE)', [1], true],
+        ['FILTER_BY(LIST(1); LIST(FALSE); "NOT")', 'NOT(FALSE)', [1], true],
+        ['FILTER_BY(LIST(1); LIST(1); "SWITCH"; 1)', 'SWITCH(1; 1)', [], null],
       ] as const;
-      for (const [byFilter, written, kept] of cases) {
+      for (const [byFilter, written, kept, answer] of cases) {
         const runtime = hostRuntime(() => makeOkBoolean('HOST', true));
-        for (const source of [byFilter, written]) {
+        for (const [source, value] of [
+          [byFilter, kept],
+          [written, answer],
+        ] as const) {
           expect(
-            (await evaluate(runtime, source, { maxFunctionCostUnits: 0.0499 })).errors,
-            `${source} under 0.0499`,
+            (await evaluate(runtime, source, { maxFunctionCostUnits: below })).errors,
+            `${source} under the largest number below 0.05`,
           ).toStrictEqual(['security:FUNCTION_COST_LIMIT_EXCEEDED']);
+          expect(
+            await evaluate(runtime, source, { maxFunctionCostUnits: 0.05 }),
+            `${source} under 0.05`,
+          ).toStrictEqual({ value, errors: [] });
         }
-        expect(
-          await evaluate(runtime, byFilter, { maxFunctionCostUnits: 0.05 }),
-          `${byFilter} under 0.05`,
-        ).toStrictEqual({ value: kept, errors: [] });
       }
     });
 

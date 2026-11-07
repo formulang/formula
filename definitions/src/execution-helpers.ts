@@ -116,17 +116,20 @@ export function makeOkUnknown(
 }
 
 /**
- * The output of one call, read from what an implementation gives for it: that output, or, where
- * it gives none, the value `null`. The runner reads what an implementation gives for a call it
- * answers through its pure cache with this function, and so does `FILTER_BY` for each call of its
- * operator; an output that is not ok stays as it is, for the runner to read as a failed call's.
+ * The output of one call that the runner answers through its cache, read from what the
+ * implementation gives for it: that output, or, where it gives no output, the value `null`. An
+ * answer counts as no output when it is falsy (`undefined`, `null`, `false`, `0`, `""` or `NaN`),
+ * as 1.0.0 read it on that path. The runner reads such a call with this function; an output that
+ * is not ok stays as it is, for the runner to read as a failed call's. On its other paths the
+ * runner reads an answer that is no output as a failed call (the execution context's `readCall`
+ * gives both readings to an implementation).
  */
 export function readCallOutput(
   name: string,
   signatureId: string,
   output: FormulaNodeOutput | null | undefined,
 ): FormulaNodeOutput {
-  return output ?? makeOkUnknown(name, null, { signatureId });
+  return output || makeOkUnknown(name, null, { signatureId });
 }
 
 export function makeError(

@@ -24,13 +24,13 @@ import {
   writeNodeError,
   writeNodeValue,
 } from './per-node';
+import { readCallError, readCallValue, readWrittenCall } from './read-call';
 import type { RunnerState } from './state';
 import { addCostOrThrow, callChargeUnits, checkWallTime } from './state';
 import {
   expectedCastForComparison,
   nodeName,
   toExecutionErrorKind,
-  toKnownFormulaErrorCode,
   valueKindOf,
 } from './value-utils';
 import { resolvePropertyValue, resolveRootVariableValueAsync } from './variables';
@@ -417,6 +417,14 @@ export async function evalNodeOutputAsync(
               state,
               callChargeUnits(ctx.registry.getFunction(calledId), ctx.resolver, calledId, args),
             ),
+          readCall: (calledId, args, answer) =>
+            readWrittenCall(
+              ctx.registry.getFunction(calledId),
+              calledId,
+              args,
+              state.limits,
+              answer,
+            ),
         };
 
         const calls: BatchEvaluationCall[] = [
@@ -445,21 +453,14 @@ export async function evalNodeOutputAsync(
           span: node.span,
         };
 
-        const resultValue =
-          typeof out.value === 'number' && !Number.isFinite(out.value) ? null : out.value;
-        out.value = resultValue;
+        out.value = readCallValue(out.value);
         if (out.ok) {
           out.valueKind = valueKindOf(out.value);
           writeNodeValue(node, out.value, ctx.registry, state.limits, perNode);
           return out;
         }
 
-        const err = makeFormulaError({
-          kind: out.error?.kind ?? 'runtime',
-          code: toKnownFormulaErrorCode(out.error?.code),
-          message: out.error?.message ?? 'Evaluation error',
-          span: node.span,
-        });
+        const err = makeFormulaError({ ...readCallError(out), span: node.span });
         errors.push(err);
         writeNodeError(node, err.code, err.message, perNode);
         return out;

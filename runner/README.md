@@ -181,7 +181,12 @@ have each such call charged the same way through the execution context's
 `chargeCall(signatureId, args)`, which the runner provides and which charges by the same rule, a
 control-flow callee 0.05 included: `FILTER_BY` charges each call of its operator so, while `EACH`,
 `FILTER`, `FILTER_PROPERTY` and `REDUCE`, as in 1.0.0, are charged only their own call, the
-estimate of the first three and the flat 0.05 of `REDUCE`, a control-flow function.
+estimate of the first three and the flat 0.05 of `REDUCE`, a control-flow function. Only that
+rule makes a charge: `addCostOrThrow` takes a `CallCharge`, which `callChargeUnits` alone mints,
+so a second place that computes one does not compile. The execution context's
+`readCall(signatureId, args, answer)` reads what such a call answered as the runner reads the same
+call written in a formula, on the path it would take for it; `FILTER_BY` reads its operator's
+answers so.
 
 ### Tracing a run with the per-node output tree
 

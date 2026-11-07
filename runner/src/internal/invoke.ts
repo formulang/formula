@@ -13,7 +13,8 @@ import {
 } from '@formulang/definitions';
 
 import { resolveMaybeAsync } from './async';
-import { cacheKey, isCacheableByArgs } from './cache';
+import { cacheKey } from './cache';
+import { answeredThroughCache } from './read-call';
 import type { RunnerState } from './state';
 import { addCostOrThrow, callChargeUnits, checkWallTime } from './state';
 
@@ -58,7 +59,7 @@ export async function invokeFunctionBatch(
     const c = calls[0];
     const argOutputs = await Promise.all(c.args.map((p) => p.output()));
     const argValues = argOutputs.map((o) => o.value);
-    if (!isCacheableByArgs(argValues, state.limits)) {
+    if (!answeredThroughCache(def, argValues, state.limits)) {
       // Too-large/unbounded args: skip caching.
     } else {
       const k = cacheKey(signatureId, argValues, c.expectedCast, state.limits);
@@ -88,8 +89,9 @@ export async function invokeFunctionBatch(
       pendingCache.set(k, p as unknown as Promise<unknown>);
       try {
         const outArr = await p;
-        // What the implementation gives, read as every reader of a call's output reads it: a
-        // missing output is `null` (readCallOutput, which FILTER_BY reads its operator's with).
+        // On this path an answer that is no output, any falsy value, reads as `null`, as in 1.0.0
+        // (readCallOutput); readWrittenCall reads a call an implementation makes itself the same
+        // way, on this path and on the others.
         const out0 = readCallOutput(def.name, signatureId, outArr[0]);
         if (!outArr[0]) return [out0];
         if (!out0.ok) return outArr;
