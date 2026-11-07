@@ -88,20 +88,35 @@ Adding a function touches four places: a definition (portable metadata in `@form
 
 `core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
 
-- Each function the 1.0.0 baseline does not name has one section, under a heading of its name that no other heading repeats, and no other section has a line that, read with every whitespace character as one space, starts with `Unspecified:`.
+- No two headings of the page, at any level, read the same once NFKC-normalised, with every whitespace character read as one space and the ends trimmed.
+- Each function the 1.0.0 baseline does not name has one section, under a line `### NAME` of its name as written, which runs to the next heading of level one to three.
 - Such a section opens with its signature line, the whole line as the live registry renders it.
-- Read line by line up to the next heading, after NFKC normalisation, with every whitespace character as one space and format characters dropped, such a section is its signature line, then rules, each a top-level bullet of one line followed by one code block every line of which belongs to an example, then one line that starts with `Unspecified:`, with only blank lines between them, and any other line fails, a `---` rule, a line after the closing one and a nested or numbered item among them.
-- With its code spans taken out, the target of each link that a `[` opens taken out with it, every whitespace character read as one space and after NFKC normalisation, a bullet holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[` and `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, and one `.`, its last character, the closing line is held to the same, with the colon of `Unspecified:` at its start, and a `](` that no `[` opens fails.
-- No bullet holds a comma followed, after any whitespace or none, by "and", "or", "but", "nor", "so", "yet" or "then".
-- Read with the target of each link that a `[` opens taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space, and case folded by upper then lower case, no bullet of a section equals a shared rule, holds all its words in a row, has all its own words in a row inside one or starts with the same four words as one, and no shared rule equals another or holds all its words in a row.
-- The shared rules stand once, under their heading, opened by their one sentence and read by the same grammar as a section, with no signature line and no closing line.
+- A line of the page that, read with every whitespace character as one space, starts with `Unspecified:` is the closing line of such a section.
+- Read line by line after NFKC normalisation, with every whitespace character as one space and format characters dropped, each line of such a section after its signature line, and of the shared rules after their opening sentence, up to its closing line is blank, a top-level bullet or a line of the code block that follows a bullet.
+- Read so, no line but a blank one follows the closing line of such a section, up to the next heading of level one to three.
+- Each bullet is followed, after blank lines only, by a code block that opens with two spaces, three or more backticks and `ts`.
+- Each code block closes with a line of its own fence inside its section.
+- Every line of a code block belongs to an example statement, `await evalOk(` or `await evalErrors(`, the call and `);`, with what it gives after `// `, on one line or across several.
+- Such a section, and the shared rules, have at least one bullet.
+- Such a section has a closing line, one that starts with `Unspecified:`.
+- With its code spans taken out, the target of each link that a `[` opens taken out with it, every whitespace character read as one space and after NFKC normalisation, a bullet or a closing line holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[`, `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, a final `.` and, in a closing line, the colon of `Unspecified:` at its start.
+- Read so, a bullet or a closing line ends with `.`.
+- Read so, no bullet or closing line holds a `](` that no `[` opens.
+- Read with each code span and each link as its text, after NFKC normalisation and with every whitespace character as one space, no bullet holds a comma followed, after any whitespace or none, by "and", "or", "but", "nor", "so", "yet" or "then".
+- Read with the target of each link that a `[` opens taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space and case folded by upper then lower case, no bullet of a section holds all the words of a shared rule in a row.
+- Read so, no bullet of a section has all its words in a row inside a shared rule.
+- Read so, no bullet of a section starts with the same four words as a shared rule.
+- Read so, no shared rule holds all the words of another in a row.
+- One heading of the page, and no other, stands at level two and reads `Shared rules` once NFKC-normalised, with every whitespace character read as one space and the ends trimmed.
+- The shared rules open with their one sentence, the one this spec states.
 - Each bullet has at least two examples.
 - The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
-- Each example gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
-- At least two of the examples of a bullet state different results.
-- No code block shows one call twice, the same source with the same variables, under either helper.
-- Every example statement on the page is read, each inside a function section or the shared rules.
-- Every example of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six the spec names, two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
+- Each example of a bullet, run with the variables it gives, gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
+- At least two of the examples of a bullet state different results, compared as values in which the keys of an object may stand in any order.
+- No code block shows one call twice, the same source with the same variables, compared as values in which the keys of an object may stand in any order, under either helper.
+- Every line of the page that, with its code spans taken out, calls `evalOk` or `evalErrors` belongs to an example statement read in the section of a function or in the shared rules.
+- Every example statement of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six statements this spec names, each as a whole.
+- Each of those six statements stands on the page once: two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
 
 It cannot decide these, which the reviewer decides:
 
