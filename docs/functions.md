@@ -2171,7 +2171,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "html")', { value: "<a title='a > b'>x</a>" }); // "x"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title = "a > b">x</a>' }); // "x"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title\t=\n"a > b">x</a>' }); // "x"
-  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title\r=\f"a > b">x</a>' }); // "x"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title=\t\f\r"a > b">x</a>' }); // "x"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title=\u00A0"a > b">x</a>' }); // "b\">x"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a title=\u000B"a > b">x</a>' }); // "b\">x"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<a b=c d="x>y">z' }); // "z"
@@ -2245,7 +2245,9 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<style></style>x</style>b' }); // "axb"
   await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<script></scripts>x</script >b' }); // "ab"
   await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<script>x</script\f>b<title>t</title/>c' }); // "abc"
-  await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<script>x</script\r>b<style>y</style\n>c' }); // "abc"
+  await evalOk('PLAIN_TEXT(value; "html")', {
+    value: 'a<script>x</script\r>b<style>y</style\n>c<title>t</title\t>d',
+  }); // "abcd"
   await evalOk('PLAIN_TEXT(value; "html")', { value: 'a<script>x</script\u00A0>b' }); // "a"
   await evalOk('PLAIN_TEXT(value; "html")', { value: "a<script>'</p>'</script>b" }); // "ab"
   await evalOk('PLAIN_TEXT("a<script><!--<script></script>-->b</script>c"; "html")'); // "a-->bc"
