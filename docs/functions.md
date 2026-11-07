@@ -1440,12 +1440,14 @@ await evalOk('ISURL("localhost")'); // false
   await evalOk('WORDS("abc"; "pattern"; "b*")'); // ["b"]
   ```
 
-- An option that holds no line terminator and runs from a `/` to a `/` followed by zero or more ASCII lower-case letters is read as `/pattern/flags`, split at its last `/`.
+- An option that runs from a `/` to a `/` followed by zero or more ASCII lower-case letters and holds no line terminator (`\n`, `\r`, U+2028 or U+2029) is read as `/pattern/flags`, split at its last `/`.
 
   ```ts
   await evalOk('WORDS("Ab ab"; "pattern"; "/ab/i")'); // ["Ab", "ab"]
   await evalOk('WORDS("a/b"; "pattern"; "/a/b/")'); // ["a/b"]
   await evalOk('WORDS("/ab/I"; "pattern"; "/ab/I")'); // ["/ab/I"]
+  await evalOk('WORDS(value; "pattern"; "/a\u2028/")', { value: '/a\u2028/ a\u2028' }); // ["/a\u2028/"]
+  await evalOk('WORDS(value; "pattern"; "/a\u0085/")', { value: '/a\u0085/ a\u0085' }); // ["a\u0085", "a\u0085"]
   ```
 
 - In `"pattern"` mode, a text of more than `maxRegexTextLength` (8,000) code units raises `REGEX_INPUT_TOO_LONG`.
