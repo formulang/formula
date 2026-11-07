@@ -243,6 +243,10 @@ describe('callable invocations', () => {
     // with a dot above stays a different name, though Lithuanian upper case drops the dot.
     expect(invocationOf({ name: 'fi\u0307lter' })).toBeUndefined();
     expect('fi\u0307lter'.toLocaleUpperCase('lt')).toBe('FILTER');
+    // Nor is a name normalised first: fullwidth letters are another name, though NFKC makes them
+    // ASCII ones.
+    expect(invocationOf({ name: '\uFF46\uFF49\uFF4C\uFF54\uFF45\uFF52' })).toBeUndefined();
+    expect('\uFF46\uFF49\uFF4C\uFF54\uFF45\uFF52'.normalize('NFKC').toUpperCase()).toBe('FILTER');
   });
 
   it('checks every definition under a table name, and a copy under another name as plain', () => {

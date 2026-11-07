@@ -1569,13 +1569,15 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   await evalOk('LEADING_WORDS(""; 1)'); // null
   ```
 
-- A `count` that is not a whole number of 1 or more returns `null` with a `TYPE` warning.
+- A `count` returns `null` with a `TYPE` warning unless it is a whole number of 1 or more, however large (`2 ** 53` and beyond included).
 
   ```ts
   await evalOk('LEADING_WORDS("a b"; 0)'); // null with a TYPE warning
   await evalOk('LEADING_WORDS("a b"; 1)'); // "a"
   await evalOk('LEADING_WORDS("a b"; 2.5)'); // null with a TYPE warning
   await evalOk('LEADING_WORDS("a b"; -1)'); // null with a TYPE warning
+  await evalOk('LEADING_WORDS("a b"; 9007199254740991)'); // null
+  await evalOk('LEADING_WORDS("a b"; 9007199254740992)'); // null
   ```
 
 - Where `WORDS` returns `null` with a warning for `text`, `mode` and `option`, `LEADING_WORDS` returns `null` with the same warning.
@@ -1639,13 +1641,19 @@ Unspecified: what [WORDS](#words) leaves unspecified.
   await evalOk('SENTENCES("!? ..."; "terminators")'); // []
   ```
 
-- Each sentence is trimmed of whitespace.
+- Each sentence is trimmed at both ends of the characters ECMAScript's `trim` removes, the whitespace `\s` matches, U+FEFF among them but not U+0085.
 
   ```ts
   await evalOk('SENTENCES(" Ja. ")'); // ["Ja."]
   await evalOk('SENTENCES(" Ja. Nein "; "terminators")'); // ["Ja.", "Nein"]
   await evalOk('SENTENCES("Hi. Ok  ")'); // ["Hi.", "Ok"]
   await evalOk('SENTENCES("  Ok")'); // ["Ok"]
+  await evalOk('SENTENCES(value)', { value: '\tJa. Nein\t' }); // ["Ja.", "Nein"]
+  await evalOk('SENTENCES(value)', { value: '\uFEFFJa. Nein\uFEFF' }); // ["Ja.", "Nein"]
+  await evalOk('SENTENCES(value)', { value: '\u0085Ja. Nein\u0085' }); // ["\u0085Ja.", "Nein\u0085"]
+  await evalOk('SENTENCES(value; "terminators")', { value: '\tJa.\tNein\t' }); // ["Ja.", "Nein"]
+  await evalOk('SENTENCES(value; "terminators")', { value: '\uFEFFJa.\uFEFFNein\uFEFF' }); // ["Ja.", "Nein"]
+  await evalOk('SENTENCES(value; "terminators")', { value: '\u0085Ja.\u0085Nein\u0085' }); // ["\u0085Ja.", "\u0085Nein\u0085"]
   ```
 
 - In `"punctuation"` mode, a piece that is empty once trimmed is no sentence.
@@ -1747,12 +1755,14 @@ Unspecified: a `keep` token that starts or ends with whitespace.
   await evalOk('LINES(" "; "all")'); // [" "]
   ```
 
-- In `"non-blank"` mode, the default, a line that is empty once trimmed of whitespace, JavaScript's `\s`, is dropped.
+- In `"non-blank"` mode, the default, a line that is empty once trimmed of the characters ECMAScript's `trim` removes, the whitespace `\s` matches with U+FEFF among them, is dropped.
 
   ```ts
   await evalOk('LINES(value)', { value: 'a\n\n \t\u00A0\nb' }); // ["a", "b"]
   await evalOk('LINES(value; "non-blank")', { value: 'a\n\n \t\u00A0\nb' }); // ["a", "b"]
   await evalOk('LINES(value)', { value: 'a\n x \nb' }); // ["a", " x ", "b"]
+  await evalOk('LINES(value)', { value: 'a\n\uFEFF\nb\n\uFEFF' }); // ["a", "b"]
+  await evalOk('LINES(value)', { value: 'a\n\u001C\nb\n\u001F' }); // ["a", "\u001c", "b", "\u001f"]
   ```
 
 - In `"all"` mode, every line is kept.
@@ -1883,7 +1893,7 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED("ABC"; LIST("b"); "substring"; TRUE)'); // "b"
   ```
 
-- With `ignoreCase` `TRUE`, both sides are lower-cased as [LOWER](#lower) does before they are compared.
+- With `ignoreCase` `TRUE`, both sides are lower-cased as [LOWER](#lower) does, by ECMAScript's `toLowerCase` alone with no Unicode normalisation, before they are compared.
 
   ```ts
   await evalOk('FIRST_CONTAINED("KENNST DU DAS?"; LIST("kennst du das?"); "substring"; TRUE)'); // "kennst du das?"
@@ -1896,6 +1906,15 @@ Unspecified: nothing.
   await evalOk('FIRST_CONTAINED("\u00EC"; LIST("\u00CC"); "substring"; TRUE)'); // "\u00cc"
   await evalOk('FIRST_CONTAINED("Straße"; LIST("strasse"); "substring"; TRUE)'); // null
   await evalOk('FIRST_CONTAINED("Fußball"; LIST("fussball"); "word"; TRUE)'); // null
+  await evalOk('FIRST_CONTAINED("\uFF21\uFF22\uFF23"; LIST("abc"); "substring"; TRUE)'); // null
+  await evalOk('FIRST_CONTAINED("abc"; LIST("\uFF21\uFF22\uFF23"); "substring"; TRUE)'); // null
+  await evalOk(
+    'FIRST_CONTAINED("\uFF21\uFF22\uFF23"; LIST("\uFF41\uFF42\uFF43"); "substring"; TRUE)',
+  ); // "\uff41\uff42\uff43"
+  await evalOk('FIRST_CONTAINED("\uFB01le"; LIST("file"); "substring"; TRUE)'); // null
+  await evalOk('FIRST_CONTAINED(value; LIST("\u00E9"); "substring"; TRUE)', { value: 'E\u0301' }); // null
+  await evalOk('FIRST_CONTAINED("\u00C9"; LIST(value); "substring"; TRUE)', { value: 'e\u0301' }); // null
+  await evalOk('FIRST_CONTAINED("\u00C9"; LIST("\u00E9"); "substring"; TRUE)'); // "\u00e9"
   ```
 
 - A phrase longer than 250 code units as it is searched for, lower-cased when `ignoreCase` is `TRUE`, raises `PHRASE_TOO_LONG`.
@@ -1961,7 +1980,7 @@ Unspecified: nothing.
   await evalOk('MISSING_FROM(LIST(" x "; "y"); "abc")'); // [" x ", "y"]
   ```
 
-- In `"whitespace"` mode, the default, both sides are trimmed and each run of whitespace, JavaScript's `\s`, becomes one space.
+- In `"whitespace"` mode, the default, both sides are trimmed of the characters ECMAScript's `trim` removes, U+0085 not among them, once each run of whitespace, JavaScript's `\s`, has become one space.
 
   ```ts
   await evalOk('MISSING_FROM(LIST("liefern schnell"; "billig"); value)', {
@@ -1975,6 +1994,8 @@ Unspecified: nothing.
   await evalOk('MISSING_FROM(LIST("liefern schnell"); value; "exact")', {
     value: 'Wir liefern\n  schnell.',
   }); // ["liefern schnell"]
+  await evalOk('MISSING_FROM(value; "x")', { value: ['\uFEFFx\uFEFF'] }); // []
+  await evalOk('MISSING_FROM(value; "x")', { value: ['\u0085x\u0085'] }); // ["\u0085x\u0085"]
   ```
 
 - In `"exact"` mode, both sides are compared as written.
@@ -2096,12 +2117,14 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a \t b' }); // "a b"
   ```
 
-- Each line is trimmed.
+- Each line is trimmed of the characters ECMAScript's `trim` removes, U+0085 not among them.
 
   ```ts
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<p> a </p>' }); // "a"
   await evalOk('PLAIN_TEXT(value; "html")', { value: '<pre> a\n b </pre>' }); // "a\nb"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: '  a \t b  ' }); // "a b"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<p>\uFEFFa\u2003</p>' }); // "a"
+  await evalOk('PLAIN_TEXT(value; "html")', { value: '<p>\u0085a\u0085</p>' }); // "\u0085a\u0085"
   ```
 
 - A line that is empty once trimmed is dropped.
@@ -2110,6 +2133,7 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("<div>  </div>x"; "html")'); // "x"
   await evalOk('PLAIN_TEXT("<div>w</div>x"; "html")'); // "w\nx"
   await evalOk('PLAIN_TEXT(""; "html")'); // ""
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'a\n\n\u0085\n\nb' }); // "a\n\u0085\nb"
   ```
 
 - In `"html"`, a tag, which runs from `<` or `</` followed by an ASCII letter to the first `>` outside a quoted attribute value, is removed.
@@ -2494,12 +2518,13 @@ Unspecified: nothing.
   await evalOk('PLAIN_TEXT("[a](u)"; "markdown")'); // "a"
   ```
 
-- In `"markdown"`, a code span that starts and ends with a space and holds more than whitespace loses one space at each end.
+- In `"markdown"`, a code span that starts and ends with a space and holds a character other than those ECMAScript's `trim` removes loses one space at each end.
 
   ```ts
   await evalOk('PLAIN_TEXT("x` a `y"; "markdown")'); // "xay"
   await evalOk('PLAIN_TEXT("x`a `y"; "markdown")'); // "xa y"
   await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'x` \t `y' }); // "x y"
+  await evalOk('PLAIN_TEXT(value; "markdown")', { value: 'x` \u0085 `y' }); // "x\u0085y"
   ```
 
 - In `"markdown"`, other whitespace at the ends of a code span, a tab or a no-break space, stays.
@@ -2678,11 +2703,13 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\na\u00A0\t b\n```' }); // ["a\u00a0\t b"]
   ````
 
-- In each block but a code block, the text is trimmed.
+- In each block but a code block, the text is trimmed of the characters ECMAScript's `trim` removes, U+0085 not among them.
 
   ````ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '#  a\u00A0\t b  ' }); // ["a b"]
   await evalOk('MARKDOWN_BLOCKS(value; "code")', { value: '```\n a\u00A0\t b \n```' }); // [" a\u00a0\t b "]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# \u0085a\u0085' }); // ["\u0085a\u0085"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '\uFEFFa\uFEFF' }); // ["a"]
   ````
 
 - A line ends at `\n`, `\r` or `\r\n`.
@@ -2700,11 +2727,13 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n\nb' }); // ["a", "b"]
   ```
 
-- A blank line, empty or of whitespace only, ends the open block.
+- A blank line, empty or of the characters ECMAScript's `trim` removes only, ends the open block.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n \t\nb' }); // ["a", "b"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n \tb' }); // ["a b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n\uFEFF\nb' }); // ["a", "b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n\u0085\nb' }); // ["a \u0085 b"]
   ```
 
 - Each line outside a fenced block is read as the first that it is of a blank line, an opening fence, a thematic break, a heading, a list item, a row of an open table, the header row of a table and text of a paragraph or of the open list item.
@@ -2751,11 +2780,13 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   }); // ["#x ####### x # vier # tab"]
   ```
 
-- A heading's text is the rest of its line less a closing run of `#` that follows a space or a tab, together with the spaces and tabs before that run.
+- A heading's text is the rest of its line, trimmed at its end of the characters ECMAScript's `trimEnd` removes, less a closing run of `#` that follows a space or a tab, together with the spaces and tabs before that run.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# Titel #\n# a ##  \n# #' }); // ["Titel", "a", ""]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# Titel#\n# C#' }); // ["Titel#", "C#"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# a #\uFEFF\n# b #\t' }); // ["a", "b"]
+  await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# a #\u0085' }); // ["a #\u0085"]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# \u00a0#' }); // ["#"]
   ```
 
@@ -2858,7 +2889,7 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '-\nfoo\n\n- y' }); // ["foo", "y"]
   ```
 
-- A list item ends a paragraph only when it has text and, if ordered, its number is 1.
+- A list item ends a paragraph only when its text holds a character other than those ECMAScript's `trim` removes and, if ordered, its number is 1.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n- a' }); // ["a"]
@@ -2866,6 +2897,8 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: 'Text\n01. eins' }); // ["eins"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n2. zwei\n0. null\n-' }); // ["Text 2. zwei 0. null -"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n- \u00A0' }); // ["Text -"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n- \uFEFF' }); // ["Text -"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'Text\n- \u0085' }); // ["Text"]
   ```
 
 - A table starts at a line that holds `|` and whose next line, also holding `|`, is a delimiter row of one cell for each header cell.
@@ -2876,12 +2909,19 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'Name\n|---|' }); // []
   ```
 
-- A delimiter cell is one or more dashes with an optional colon at either end.
+- A delimiter cell, trimmed of the characters ECMAScript's `trim` removes, is one or more dashes with an optional colon at either end.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B | C |\n|:-|-:|:-:|' }); // ["A B C"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|:|' }); // []
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n| x |' }); // []
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
+    value: '| A | B |\n|\t-\t|\uFEFF-\uFEFF|',
+  }); // ["A B"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
+    value: '| A | B |\n|\uFEFF-\uFEFF|\t-\t|',
+  }); // ["A B"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B |\n|\u0085-|-\u0085|' }); // []
   ```
 
 - A table ends the paragraph it starts in.
@@ -2912,13 +2952,16 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: '| A |\n|---|\n\nx' }); // ["x"]
   ```
 
-- Each row but the delimiter row, the header row included, gives a block of its cells, trimmed, the non-empty ones joined by one space.
+- Each row but the delimiter row, the header row included, gives a block of its cells, each trimmed of the characters ECMAScript's `trim` removes, the non-empty ones joined by one space.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
     value: '| A | B |\n|---|:-:|\n| 1 |  |\n|  x | y  |',
   }); // ["A B", "1", "x y"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B |\n|---|---|\n|  |  |' }); // ["A B", ""]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', {
+    value: '| A | B |\n|---|---|\n|\u0085|\u0085|',
+  }); // ["A B", "\u0085 \u0085"]
   ```
 
 - Cells past the header's count are dropped.
@@ -2940,16 +2983,18 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\n|---|\n| x\\y |' }); // ["A", "x\\y"]
   ```
 
-- A row's leading `|` is dropped.
+- A row's leading `|` is dropped, once the row is trimmed of the characters ECMAScript's `trim` removes.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n| 1 | 2' }); // ["A B", "1 2"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B\n---|---\n|| 1 | 2' }); // ["A B", "1"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '|A|B|\n|-|-|\n|1|2|' }); // ["A B", "1 2"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '  | A | B |\n|---|---|' }); // ["A B"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '\t| A | B |\n\uFEFF|---|---|' }); // ["A B"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '\u0085| A |\n|---|' }); // []
   ```
 
-- A row's trailing `|` is dropped unless a backslash precedes it.
+- A row's trailing `|` is dropped unless a backslash precedes it, once the row is trimmed of the characters ECMAScript's `trim` removes.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: 'A | B |\n---|---\n1 | 2 | 3' }); // ["A B", "1 2"]
@@ -2957,6 +3002,8 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
     value: '| A | B |\n|---|---|\n| 1 | 2 \\|',
   }); // ["A B", "1 2 |"]
   await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B | \n|---|---|' }); // ["A B"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A | B |\t\n|---|---|\uFEFF' }); // ["A B"]
+  await evalOk('MARKDOWN_BLOCKS(value; "table-row")', { value: '| A |\u0085\n|---|' }); // []
   ```
 
 - A paragraph is a run of lines that start no other block, joined by one space.
@@ -2966,13 +3013,15 @@ Unspecified: in `"html"`, `</` followed by anything but an ASCII letter, and in 
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\n\nb\n\nc' }); // ["a", "b", "c"]
   ```
 
-- A line of a paragraph or a list item that ends with a backslash, other than its last line, loses the backslash.
+- A line of a paragraph or a list item whose last character before any that ECMAScript's `trim` removes is a backslash, other than its last line, loses the backslash.
 
   ```ts
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\\\nb' }); // ["a b"]
   await evalOk('MARKDOWN_BLOCKS(value; "list-item")', { value: '- a\\\nb' }); // ["a b"]
   await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\\' }); // ["a\\"]
   await evalOk('MARKDOWN_BLOCKS(value; "heading")', { value: '# a\\' }); // ["a\\"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\\\t\nb\\\uFEFF\nc' }); // ["a b c"]
+  await evalOk('MARKDOWN_BLOCKS(value; "paragraph")', { value: 'a\\\u0085\nb' }); // ["a\\\u0085 b"]
   ```
 
 - A line that would start an indented code block or a link reference definition is paragraph text.
@@ -3159,21 +3208,25 @@ await evalOk('INCLUDES(LIST("a"); "b")'); // false
   await evalOk('TAKE(LIST(1; 2; 3); 2; 2)'); // [2, 3]
   ```
 
-- A `count` that is not a whole number of 0 or more returns `null` with a `TYPE` warning.
+- A `count` returns `null` with a `TYPE` warning unless it is a whole number of 0 or more, however large (`2 ** 53` and beyond included).
 
   ```ts
   await evalOk('TAKE(LIST(1; 2; 3); -1)'); // null with a TYPE warning
   await evalOk('TAKE(LIST(1; 2; 3); 1.5)'); // null with a TYPE warning
   await evalOk('TAKE(LIST(1; 2; 3); 0)'); // []
+  await evalOk('TAKE(LIST(1; 2; 3); 9007199254740991)'); // [1, 2, 3]
+  await evalOk('TAKE(LIST(1; 2; 3); 9007199254740992)'); // [1, 2, 3]
   ```
 
-- A `start` that is not a whole number of 1 or more returns `null` with a `TYPE` warning.
+- A `start` returns `null` with a `TYPE` warning unless it is a whole number of 1 or more, however large (`2 ** 53` and beyond included).
 
   ```ts
   await evalOk('TAKE(LIST(1; 2; 3); 1; 0)'); // null with a TYPE warning
   await evalOk('TAKE(LIST(1; 2; 3); 1; 1.5)'); // null with a TYPE warning
   await evalOk('TAKE(LIST(1; 2; 3); 1; -1)'); // null with a TYPE warning
   await evalOk('TAKE(LIST(1; 2; 3); 1; 1)'); // [1]
+  await evalOk('TAKE(LIST(1; 2; 3); 1; 9007199254740991)'); // []
+  await evalOk('TAKE(LIST(1; 2; 3); 1; 9007199254740992)'); // []
   ```
 
 - Items are taken as they are, `null` and `""` included.
