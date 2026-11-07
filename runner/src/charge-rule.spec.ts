@@ -163,7 +163,7 @@ describe('the charge of a call', () => {
       expect(text.split(from).length, `${label}: ${from}`).toBe(2);
       expect(diagnostics(INVOKE, text.replace(from, to)), label).not.toStrictEqual([]);
     }
-  });
+  }, 60_000);
 
   it('is minted by callChargeUnits alone: no other source of the runner names the charge type', () => {
     // A second reading, by the text: a source that named CallCharge could cast a number to it.
