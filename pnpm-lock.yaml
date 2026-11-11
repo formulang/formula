@@ -35,6 +35,12 @@ importers:
 
   definitions: {}
 
+  formatted-text:
+    dependencies:
+      '@formulang/definitions':
+        specifier: workspace:^
+        version: link:../definitions
+
   parser:
     dependencies:
       '@formulang/definitions':

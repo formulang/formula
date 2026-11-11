@@ -111,6 +111,7 @@ Where to go next:
 | [`@formulang/parser`](parser/README.md)                 | Compiles formula source into a typed, validated AST (`TypedRule`) | Always — everything starts with a compile                           |
 | [`@formulang/runner`](runner/README.md)                 | Asynchronously evaluates compiled formulas                        | You execute formulas                                                |
 | [`@formulang/core-functions`](core-functions/README.md) | Built-in function library + `createCoreFormulaRuntime()` wiring   | You want the standard library (most applications)                   |
+| [`@formulang/formatted-text`](formatted-text/README.md) | Opt-in `PLAIN_TEXT` and `MARKDOWN_BLOCKS` (HTML and markdown)     | Your formulas read HTML or markdown content                         |
 
 They compose exactly as in the quickstart: `createCoreFormulaRuntime()` (core-functions) returns a `registry` of definitions plus the matching executable `implementations`; `parseFormula` (parser) compiles source text against that registry into a `TypedRule`; `evaluateRuleAsync` (runner) executes the compiled rule using the implementations. Everything the packages share — types, AST shapes, registry contracts, limits, error codes — lives in definitions, which is why the other three depend on it.
 
@@ -128,7 +129,7 @@ A formula moves through a fixed pipeline: source text is tokenized and parsed in
 - [docs/releasing.md](docs/releasing.md) — how versions are set and releases are published.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, testing, code style.
 - [SECURITY.md](SECURITY.md) — reporting vulnerabilities and the security model in brief.
-- Package READMEs: [definitions](definitions/README.md), [parser](parser/README.md), [runner](runner/README.md), [core-functions](core-functions/README.md).
+- Package READMEs: [definitions](definitions/README.md), [parser](parser/README.md), [runner](runner/README.md), [core-functions](core-functions/README.md), [formatted-text](formatted-text/README.md).
 
 ## FAQ
 

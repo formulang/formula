@@ -15,6 +15,15 @@ export default defineConfig({
         replacement: fromRoot('core-functions/src/index.ts'),
       },
       { find: '@formulang/runner', replacement: fromRoot('runner/src/index.ts') },
+      // The subpath first: an alias also matches the paths below its name.
+      {
+        find: '@formulang/formatted-text/definitions',
+        replacement: fromRoot('formatted-text/src/definitions.ts'),
+      },
+      {
+        find: '@formulang/formatted-text',
+        replacement: fromRoot('formatted-text/src/index.ts'),
+      },
     ],
   },
   test: {

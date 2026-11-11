@@ -1,6 +1,6 @@
 # Architecture
 
-Formulang turns untrusted formula text into a typed, validated AST at parse time, and evaluates that AST asynchronously under strict resource limits at run time. This document describes how the four packages fit together and walks through both halves of that lifecycle in detail.
+Formulang turns untrusted formula text into a typed, validated AST at parse time, and evaluates that AST asynchronously under strict resource limits at run time. This document describes how the packages fit together and walks through both halves of that lifecycle in detail.
 
 ```mermaid
 flowchart LR
@@ -19,6 +19,7 @@ Related documents: [language.md](language.md) (syntax and semantics), [functions
 | `@formulang/parser`         | `parser/`         | definitions         | Compiles source text into a `TypedRule` against a registry.                                             |
 | `@formulang/runner`         | `runner/`         | definitions, parser | Async evaluation engine: caching, batching, limits, per-node output.                                    |
 | `@formulang/core-functions` | `core-functions/` | definitions         | Executable implementations of the built-ins; `createCoreFormulaRuntime()` wires a ready-to-use runtime. |
+| `@formulang/formatted-text` | `formatted-text/` | definitions         | Opt-in `PLAIN_TEXT` and `MARKDOWN_BLOCKS`: definitions and implementations, registered beside the core. |
 
 ```mermaid
 graph TD
@@ -26,9 +27,11 @@ graph TD
     R["@formulang/runner"] --> D
     R --> P
     C["@formulang/core-functions"] --> D
+    F["@formulang/formatted-text"] --> D
     APP["host application"] --> P
     APP --> R
     APP --> C
+    APP -. opt-in .-> F
 ```
 
 All published packages have zero third-party runtime dependencies; the only edges are the internal `@formulang/*` ones shown above. The runner's dependency on the parser exists for exactly one shared security primitive, `isDenylistedPropertyName` (see [section 4](#4-security-model)).
@@ -92,6 +95,15 @@ export function createCoreFormulaRuntime(): FormulaRuntime {
 ```
 
 `registerCoreFormulaDefinitions` lives in _definitions_ (`definitions/src/register-core-definitions.ts`) because the built-ins' signatures are portable metadata; `registerPrimitiveFormulaImplementations` lives in _core-functions_ because it constructs executable objects (`implementations.register('ADD/v1', new AddImplementation({ signatureId: 'ADD/v1' }))`).
+
+#### Opt-in function packages
+
+`@formulang/formatted-text` applies the same split inside one package: `src/definitions.ts` holds the data-only `FunctionDefinition`s and imports only `@formulang/definitions`, and is published on its own as `@formulang/formatted-text/definitions`, so a parse-only host loads the definitions without the readers. The package root adds the implementations. Its definitions are not in `@formulang/definitions` because they are not built-ins: `registerCoreFormulaDefinitions` must not change when a host opts in or out, and the definitions and the code that implements them ship and version together. A host opts in beside the core runtime:
+
+```ts
+const runtime = createCoreFormulaRuntime();
+registerFormattedTextFunctions(runtime); // = registerFormattedTextDefinitions + registerFormattedTextImplementations
+```
 
 ### 1.2 The registry
 
@@ -495,7 +507,7 @@ Formulang assumes formula source is untrusted and variable data is sensitive. Th
 - `NaN`/`Infinity` never escape as numbers; final outputs can be shape-checked against an `expectedReturnType` (`OUTPUT_TYPE_NOT_ALLOWED`), with clarified object types verified via the `__formula_object_kind` tag.
 - Cache keys avoid deep serialization of untrusted values and oversized strings are excluded from caching entirely.
 - Per-node debug logs honor `redaction: 'mask'` on variables and functions and truncate large values.
-- Zero third-party runtime dependencies in all four packages keeps the supply-chain surface at the platform itself.
+- Zero third-party runtime dependencies in all published packages keeps the supply-chain surface at the platform itself.
 
 See [SECURITY.md](../SECURITY.md) for the vulnerability disclosure process.
 
