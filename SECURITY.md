@@ -21,6 +21,6 @@ Evaluating untrusted formulas is a design goal of Formulang, not an afterthought
 
 - **Property allowlisting.** Formulas can only read variables declared in the registry, and object property access is validated at parse time against typed object definitions — undeclared properties are rejected.
 - **Prototype-pollution denylist.** `__proto__`, `prototype`, `constructor`, and all `__`-prefixed property names are rejected during parsing.
-- **Resource limits.** Parsing and evaluation run under configurable limits: source length, token and AST-node counts, nesting depth, wall time, per-function and total cost budgets, and list/regex sizes; the phrase functions also take phrases of at most 250 code units, a fixed bound. Failures surface as structured errors rather than thrown exceptions; with the parse limits raised far past their defaults, a tree too deep to bind makes `parseFormula` throw a `RangeError` instead, as on 1.0.0.
+- **Resource limits.** Parsing and evaluation run under configurable limits: source length, token and AST-node counts, nesting depth, wall time, per-function and total cost budgets, list/regex sizes, and phrase length. Failures surface as structured errors rather than thrown exceptions.
 
 Anything that breaks these guarantees — reading non-allowlisted data, polluting prototypes, escaping the evaluation model, or bypassing resource limits — counts as a vulnerability: please report it. The full model is described in [docs/architecture.md](docs/architecture.md).

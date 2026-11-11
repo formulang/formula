@@ -3,34 +3,16 @@ Release and compatibility helper scripts live here.
 - `set-version.js`: sets (or, with `--check`, verifies) the single shared
   version across the root package and every workspace package. The release
   workflow publishes whenever the version on `main` is not yet on npm.
-- `compat/`: the compatibility check against 1.0.0. `extract-corpus.js`
-  collects every formula of the 1.0.0 spec files and docs (plus a few probes)
-  into `corpus.json`. `harness.js` adds probe formulas for every function name
-  the current source adds, two formulas that take a callable's name from a
-  value or an expression, an environment in which a variable holds an added
-  name, and two registry shapes per added name, one in which the host
-  registered its own function under it and one in which that function answers
-  to it only through its `aliases`, next to the shapes an embedder builds by
-  hand. It freezes the clock the functions read (`new Date()`), not the one
-  the runner measures its wall-time limits by (`Date.now()`), and records whether
-  a formula asked the registry for an added name. `generate-baseline.js`
-  recorded 1.0.0's outcome for every formula under every shape in
-  `baseline-1.0.0.json`: the parse errors, or the value, warnings, errors and
-  the value of every node of each run. Both ran against `699d57e` and record
-  that commit; the generator refuses to record from a build that is not its
-  checkout's source. `runner/src/compat.spec.ts` requires the current source
-  to produce the same outcomes for every formula that names no function added
-  since (it writes none in its source, in any letter case, and neither 1.0.0
-  nor the current source asked the registry for one), and, which names it asks
-  for aside, for every formula once the added definitions are retired, except
-  the 13 formulas that write `FILTER_BY` under the shape in which the host
-  registered its own `FILTER_BY`: the parser checks every function of that name
-  by the built-in's invocation, and of those 13 the spec requires exactly three
-  to differ from 1.0.0, each of them a formula that ran on 1.0.0 and now fails
-  to compile with `NO_MATCHING_OVERLOAD`. Through an alias the function takes
-  no invocation, and no formula is left out. Regenerate when the corpus, the
-  added names or the shapes change: run `pnpm run build` here and in a 1.0.0
-  checkout (after `pnpm install` there), then run these two from this
-  repository:
+- `compat/`: the compatibility baseline recorded from 1.0.0 (commit
+  `699d57e`). `extract-corpus.js` collects the formulas of the 1.0.0 spec files
+  and docs into `corpus.json`; `generate-baseline.js` records 1.0.0's outcome
+  for each of them in `baseline-1.0.0.json`; `harness.js` is the code they
+  share. `runner/src/compat.spec.ts` checks that the current source produces
+  the same outcomes for every formula that names none of the functions added
+  since. The baseline is frozen at 1.0.0 and normally never regenerated. To
+  regenerate it, build a 1.0.0 checkout (`pnpm install`, `pnpm run build`
+  there), build this repository, then run:
   - `node scripts/compat/extract-corpus.js <checkout> <commit>`
   - `node scripts/compat/generate-baseline.js <checkout> <commit>`
+
+  Both write prettier-formatted JSON, so `prettier:check` passes on the result.

@@ -10,7 +10,7 @@ and the one-call wiring that makes them executable.
 
 ## Highlights
 
-- **A standard library of 113 functions.** Math, aggregation, logic &
+- **A standard library of 111 functions.** Math, aggregation, logic &
   comparison, text, lists, date & time, control flow, and type & empty — each
   documented with its signature, edge-case behavior, and a runnable example
   ([docs/functions.md](../docs/functions.md)).
@@ -96,11 +96,11 @@ result.errors; // []
 result.value; // 7  (operator precedence: * binds tighter than +)
 ```
 
-Under the default limits, parsing and evaluation do not throw on bad formulas:
-type problems surface as structured entries in `parsed.errors` /
-`result.errors`, and runtime edge cases (division by zero, an out-of-range
-index) resolve to `null`. Formulas use `;` to separate arguments by default;
-pass `syntax: { argumentSeparator: ',' }` to `parseFormula` to switch to `,`.
+Parsing and evaluation never throw on bad formulas: type problems surface as
+structured entries in `parsed.errors` / `result.errors`, and runtime edge cases
+(division by zero, an out-of-range index) resolve to `null`. Formulas use `;` to
+separate arguments by default; pass `syntax: { argumentSeparator: ',' }` to
+`parseFormula` to switch to `,`.
 
 ## The Formulang packages
 
@@ -141,114 +141,24 @@ registers just the definitions when you only need to parse and validate.
 
 ## Function categories
 
-Overview:
-
-| Category           | Functions                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Math               | `ADD` `SUB` `MUL` `DIV` `POW` `SUM` `PRODUCT` `MOD` `ROUND` `ROUNDDOWN` `ROUNDUP` `CEILING` `FLOOR` `SQRT` `EXP` `LOG` `LOG10` `PI` `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` `ISEVEN` `ISODD` `RANGE_SCORE`                                                                                                                                                                |
-| Aggregation        | `AVG` `MIN` `MAX` `MEDIAN` `COUNT` `COUNT_UNIQUE`                                                                                                                                                                                                                                                                                                                        |
-| Logic & comparison | `EQ` `NEQ` `GT` `GTE` `LT` `LTE` `AND` `OR` `NOT`                                                                                                                                                                                                                                                                                                                        |
-| Text               | `CONCAT` `JOIN` `LEN` `LOWER` `UPPER` `TRIM` `LEFT` `RIGHT` `MID` `REPLACE` `SUBSTITUTE` `CHAR` `TO_TEXT` `STARTS_WITH` `ENDS_WITH` `CONTAINS` `MATCH_EXPRESSION` `REGEXEXTRACT` `REGEXREPLACE` `ENCODEURL` `ISURL` `WORDS` `WORD_COUNT` `LEADING_WORDS` `SENTENCES` `LINES` `LINE_COUNT` `FIRST_CONTAINED` `CONTAINS_ANY` `MISSING_FROM` `PLAIN_TEXT` `MARKDOWN_BLOCKS` |
-| Lists              | `LIST` `INDEX` `FLAT` `SORT` `SORT_BY_PROPERTY` `FILTER` `FILTER_PROPERTY` `EACH` `REDUCE` `INCLUDES` `TAKE` `INDEX_OF` `FILTER_BY` `DISTINCT` `GROUP_COUNTS`                                                                                                                                                                                                            |
-| Date & time        | `DATE` `DATEVALUE` `TIME` `TIMEVALUE` `NOW` `TODAY` `DAY` `MONTH` `YEAR` `HOUR` `MINUTE` `SECOND` `DAYS` `DATEDIF` `WEEKDAY` `WEEKNUM` `ISOWEEKNUM`                                                                                                                                                                                                                      |
-| Control flow       | `IF` `SWITCH`                                                                                                                                                                                                                                                                                                                                                            |
-| Type & empty       | `IS_EMPTY` `EMPTY` `ISNUMBER` `ISTEXT` `ISDATE`                                                                                                                                                                                                                                                                                                                          |
-
 The full reference — signatures, edge cases, and a runnable example per
-function — is in **[docs/functions.md](../docs/functions.md)**. The sections of
-the functions added since 1.0.0 state each function as rules, one rule of one
-sentence per bullet with at least two examples that give different results,
-share the rules under _Shared rules_, and close with one sentence naming the
-inputs they leave unspecified. `src/functions/shared-rules.spec.ts` runs each
-shared rule against every added function and every parameter the rule
-governs, read from the live registry.
+function — is in **[docs/functions.md](../docs/functions.md)**. Overview:
 
-`core-functions/src/functions/function-docs.spec.ts` checks exactly these in `docs/functions.md`:
+| Category           | Functions                                                                                                                                                                                                                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Math               | `ADD` `SUB` `MUL` `DIV` `POW` `SUM` `PRODUCT` `MOD` `ROUND` `ROUNDDOWN` `ROUNDUP` `CEILING` `FLOOR` `SQRT` `EXP` `LOG` `LOG10` `PI` `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` `ISEVEN` `ISODD` `RANGE_SCORE`                                                                                                                                 |
+| Aggregation        | `AVG` `MIN` `MAX` `MEDIAN` `COUNT` `COUNT_UNIQUE`                                                                                                                                                                                                                                                                                         |
+| Logic & comparison | `EQ` `NEQ` `GT` `GTE` `LT` `LTE` `AND` `OR` `NOT`                                                                                                                                                                                                                                                                                         |
+| Text               | `CONCAT` `JOIN` `LEN` `LOWER` `UPPER` `TRIM` `LEFT` `RIGHT` `MID` `REPLACE` `SUBSTITUTE` `CHAR` `TO_TEXT` `STARTS_WITH` `ENDS_WITH` `CONTAINS` `CONTAINS_ANY` `FIRST_CONTAINED` `MISSING_FROM` `MATCH_EXPRESSION` `REGEXEXTRACT` `REGEXREPLACE` `ENCODEURL` `ISURL` `WORDS` `WORD_COUNT` `LEADING_WORDS` `SENTENCES` `LINES` `LINE_COUNT` |
+| Lists              | `LIST` `INDEX` `TAKE` `INDEX_OF` `FLAT` `SORT` `SORT_BY_PROPERTY` `FILTER` `FILTER_PROPERTY` `FILTER_BY` `EACH` `REDUCE` `INCLUDES` `DISTINCT` `GROUP_COUNTS`                                                                                                                                                                             |
+| Date & time        | `DATE` `DATEVALUE` `TIME` `TIMEVALUE` `NOW` `TODAY` `DAY` `MONTH` `YEAR` `HOUR` `MINUTE` `SECOND` `DAYS` `DATEDIF` `WEEKDAY` `WEEKNUM` `ISOWEEKNUM`                                                                                                                                                                                       |
+| Control flow       | `IF` `SWITCH`                                                                                                                                                                                                                                                                                                                             |
+| Type & empty       | `IS_EMPTY` `EMPTY` `ISNUMBER` `ISTEXT` `ISDATE`                                                                                                                                                                                                                                                                                           |
 
-- No two headings of the page, at any level, read the same once NFKC-normalised, with format characters dropped, each run of whitespace characters read as one space and the ends trimmed.
-- Each function the 1.0.0 baseline does not name has one section, under a line `### NAME` of its name as written, which runs to the next heading of level one to three.
-- Such a section opens with its signature line, the whole line as the live registry renders it.
-- A line of the page that, after NFKC normalisation, with every whitespace character read as one space and format characters dropped, starts with `Unspecified:` is the closing line of such a section.
-- Read line by line after NFKC normalisation, with every whitespace character as one space and format characters dropped, each line of such a section after its signature line, and of the shared rules after their opening sentence, up to its closing line is blank, a top-level bullet or a line of the code block that follows a bullet.
-- Read so, no line but a blank one follows a closing line in such a section or in the shared rules, up to the next heading of level one to three.
-- Each bullet is followed, after blank lines only, by a code block that opens with two spaces, three or more backticks and `ts`.
-- Each code block closes with a line of its own fence inside its section.
-- Every line of a code block belongs to an example statement, `await evalOk(` or `await evalErrors(`, the call and `);`, with what it gives after `// `, on one line or across several.
-- Such a section, and the shared rules, have at least one bullet.
-- Such a section has a closing line, one that starts with `Unspecified:`.
-- With its code spans taken out, the target of each link that a `[` opens taken out with it, every whitespace character read as one space and after NFKC normalisation, a bullet or a closing line holds only letters, marks, numbers, spaces, `,`, `(`, `)`, `[`, `]`, a hyphen-minus, an apostrophe or an underscore after a letter, mark or number and before a letter or number, a `+` inside a `U+` code point in capitals, a final `.` and, in a closing line, the colon of `Unspecified:` at its start.
-- Read so, a bullet or a closing line ends with `.`.
-- Read so, no bullet or closing line holds a `](` that no `[` opens.
-- Read with each code span and each link as its text, after NFKC normalisation and with every whitespace character as one space, no bullet holds a comma followed, after any whitespace or none, by "and", "or", "but", "nor", "so", "yet" or "then".
-- Read with the target of each link that a `[` opens taken out, after NFKC normalisation, with format characters and the marks `` ` ``, `*`, `_` and `~` dropped, every other punctuation mark or symbol read as a space and case folded by upper then lower case, no bullet of a section holds all the words of a shared rule in a row.
-- Read so, no bullet of a section has all its words in a row inside a shared rule.
-- Read so, no bullet of a section starts with the same four words as a shared rule.
-- Read so, no shared rule holds all the words of another in a row.
-- One heading of the page, and no other, stands at level two and reads `Shared rules` once NFKC-normalised, with format characters dropped, each run of whitespace characters read as one space and the ends trimmed.
-- The shared rules open with their one sentence, the one this spec states.
-- Each bullet has at least two examples.
-- The parser, reading each example against the live registry, finds a call of the function of its section in it, or in the shared rules a call of a function the baseline does not name, and a name inside a string literal is no call.
-- Each example of a bullet, run with the variables it gives, gives what its comment states, the value and the warning for `evalOk` and the error codes for `evalErrors`.
-- At least two of the examples of a bullet state different results, compared as values in which the keys of an object may stand in any order.
-- No code block shows one call twice, the same source with the same variables, compared as values in which the keys of an object may stand in any order, under either helper.
-- Every line of the page that, with its code spans taken out, calls `evalOk` or `evalErrors` belongs to an example statement read in the section of a function or in the shared rules.
-- Every example statement of a function the baseline names gives the value its comment states, read as JSON less a note in brackets after it, but six statements this spec names, each as a whole.
-- Each of those six statements stands on the page once: two whose value is the current date, three that name a variable they do not give and one whose comment marks its value with `~`.
-
-It cannot decide these, which the reviewer decides:
-
-- Whether a bullet states one condition and its outcome.
-- Whether a rule holds beyond its examples.
-- Whether the examples of a rule sit on either side of its condition.
-- Whether a bullet restates a shared rule in other words.
-
-### The text tokenisers outside a formula
-
-`WORDS`, `WORD_COUNT`, `LEADING_WORDS` and `SENTENCES` split text with
-tokenisers this package also exports, so code that counts words or sentences
-outside a formula counts exactly what a formula counts:
-
-```ts
-import { splitSentences, splitWords } from '@formulang/core-functions';
-
-splitWords('  Kennst du   das? '); // ['Kennst', 'du', 'das?']
-splitWords('Für 3,5 Mio. Kund:innen', 'letters'); // ['Für', '3,5', 'Mio', 'Kund', 'innen']
-splitSentences('Wir helfen z. B. Handwerkern.', 'punctuation', ['z. B.']); // ['Wir helfen z. B. Handwerkern.']
-```
-
-Both take the modes of the formula functions (`WordSplitMode`,
-`SentenceSplitMode`; see [docs/functions.md](../docs/functions.md#text)). Where
-a formula answers `null` with a `TYPE` or `REGEX` warning — an option outside
-the `locale` and `pattern` modes, an unsupported language tag, a refused
-pattern — they throw a `TypeError`; `pattern` mode applies the default
-safe-regex limits. Their results are not bounded by `maxWildcardOutputLength`.
-
-### What the text functions cost
-
-[docs/functions.md](../docs/functions.md#text) (_Text_, **Work**) gives, for
-each text function, the work it does on its input, read from its code, and
-what bounds the input: a text the formula computes is bounded only by what the
-runtime bounds, as no formula limit applies to its length.
-`src/functions/work-bounds.spec.ts` counts the work of the loops that walk
-each function's input through a meter they feed only while a spec observes an evaluation
-(`src/functions/work-meter.ts`, not part of the entry point) and holds it in
-proportion to the input on inputs built to make each loop work hardest
-(`src/test-helpers/work-corpus.ts`), each observed with its bound as the
-meter's limit, so a loop that works past it stops at once; each code unit of
-text handed to the runtime's substring search counts one unit, and a call
-that refuses a phrase longer than 250 code units counts none; the
-work inside the runtime's regular expressions, substring search and
-`Intl.Segmenter` is not counted, and review owns the claim that the fixed
-patterns run in linear time. What a call charges against the cost and step
-budgets is in the reference's _Charges_ table and the conditions under it (a
-call answered from the cache, the cache's keys and bounds, and a call that
-`EACH`, `FILTER`, `FILTER_PROPERTY` or `REDUCE` makes, which charges nothing of
-its own, as in 1.0.0), which `src/functions/charges.spec.ts` holds each
-function to, under each condition.
-`docs/functions.md` also records, measured, the four patterns of 1.0.0 code
-that read their input in more than linear time, among them the formula's own
-pattern in `"pattern"` mode, whose safe-regex rules, inherited from 1.0.0,
-accept some patterns that backtrack exponentially.
+The package also exports `splitWords(text, mode?, option?)` and
+`splitSentences(text, mode?, keep?)`, the tokenisers behind `WORDS` and
+`SENTENCES`, for counting outside a formula. They are experimental and may
+change in a minor release.
 
 ## Register your own handlers
 

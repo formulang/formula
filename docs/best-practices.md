@@ -172,9 +172,9 @@ Operators are aliases for function signature ids. `1 + 2` compiles to a `call` n
 
 ## 3. Validating before you save or run
 
-### 3.1 `parseFormula` reports errors instead of throwing — gate on `errors.length`
+### 3.1 `parseFormula` never throws — gate on `errors.length`
 
-Feed it anything — `IF((((`, `#@!`, calls to unknown functions, unknown variables — and you get a `TypedRule` back, not an exception. All problems are collected as structured `FormulaError`s with stable codes: `UNEXPECTED_TOKEN` and `PARSER_CRASH` for mangled input, `UNKNOWN_FUNCTION`, `UNKNOWN_VARIABLE`, `NO_MATCHING_OVERLOAD` (e.g. `LEN(1)` — `LEN` exists, but not for numbers). The contract for saving:
+Feed it anything — `IF((((`, `#@!`, calls to unknown functions, unknown variables — and you get a `TypedRule` back, never an exception. All problems are collected as structured `FormulaError`s with stable codes: `UNEXPECTED_TOKEN` and `PARSER_CRASH` for mangled input, `UNKNOWN_FUNCTION`, `UNKNOWN_VARIABLE`, `NO_MATCHING_OVERLOAD` (e.g. `LEN(1)` — `LEN` exists, but not for numbers). The contract for saving:
 
 ```ts
 const rule = parseFormula(userInput, { registry, syntax });
@@ -182,8 +182,6 @@ if (rule.errors.length > 0) {
   // refuse to save; render rule.errors — a formula is valid iff this array is empty
 }
 ```
-
-Two things do throw out of `parseFormula`, as on 1.0.0: an exception a registry method throws while the parser binds the formula (tokenizing and parsing turn one into `PARSER_CRASH`; binding runs after that guard), and the `RangeError` of a tree too deep to bind, which the default limits rule out ([5.3](#53-resource-limits-are-your-dos-defense)). A host whose registry can fail, or that raises the parse limits, wraps the call.
 
 ### 3.2 Use spans for editor feedback
 
@@ -265,7 +263,7 @@ The maps are plain `Map`s you own: the runner adds entries and nothing expires, 
 
 ### 4.3 Cost estimators reject expensive calls before they run
 
-Give every implementation that does real work an `estimateCostsInSeconds`; the runner charges the estimate _before_ invoking. Verified: an estimator returning `3` against the default `maxFunctionCostUnits: 2` fails the call with `FUNCTION_COST_LIMIT_EXCEEDED` (kind `security`) and the implementation is **never executed**; estimator-less calls (including control flow like `IF`) charge a flat `0.05` units, so `limits: { maxTotalCostUnits: 0.04 }` fails any formula containing `IF` with `COST_LIMIT_EXCEEDED`.
+Give every implementation that does real work an `estimateCostsInSeconds`; the runner charges the estimate _before_ invoking. Verified: an estimator returning `3` against the default `maxFunctionCostUnits: 2` fails the call with `FUNCTION_COST_LIMIT_EXCEEDED` (kind `security`) and the implementation is **never executed** (the built-in text functions estimate from the length of their input and the number of phrases or items searched, so very large inputs are refused the same way; raise `maxFunctionCostUnits` for batch surfaces that need them); estimator-less calls (including control flow like `IF`) charge a flat `0.05` units, so `limits: { maxTotalCostUnits: 0.04 }` fails any formula containing `IF` with `COST_LIMIT_EXCEEDED`.
 
 ```ts
 implementations.register('FETCH_SCORE/v1', {
@@ -280,20 +278,7 @@ Set `maxTotalCostUnits` per surface (interactive vs batch) — it is the per-eva
 
 ### 4.4 Wall-time limits catch what estimates miss
 
-Estimates are predictions; wall time is enforcement. Both function calls and variable resolvers are checked against `maxFunctionWallTimeMs`, the whole run against `maxWallTimeMs`. Verified: a resolver that takes 50 ms under `limits: { maxFunctionWallTimeMs: 10 }` ends the run with a structured `WALL_TIME_LIMIT_EXCEEDED` (kind `security`) and `value: null` — no exception, no hung request. The limit is measured when a call returns, so it reports a slow synchronous call rather than interrupting it, and the text functions estimate their cost from the length of their text, capped at 0.05 units, so no cost limit refuses a long text before it runs: bound the texts a surface accepts, and see [functions.md](functions.md#text) (_Text_, **Work**) for what each text function does with its input.
-
-A call that `EACH`, `FILTER`, `FILTER_PROPERTY` or `REDUCE` makes through the callable it is given is not charged its own cost either, as in 1.0.0: the higher-order function is charged its own call alone, `EACH`, `FILTER` and `FILTER_PROPERTY` their estimate, which grows with their list, and `REDUCE`, a control-flow function, a flat 0.05 whatever its list, and not the work of the calls, so no cost limit refuses expensive calls made this way, and only the wall-time limits stop them. `FILTER_BY` charges each call of its operator as a call written in the formula is charged, a control-flow operator a flat 0.05 ([functions.md](functions.md#charges), _Charges_). Under the default limits:
-
-```ts
-// 1,000 calls of CONTAINS_ANY on texts of 50,000 code units, made by EACH: none is charged.
-await evalOk('COUNT(EACH(value; "CONTAINS_ANY"; LIST("b")))', {
-  value: Array(1000).fill('a'.repeat(50000)),
-}); // 1000
-// The same calls made by FILTER_BY, each charged 0.05: past the 5 units of maxTotalCostUnits.
-await evalErrors('FILTER_BY(value; value; "CONTAINS_ANY"; LIST("b"))', {
-  value: Array(1000).fill('a'.repeat(50000)),
-}); // ["COST_LIMIT_EXCEEDED"]
-```
+Estimates are predictions; wall time is enforcement. Both function calls and variable resolvers are checked against `maxFunctionWallTimeMs`, the whole run against `maxWallTimeMs`. Verified: a resolver that takes 50 ms under `limits: { maxFunctionWallTimeMs: 10 }` ends the run with a structured `WALL_TIME_LIMIT_EXCEEDED` (kind `security`) and `value: null` — no exception, no hung request.
 
 ### 4.5 Lazy variable resolvers skip work on untaken branches
 
@@ -352,11 +337,9 @@ Verified boundaries of the two layers:
 
 The eval-time re-checks are defense in depth against honest-but-stale artifacts, not a substitute for artifact integrity: the allowlist re-check trusts the type metadata inside the AST. Conclusion (same as [1.5](#15-treat-stored-compiled-rules-as-trusted-artifacts)): parse-time enforcement is the real gate for untrusted _authors_; storage integrity is the gate for untrusted _storage_.
 
-Modes split the same way, and the parser is not the only check. The parser refuses a mode literal a parameter does not list where it sees the literal reach the parameter: written in the call, or passed on by `EACH`, `FILTER`, `FILTER_PROPERTY`, `REDUCE` or `FILTER_BY` through callables named by string literals, as far as its bounded walk follows them. A mode the parser does not see — one a callable named by a value receives, one a host's own higher-order function passes on, one past the walk's bound, and the other cases [language.md](language.md#when-a-mode-is-checked) lists — reaches the function when the call runs, if it is passed at all, and the formula compiles. A built-in function answers an unlisted or missing mode with `null` and a `TYPE` warning, and a core higher-order function that called it keeps the value and drops the warning, as on 1.0.0: through `EACH` that item is `null`, and a filter leaves the item out, with no error and no warning. Give a custom implementation the same check ([extending.md §2.1](extending.md#21-parameters)), and do not treat a compiled formula as proof that every mode in it is listed. The exact split is in [language.md](language.md#when-a-mode-is-checked).
-
 ### 5.3 Resource limits are your DoS defense
 
-Every limit violation resolves to a structured `security` error, with no exception and no hang. Verified: `limits: { maxEvaluationSteps: 5 }` fails a ten-term sum with `EVAL_LIMIT_EXCEEDED`; cost and wall-time overruns behave the same ([4.3](#43-cost-estimators-reject-expensive-calls-before-they-run), [4.4](#44-wall-time-limits-catch-what-estimates-miss)). Set per-surface `limits` at both parse time (source shape: `maxSourceLength`, `maxTokens`, `maxAstNodes`, ...) and eval time (work: steps, wall time, cost, list sizes), and pass the same overrides to both calls. Defaults live in `DEFAULT_FORMULA_LIMITS` ([definitions README](../definitions/README.md#limits-and-errors)). For a given registry, the parse's work follows its size: the check of modes passed on through callables visits at most 16 × (n + 1) argument positions for a call of n arguments, then stops without an error ([5.2](#52-parse-time-vs-eval-time-enforcement--what-each-actually-guarantees)), and each admitted list is read on the first check against it, twice, and kept for the parse under the definition's signature id and the parameter's position, so testing a literal is one lookup in each list it is checked against however long the lists are, the values several overloads list in common are worked out only for a refusal, once for each set of listing parameters a refusal reaches (reading the first list and looking its values up in the others), and each refusal's message is built once for its value and target, reading the values it prints; and a call that binds no definition is told apart as unknown or as matching no overload with one lookup in an index of the errors the parse has reported, each error read once. Raising `maxTokens` or `maxAstNodes` raises the parse's work in proportion, and the depth of the tree the parser binds, which it does recursively, as on 1.0.0: well past the defaults a long chain of operators or property accesses exhausts the call stack (a chain of 1,000 additions does, and one of 5,000 property accesses), and as binding runs after the parser's try/catch, `parseFormula` then throws a `RangeError` instead of returning an error ([3.1](#31-parseformula-reports-errors-instead-of-throwing--gate-on-errorslength)).
+Every limit violation resolves to a structured `security` error — the host never catches exceptions or hangs. Verified: `limits: { maxEvaluationSteps: 5 }` fails a ten-term sum with `EVAL_LIMIT_EXCEEDED`; cost and wall-time overruns behave the same ([4.3](#43-cost-estimators-reject-expensive-calls-before-they-run), [4.4](#44-wall-time-limits-catch-what-estimates-miss)). Set per-surface `limits` at both parse time (source shape: `maxSourceLength`, `maxTokens`, `maxAstNodes`, ...) and eval time (work: steps, wall time, cost, list sizes), and pass the same overrides to both calls. Defaults live in `DEFAULT_FORMULA_LIMITS` ([definitions README](../definitions/README.md#limits-and-errors)).
 
 ### 5.4 Per-tenant registries — and per-tenant caches
 

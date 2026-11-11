@@ -44,46 +44,24 @@ registry.registerOperator({
 
 An operator is nothing more than a token bound to a function signature id — register one and the parser picks it up automatically. The core precedence ladder: comparisons (`=`, `<>`, `>`, `>=`, `<`, `<=`) at 10, additive (`+`, `-`, `&`) at 20, multiplicative (`*`, `/`) at 30, `^` at 40 (right-associative).
 
-Registration is strict and fails fast, at startup rather than mid-evaluation: invalid signature ids, duplicate ids/tokens/variable names, ambiguous overload sets, duplicate or counter-directional `casts`, and a `literalValues` list that is empty or holds anything but texts, or that sits where the parser checks no literal (a parameter without `literalOnly`) or on a parameter whose type a string literal does not fit, both where the parser chooses among a name's overloads and where it checks the call that binds one (a number, a boolean or a template constrained to numbers, for example; `any`, a text, and a template without a constraint or constrained to texts take one), all throw. A `null` list registers as no list. Registration reads the parser's own rules for both — `literalCheckAt`, `argumentSelects` and `argumentFits`, exported by `@formulang/definitions` — so a list it takes is one the parser checks literals against: in a call written directly that binds the definition, and in a literal passed on to the definition's name by `EACH`, `FILTER`, `FILTER_PROPERTY`, `REDUCE` or `FILTER_BY` at a literal-only callable parameter that names it by a string literal, level by level through every further such function a string literal names, within the walk's bound (§2.2). A literal passed on any other way reaches the function unchecked: to a callable named by a variable or an expression, by a higher-order function registered under a name of its own, after the first argument of a variadic callable parameter that lists no admitted values, at a callable parameter that is not literal-only, or past the bound ([language.md](language.md#when-a-mode-is-checked)). Registration reads one definition at a time, and a call written directly is checked against the overload its types choose while a literal passed on must be one that every overload of the name listing values at its position lists (§2.2): beside an overload that a call also binds, or one that lists other values there, a literal written directly can be taken where the same literal passed on is refused.
+Registration is strict and fails fast, at startup rather than mid-evaluation: invalid signature ids, duplicate ids/tokens/variable names, ambiguous overload sets, and duplicate or counter-directional `casts` all throw.
 
 ### 2.1 Parameters
 
 Each `FunctionParamDefinition` supports:
 
-| Field           | Effect                                                                                                                                                                                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`          | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null.                                                                               |
-| `optional`      | May be omitted at the call site.                                                                                                                                                                                                                     |
-| `variadic`      | The last parameter may repeat (`AND(values...)`).                                                                                                                                                                                                    |
-| `literalOnly`   | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                                                                                                    |
-| `literalValues` | With `literalOnly`, on a type a string literal fits: the only literals the parameter admits, a non-empty list of texts. Any other literal is a parse-time `LITERAL_VALUE_NOT_ALLOWED` error whose message names the list. `null` stands for no list. |
-| `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                                                                                                 |
+| Field           | Effect                                                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`          | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null.                         |
+| `optional`      | May be omitted at the call site.                                                                                                                                                               |
+| `variadic`      | The last parameter may repeat (`AND(values...)`).                                                                                                                                              |
+| `literalOnly`   | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                                              |
+| `literalValues` | On a `literalOnly` parameter, the only string literals it admits; any other literal written in the formula fails at parse time with `LITERAL_VALUE_NOT_ALLOWED` (exact, case-sensitive match). |
+| `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                                           |
 
-A mode switch is the typical use of `literalValues`: the parser refuses a misspelt mode at compile time — also when core higher-order functions pass the mode on, at any depth of callables named by string literals that its bounded walk reaches, as in `EACH(list; "SHOUT"; "uper")` or `EACH(lists; "EACH"; "SHOUT"; "uper")` — and editors read the list from the definition to offer completions. An implementation still validates the value it receives, because it can receive values the parser does not see: through a callable that a nested higher-order call names by a variable or an expression, which is resolved when the call runs (`EACH(lists; "EACH"; name; mode)`), from a custom higher-order function under a name of its own, through a callable a host function takes after the first argument of a variadic callable parameter that lists no admitted values, through a callable parameter that is not literal-only, or past the bound of the parser's walk through nested callables (§2.2); and a callable two or more levels down can be passed no mode at all where its higher-order caller does not pass one. The built-in functions answer a mode they do not list, or a required mode they are not passed, with `null` and a `TYPE` warning (through `EACH` that item is `null`, and a filter leaves the item out: the core higher-order functions keep a callee's value, not its warnings); give a custom implementation the same check:
+Registration rejects an empty `literalValues` list, a list of anything but text, and a list on a parameter that is not literal-only or takes no string literal. A variadic literal-only parameter with a list is checked at every argument; without a list, only at its first. The parser checks only literals written in the call itself: a literal passed on by a higher-order function such as `EACH` or `FILTER`, or produced by an expression, reaches the implementation unchecked, so validate it there (and answer `null` with a `TYPE` warning).
 
-```ts
-registry.registerFunction({
-  signatureId: 'SHOUT/v1',
-  name: 'SHOUT',
-  description: 'Changes the case of a text.',
-  params: [
-    { name: 'text', type: FormulaTypes.text(true) },
-    {
-      name: 'mode',
-      type: FormulaTypes.text(false),
-      optional: true,
-      literalOnly: true,
-      literalValues: ['upper', 'lower'],
-    },
-  ],
-  returnType: FormulaTypes.text(true),
-  purity: 'pure',
-});
-// SHOUT(name; "uper") -> LITERAL_VALUE_NOT_ALLOWED:
-//   Parameter 'mode' must be one of "upper", "lower"; got "uper"
-```
-
-Overloads are supported: register multiple definitions under the same `name` with different signature ids (see `COUNT/v1` vs `COUNT_VALUES/v1`, or the two `STARTS_WITH` variants). The registry rejects overload pairs that accept the same arguments with neither more specific; among the overloads it accepts, a call binds the first one registered that takes it, so register a narrower overload before a wider one (the core definitions are registered before yours). `aliases` lets one definition answer to several names. The registry keys an alias as a name: the ambiguity check and a call's candidates count it, so a definition that answers to a name through its aliases collides with a built-in of that name as one registered under it would ([architecture.md §2.4](architecture.md#24-type-binding-and-overload-resolution)), while the parser's invocation table follows a definition's own `name` only (§2.2).
+Overloads are supported: register multiple definitions under the same `name` with different signature ids (see `COUNT/v1` vs `COUNT_VALUES/v1`, or the two `STARTS_WITH` variants). The registry rejects overload pairs that could resolve non-deterministically. `aliases` lets one definition answer to several names.
 
 ### 2.2 Templates (generics) and callable parameters
 
@@ -120,9 +98,7 @@ registry.registerFunction({
 });
 ```
 
-At parse time the template `T` is inferred from the argument list's element type, the referenced callable is resolved against the registry and validated (arity, parameter types, return type), and `R` is bound from its return type — so `EACH(value; "LEN")` over a `List<text>` types as `List<number?>?`. There are no closures in the language: a callable is a reference by name to a registered function or operator, so a formula reaches the registry's functions and never code of its own. The callable a call writes is a string literal (`literalOnly`), resolved and checked when the formula parses; one that a higher-order call passes on can also be named by a variable or an expression, resolved when the call runs (below), so which registered functions a formula reaches is not always readable from its text.
-
-The parser knows how each core higher-order function invokes its callable: `EACH`, `FILTER`, `FILTER_PROPERTY`, `REDUCE` and `FILTER_BY`, in one table keyed by function name (`parser/src/callable-invocations.ts`), as 1.0.0 keyed the first four. Every function whose `name` is one of these gets the table's entry, in any letter case, the name read in the upper case `String.prototype.toUpperCase` gives, with no locale and no Unicode normalisation: the core one re-registered under another signature id — the way to change a function, section 1 — keeps its checks, and a function of your own under one of these names is checked as the built-in is. A name in `aliases` does not count, as on 1.0.0: a definition that answers to `EACH` only through its aliases is a plain function. That includes `FILTER_BY`, a name 1.1.0 adds: a function of your own named `FILTER_BY` has its callable checked as receiving an item of the call's second argument and, when the call has one, the call's fourth argument, as the built-in's does. The built-in passes that fourth argument on only when its value is not `null` as the call runs, a `null` one counting as omitted, so a callable the parser checked against two arguments can receive one. Each answer of the operator is read through the execution context's `readCall`, as the runner reads the same call written in a formula, on the path it would take for that call: where the runner answers it through its cache (a pure or run-cached operator, a key it can cache) an answer that is no output, any falsy value, is `null`, which drops its item, and on every other path (an uncached or control-flow operator, a key too long to cache) it is a failed call, as the written call is. The first answer that is a failed call, in the order of the keys, is the call's own failure: the error the runner raises for the written call, or `EVAL_CRASH` where it carries none; an answer that is ok is read for its value alone. A copy under any other name is a plain function, as a copy of `EACH` is on 1.0.0, and a definition cannot declare an invocation of its own. With the invocation, the parser checks the referenced function's arity, overload and result type against the arguments it receives, and holds each of them to the referenced parameter's enumerated-literal rule: an argument reaching a parameter that lists its admitted `literalValues` must be a string literal naming one of them, and a value the function supplies when it runs cannot reach such a parameter. The core higher-order functions call the function behind an operator token, otherwise the first definition of the name that has an implementation, which the parser cannot see and which need not be the overload the argument types choose; so when you register several overloads of a name that list admitted values at the same position, a literal a core higher-order function passes on must be one every one of them lists there, and the refusal names the overloads that do not list it. A call written directly binds the overload its types choose and is checked against that overload's list. When the referenced function is itself one of these higher-order functions and the name it is passed is a string literal, the parser follows that name into its invocation as well, for every definition of the name, so a custom function whose parameter lists admitted values is protected however deeply the core higher-order functions nest, as long as each callable is named by a string literal and the walk's bound reaches it: the parser visits at most 16 × (n + 1) argument positions for a call of n arguments written in the formula, breadth first across every callable the call names, and a level visits no more positions than the widest definition of the function it names has parameters, or every argument it receives where a variadic last parameter lists its admitted values, so a host overload with a long parameter list under one of these names can spend the bound before the end of a long chain ([language.md](language.md#when-a-mode-is-checked)). A definition is followed exactly where a call of it written in the formula checks a literal (`literalCheckAt`, the rule both read): at each literal-only callable parameter of its own list and, of a variadic one, at every further argument when it lists its admitted values and only at the first when it lists none. A callable parameter that is not literal-only is checked nowhere: neither the callable written there nor what it receives. And the check does not wait on the callable's overloads: a literal passed on to a callable none of whose overloads takes the arguments it is given is checked too, beside that call's `NO_MATCHING_OVERLOAD`. A callable that such a call passes on can also be named by a variable or an expression; as in 1.0.0 it is resolved when the call runs, and the parser does not check the arguments it receives. For a custom function with a callable parameter under any other name, the parser checks that the reference written in the call names a registered function or operator; the arguments the custom function then passes are checked at run time by the implementation that receives them.
+At parse time the template `T` is inferred from the argument list's element type, the referenced callable is resolved against the registry and validated (arity, parameter types, return type), and `R` is bound from its return type — so `EACH(value; "LEN")` over a `List<text>` types as `List<number?>?`. There are no closures in the language; callables are referenced by name as string literals, which keeps the reachable code surface fully enumerable.
 
 ### 2.3 Purity and its caching consequences
 
@@ -189,6 +165,8 @@ Return `FormulaNodeOutput`s instead of throwing. Build them with the helpers fro
 
 For hard resource stops, throw `FormulaRuntimeError(code, message, 'security')` (see `FilterImplementation` enforcing `ctx.limits.maxListLength`); the runner converts any throw into a structured error output at the node boundary.
 
+An implementation that calls another implementation itself (as `FILTER_BY` calls its operator) can use the optional `ctx.chargeCall(signatureId, args)` and `ctx.readCall(signatureId, args, answer)`: the runner provides them so that such a call is charged against the cost limits and read exactly as the same call written in a formula. Both are `@experimental` and may change in a minor release.
+
 ### 3.1 The eager batch pattern
 
 Almost every core function follows the same shape: resolve all argument providers, then compute per call. The core functions share this via a small internal base class (`core-functions/src/functions/abstract-eager-batch-implementation.ts`, verbatim):
@@ -244,13 +222,11 @@ export class UpperImplementation extends AbstractEagerBatchImplementation {
 }
 ```
 
-Note that `@formulang/core-functions` publicly exports only `createCoreFormulaRuntime`, the `FormulaRuntime` type and the text tokenisers `splitWords` and `splitSentences` with their mode types `WordSplitMode` and `SentenceSplitMode` — the base class and per-function helpers (`asText`, `assumedTextLength`, ...) are internal. For custom functions in your own codebase, either copy the ~20-line base class or implement `evaluateMultiple` directly, as the worked example in section 9 does. `BaseFunctionConfig` (`{ signatureId: string }`) and `FunctionImplementationClass` from `@formulang/definitions` give you the class-shaped contract.
+Note that `@formulang/core-functions` publicly exports only `createCoreFormulaRuntime` (and the `FormulaRuntime` type) — the base class and per-function helpers (`asText`, `assumedTextLength`, ...) are internal. For custom functions in your own codebase, either copy the ~20-line base class or implement `evaluateMultiple` directly, as the worked example in section 9 does. `BaseFunctionConfig` (`{ signatureId: string }`) and `FunctionImplementationClass` from `@formulang/definitions` give you the class-shaped contract.
 
 ### 3.2 Cost estimation
 
 `estimateCostsInSeconds(argValues)` is called before each invocation; the estimate is charged against `limits.maxFunctionCostUnits` (per call) and `limits.maxTotalCostUnits` (per run). An implementation without an estimator is charged a conservative 0.05 units per call — with the default limits (`maxTotalCostUnits: 5`) that allows about 100 such calls per evaluation, so cheap functions should declare cheap estimates (`ADD` returns `0.00001`). Estimate generously for functions that do I/O; the point of the mechanism is that expensive calls are rejected _before_ they run.
-
-A function that calls another function's implementation itself, as a higher-order function does, bypasses that charge: the runner charges only the calls a formula makes. Charge each such call through `ctx.chargeCall(signatureId, args)` before making it, and the runner charges it as it charges a call of the formula, by the same rule: a control-flow callee a flat 0.05, any other its estimate or 0.05 without one, against both limits. Read each answer through `ctx.readCall(signatureId, args, answer)`, and the runner reads it as it reads the same call written in a formula, on the path it would take for that call: `FILTER_BY` reads its operator's answers so. `FILTER_BY` does so for its operator; `EACH`, `FILTER`, `FILTER_PROPERTY` and `REDUCE`, as in 1.0.0, do not, so the calls they make cost only their own call, the estimate of the first three and the flat 0.05 of `REDUCE`, a control-flow function ([functions.md](functions.md#charges), _Charges_).
 
 ### 3.3 The lazy pattern: control flow with argument providers
 
@@ -378,6 +354,22 @@ registry.registerVariable({/* your VariableDefinition */});
 ```
 
 Registries are cheap in-memory objects. Build one per tenant/document type/security context rather than mutating a global one — the registry _is_ your capability policy.
+
+#### Built-in names added in 1.1.0
+
+Version 1.1.0 adds 14 built-in functions: `WORDS`, `WORD_COUNT`, `LEADING_WORDS`, `SENTENCES`, `LINES`, `LINE_COUNT`, `FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`, `TAKE`, `INDEX_OF`, `FILTER_BY`, `DISTINCT` and `GROUP_COUNTS` ([function reference](functions.md)). A 1.0.0 formula that names none of them gives the same result. But if your host registered its own function under one of these names after `createCoreFormulaRuntime()`, it is affected in one of three ways:
+
+- **Start-up error.** Registering under the built-in's signature id throws `Function already registered`. Registering with the built-in's parameters (or only its required ones) under another id throws `Ambiguous overload`; a one-argument function taking the built-in's first parameter does so for `WORDS`, `WORD_COUNT`, `SENTENCES`, `LINES`, `LINE_COUNT`, `DISTINCT` and `GROUP_COUNTS`.
+- **Silent rebinding.** An overload with narrower parameter types (e.g. `TAKE(list<number>; number)`) still registers, but calls it takes now bind the built-in.
+- **No match.** A call your function does not take now fails with `NO_MATCHING_OVERLOAD`, where 1.0.0 bound your only definition. A host function named `FILTER_BY` also gets the parse-time callable checks of the built-in.
+
+To keep your own function, retire the built-in first, then register yours ([best-practices.md §2.3](best-practices.md#23-same-shape-version-bump-retire-the-old-definition-as-legacy-keep-implementations-forever) explains retirement):
+
+```ts
+const { registry, implementations } = createCoreFormulaRuntime();
+registry.retireFunction('TAKE/v1'); // the built-in leaves the name space
+registry.registerFunction({/* your TAKE definition */});
+```
 
 ### 5.2 Minimal and custom registries
 

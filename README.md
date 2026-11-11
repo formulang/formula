@@ -19,14 +19,14 @@ Thirteen capabilities every embedder gets out of the box, and thirteen more for 
 
 ### Core capabilities
 
-- **Spreadsheet-style formula language.** 113 built-in functions covering math, aggregation, logic and comparison, text (including word, sentence and line segmentation, phrase matching, and the text of HTML and markdown), lists (including slicing, keyed filtering and grouping), date and time, control flow, and type and empty ([function reference](docs/functions.md)).
+- **Spreadsheet-style formula language.** 111 built-in functions covering math, aggregation, logic and comparison, text, lists, date and time, control flow, and type and empty ([function reference](docs/functions.md)).
 - **Strong static typing.** Every literal, variable, property, and call is bound to a type at compile time; argument type mismatches, unresolvable overloads, and nullability violations are compile errors (`ARGUMENT_TYPE_MISMATCH`, `NO_MATCHING_OVERLOAD`, `NULL_NOT_ALLOWED`), reported as structured diagnostics with exact source spans — before anything executes ([architecture §2.4](docs/architecture.md#24-type-binding-and-overload-resolution)).
 - **Return-type analysis.** Every compiled formula reports its result type, and every AST node its bound type, nullability included — `1 + 2 * 3` compiles to `number?`, `EACH(LIST("a";"bb"); "LEN")` to `List<number?>?` — so editors can show result types before execution and hosts can require, say, a number-returning formula by checking `isAssignable` against `rule.returnType` ([parser README](parser/README.md#the-typedrule-result)).
 - **Rich data-type vocabulary.** `FormulaType` is a JSON-serializable union of ten kinds — `any`, `null`, `boolean`, `number`, `text`, `template` (per-function generics), `callable` (typed function and operator references), `list`, `object` (a clarifier tag plus a per-property type allowlist), and `union` — with explicit nullability on every type, declared as plain data ([definitions README](definitions/README.md#types-formulatype-and-formulatypes)).
-- **Compiling reports errors instead of throwing.** Malformed, hostile, or huge input yields structured parse, type, security, and config errors — safe to expose directly in editors; what still throws (a registry that fails while the parser binds, and a tree too deep to bind under limits raised far past the defaults) is in the [parser README](parser/README.md#why-are-errors-collected-instead-of-thrown).
+- **Compiling never throws.** Malformed, hostile, or huge input yields structured parse, type, security, and config errors — safe to expose directly in editors ([parser README](parser/README.md#why-are-errors-collected-instead-of-thrown)).
 - **Asynchronous evaluation with structured results.** Formula failures resolve as data — per-node errors and warnings — and never reject or crash the host ([runner README](runner/README.md#evaluation-model)).
 - **Security-first evaluation of untrusted input.** Property access is allowlisted through typed object definitions; `__proto__`/`prototype`/`constructor` and all `__`-prefixed names are denylisted; both guards are enforced at parse time and re-checked at evaluation time as defense in depth ([architecture §4](docs/architecture.md#4-security-model)).
-- **Resource limits as DoS defense.** Source length, token and AST-node counts, nesting depth, evaluation steps, wall time, cost budgets, list sizes, a regex safety guard, and a fixed bound of 250 code units on a phrase the phrase functions search for — every violation is a structured `security` error ([best practices §5.3](docs/best-practices.md#53-resource-limits-are-your-dos-defense)).
+- **Resource limits as DoS defense.** Source length, token and AST-node counts, nesting depth, evaluation steps, wall time, cost budgets, list sizes, and a regex safety guard — every violation is a structured `security` error ([best practices §5.3](docs/best-practices.md#53-resource-limits-are-your-dos-defense)).
 - **Zero third-party runtime dependencies.** Every published package depends only on the other Formulang packages — nothing else enters your dependency tree ([packages](#the-formulang-packages)).
 - **First-class TypeScript.** All packages are written in strict-mode TypeScript and ship complete `.d.ts` declarations with declaration maps; the embedding API — `TypedRule`, `FormulaType`, registries, evaluation contexts — is fully typed, and the published CommonJS builds work from plain JavaScript just as well ([CONTRIBUTING.md](CONTRIBUTING.md#code-style)).
 - **Configurable syntax for locales.** Argument separator `;` or `,`, decimal separator `.` or `,` — match your users' regional convention ([language guide](docs/language.md#configurable-punctuation)).
@@ -95,7 +95,7 @@ const result = await evaluateRuleAsync(compiled, {
 console.log(result.value); // "bulk"
 ```
 
-The example uses top-level `await`; run it as an ES module or wrap it in an async function. None of the three calls throws on a bad formula under the default limits — parse, type, security, and runtime problems all surface as structured errors on `parsed.errors`, `compiled.errors`, and `result.errors`.
+The example uses top-level `await`; run it as an ES module or wrap it in an async function. Evaluation never throws on bad formulas — parse, type, security, and runtime problems all surface as structured errors on `parsed.errors`, `compiled.errors`, and `result.errors`.
 
 Where to go next:
 
@@ -162,7 +162,7 @@ The language convention is "empty in, empty out": built-ins return `null` instea
 
 ### Where is the full list of built-in functions?
 
-[docs/functions.md](docs/functions.md) documents all 113 functions registered by `createCoreFormulaRuntime()`, grouped by category as in [Core capabilities](#core-capabilities), with signatures and examples for each.
+[docs/functions.md](docs/functions.md) documents all 111 functions registered by `createCoreFormulaRuntime()`, grouped by category as in [Core capabilities](#core-capabilities), with signatures and examples for each.
 
 ## Development
 
@@ -189,7 +189,7 @@ Tests need no build: vitest resolves `@formulang/*` imports directly to package 
 
 ## Versioning & releases
 
-All packages share a single version and are always published together. A maintainer sets the version with `pnpm run set-version X.Y.Z` (which keeps every `package.json` in lockstep), commits with any message, and merges to `main`; the release workflow then builds, tests, publishes every package to npm with provenance, tags `v<version>`, and creates a GitHub release with auto-generated notes. If the version on `main` is already published, the workflow is a no-op. Release notes live on the [GitHub Releases page](https://github.com/formulang/formula/releases) — there is no `CHANGELOG.md`. See [docs/releasing.md](docs/releasing.md).
+All packages share a single version and are always published together. A maintainer sets the version with `pnpm run set-version X.Y.Z` (which keeps every `package.json` in lockstep), commits with any message, and merges to `main`; the release workflow then builds, tests, publishes every package to npm with provenance, tags `v<version>`, and creates a GitHub release with auto-generated notes. If the version on `main` is already published, the workflow is a no-op. Release notes live on the [GitHub Releases page](https://github.com/formulang/formula/releases) — there is no `CHANGELOG.md`. See [docs/releasing.md](docs/releasing.md). Upgrading from 1.0.0: hosts that registered their own function under one of the 14 names added in 1.1.0 should read [Built-in names added in 1.1.0](docs/extending.md#built-in-names-added-in-110).
 
 ## Maintenance
 

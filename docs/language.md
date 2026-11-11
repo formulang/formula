@@ -24,7 +24,6 @@ separator `.`.
 - [Operators](#operators)
 - [Function calls](#function-calls)
 - [Callable references](#callable-references)
-- [Enumerated literals](#enumerated-literals)
 - [Types](#types)
 - [Null and empty values](#null-and-empty-values)
 - [When a formula is invalid](#when-a-formula-is-invalid)
@@ -495,9 +494,9 @@ OR(TRUE; NOT(1))          -- true: second argument skipped
 ## Callable references
 
 Higher-order functions — `FILTER`, `FILTER_PROPERTY`, `FILTER_BY`, `EACH`,
-`REDUCE` — take another function or operator as an argument. You pass it
-**by name, as a string literal**: either the function's `UPPER_SNAKE_CASE`
-name or an operator token.
+`REDUCE` — take another function or operator as an argument. You pass it **by name, as
+a string literal**: either the function's `UPPER_SNAKE_CASE` name or an
+operator token.
 
 ```
 FILTER(LIST(1;2;3); ">"; 1)                          -- [2, 3]
@@ -507,32 +506,14 @@ REDUCE(0; LIST(1; 2; 3); "+")                        -- 6
 REDUCE(""; LIST("a"; "b"); "CONCAT")                 -- "ab"
 ```
 
-The reference written as a higher-order function's own argument must be a
-plain double-quoted literal. There it cannot come from a variable or be
-computed — this is enforced at parse time
-(`EXPECTED_STRING_LITERAL_REFERENCE`):
+The reference must be a plain double-quoted literal written directly in the
+call. It cannot come from a variable or be computed — this is enforced at
+parse time (`EXPECTED_STRING_LITERAL_REFERENCE`):
 
 ```
 FILTER(LIST(1;2); value; 1)          -- error: not a literal
 FILTER(LIST(1;2); UPPER("gt"); 1)    -- error: an expression is not a literal
 ```
-
-A reference that a higher-order call passes on to a nested one is an
-ordinary argument of the outer call: it can be a variable or an expression,
-and the nested call looks the name up when it runs. The parser checks such a
-reference only when it is a string literal (below); a name that a value or an
-expression produces is resolved at run time, and one the registry does not
-know makes that nested call yield `null`:
-
-```
-EACH(LIST(LIST("a b")); "EACH"; value)                -- with value = "WORD_COUNT": [[2]]
-EACH(LIST(LIST("a b")); "EACH"; "WORD" & "_COUNT")    -- [[2]]
-EACH(LIST(LIST("a b")); "EACH"; value; "whitespce")   -- with value = "WORD_COUNT": [[null]]
-```
-
-In the last formula `WORD_COUNT` receives a mode it does not list when it
-runs and answers `null` with a `TYPE` warning; the higher-order call keeps the
-`null` and drops the warning, so that item is `null`.
 
 Because the reference is a literal, the parser fully validates it while
 parsing:
@@ -545,39 +526,16 @@ parsing:
 - Its return type must fit: `FILTER(LIST("a";"bb"); "LEN")` fails with
   `ARGUMENT_TYPE_MISMATCH` because a filter check must return a boolean,
   and `LEN` returns a number.
-- An argument the host function passes to a parameter that lists its admitted
-  values (see [Enumerated literals](#enumerated-literals)) must be one of them,
-  also when the referenced function is itself a higher-order function that
-  passes it on in turn, at any depth, as long as each callable is named by a
-  string literal (within the bound of
-  [When a mode is checked](#when-a-mode-is-checked)):
-
-  ```
-  EACH(LIST("a b"); "WORD_COUNT"; "whitespce")               -- LITERAL_VALUE_NOT_ALLOWED
-  EACH(LIST(LIST("a b")); "EACH"; "WORD_COUNT"; "whitespce") -- LITERAL_VALUE_NOT_ALLOWED
-  EACH(LIST("a b"); "WORD_COUNT"; value)                     -- EXPECTED_STRING_LITERAL_REFERENCE
-  ```
-
-  Where the referenced name has several overloads, the host function runs the
-  first one that has an implementation, which need not be the one the
-  argument types select; the argument must then be a value that every
-  overload listing values at that position lists there.
-
-  A function name or operator token that the referenced function passes on
-  in turn is looked up when that call runs: `"NOPE"` in
-  `EACH(value; "FILTER"; "NOPE")` makes that call yield `null`. Only the name
-  written as the higher-order function's own argument is checked against the
-  registry while parsing.
 
 How each host function invokes the reference:
 
-| Call                                      | Reference invoked as                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------------- |
-| `FILTER(list; "OP"; x?)`                  | `OP(item)` or `OP(item; x)` — keep items where true                                   |
-| `FILTER_PROPERTY(list; "path"; "OP"; x?)` | `OP(item.path)` or `OP(item.path; x)`                                                 |
-| `FILTER_BY(list; keys; "OP"; x?)`         | `OP(key)` or `OP(key; x)` with the key at the item's position — keep items where true |
-| `EACH(list; "OP"; extra...)`              | `OP(item; extra...)` — collect results                                                |
-| `REDUCE(init; list; "OP")`                | `OP(accumulator; item)`                                                               |
+| Call                                      | Reference invoked as                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------- |
+| `FILTER(list; "OP"; x?)`                  | `OP(item)` or `OP(item; x)` — keep items where true                          |
+| `FILTER_PROPERTY(list; "path"; "OP"; x?)` | `OP(item.path)` or `OP(item.path; x)`                                        |
+| `FILTER_BY(list; keys; "OP"; x?)`         | `OP(key)` or `OP(key; x)` — keep items whose key at the same position passes |
+| `EACH(list; "OP"; extra...)`              | `OP(item; extra...)` — collect results                                       |
+| `REDUCE(init; list; "OP")`                | `OP(accumulator; item)`                                                      |
 
 A related literal-only rule applies to property-path parameters of
 `FILTER_PROPERTY` and `SORT_BY_PROPERTY`: the path is a string literal and
@@ -588,88 +546,21 @@ FILTER_PROPERTY(value; "a.b"; "="; 2)
 SORT_BY_PROPERTY(value; "a.b")
 ```
 
-## Enumerated literals
+### Enumerated literals
 
-A literal-only parameter — one that takes a string literal written directly
-in the call, like the callable references above — can also list the exact
-values it admits: a mode switch, for example. Any other literal fails at
-parse time with `LITERAL_VALUE_NOT_ALLOWED`, and the message names every
-admitted value, so a misspelt mode never compiles. Matching is exact and
-case-sensitive.
+Some literal-only parameters take one of a fixed set of words, such as the
+`mode` of `WORDS` (`"whitespace"`, `"letters"` or `"locale"`). Any other
+literal in a call written in the formula fails at parse time with
+`LITERAL_VALUE_NOT_ALLOWED`; matching is exact and case-sensitive:
 
 ```
-WORD_COUNT(value; "letters")     -- counts words by letter runs
-WORD_COUNT(value; "whitespce")   -- error: Parameter 'mode' must be one of "whitespace",
-                                 --   "letters", "locale", "pattern"; got "whitespce"
+WORDS("a b"; "whitespce")   -- error: Parameter 'mode' must be one of "whitespace", "letters", "locale"; got "whitespce"
 ```
 
-The rule holds when built-in higher-order functions pass the literal on, at
-any depth, as long as each callable is named by a string literal (within the
-bound below):
-`EACH(value; "WORD_COUNT"; "whitespce")` and
-`EACH(value; "EACH"; "WORD_COUNT"; "whitespce")` fail the same way, naming
-`WORD_COUNT`'s parameter (see [Callable references](#callable-references)).
-Passed on, a literal must be admitted by every overload of the name that
-lists values at that position, and the message names the overloads that do
-not list it; a call written directly is checked against the overload its
-types select.
-
-### When a mode is checked
-
-When the formula compiles, the parser refuses a mode that is not a string
-literal naming an admitted value wherever it sees the argument reach the
-parameter:
-
-- written in the call itself;
-- passed on by a higher-order function the parser knows by name — `EACH`,
-  `FILTER`, `FILTER_PROPERTY`, `REDUCE` or `FILTER_BY` — to the function a
-  string literal names at its literal-only callable parameter, and on through
-  every further such function a string literal names, level by level, whether
-  or not that function takes the other arguments it is passed.
-
-The parser follows those levels breadth first, across every callable the call
-names, and visits at most 16 × (n + 1) argument positions for a call of n
-arguments written in the formula, so where it stops, every level shallower
-than the one it stopped in has been checked. A level visits no more positions
-than the widest definition of the function it names has parameters, or every
-argument it receives where a variadic last parameter lists its admitted
-values: five for the built-in functions, so with the built-in definitions the
-walk never reaches that bound; a host's overload with a long parameter
-list under one of those names can, and past the bound the parser stops
-following without an error.
-
-Any other mode reaches the function when the call runs, if it is passed at
-all, and the parser reports nothing for it:
-
-- one passed on to a callable named by a variable or an expression, which is
-  resolved when the call runs (`EACH(lists; "EACH"; name; "whitespce")`);
-- one passed on by a higher-order function an embedder registers under a name
-  of its own, whose callable the parser checks only by name (see
-  [extending.md §2.2](extending.md#22-templates-generics-and-callable-parameters));
-- one a host function passes to a callable it takes after the first argument
-  of a variadic callable parameter that lists no admitted values;
-- one passed to a callable named at a callable parameter that is not
-  literal-only, written in the call or passed on: the parser checks neither the
-  callable named there nor what it receives;
-- a required mode that a callable two or more levels down is not passed:
-  `EACH(LIST(LIST("# T")); "EACH"; "MARKDOWN_BLOCKS")` compiles, and the inner
-  `EACH` calls `MARKDOWN_BLOCKS` with the item alone; a callable the call
-  itself names must take what it is passed (`EACH(LIST("# T"); "MARKDOWN_BLOCKS")`
-  is `NO_MATCHING_OVERLOAD`), and a call written in the formula that omits a
-  required mode is `EXPECTED_STRING_LITERAL_REFERENCE`;
-- one past the bound above.
-
-A built-in function answers a mode it does not list, or a required mode it is
-not passed, with `null` and a `TYPE` warning. The core higher-order functions keep a callee's value and drop its
-warnings, as on 1.0.0, so through them such a mode yields neither an error
-nor a warning: through `EACH` that item is `null`, and a filter leaves the
-item out. A higher-order function an embedder registers answers what its
-implementation keeps of the callee's output.
-
-The admitted values are part of the function definition
-(`FunctionParamDefinition.literalValues`), so an editor holding the
-definitions can offer them as completions; [functions.md](functions.md) lists
-them for every built-in that has a mode.
+A literal that reaches a function another way — passed on by `EACH`,
+`FILTER`, `FILTER_PROPERTY`, `FILTER_BY` or `REDUCE` to the callable it names,
+or produced by an expression — is not checked while parsing. The built-in
+functions check it when the call runs and return `null` with a type warning.
 
 ## Types
 
@@ -767,10 +658,8 @@ is empty at run time, evaluation reports `NULL_NOT_ALLOWED` for that node.
 
 ## When a formula is invalid
 
-Under the default limits, a bad formula does not make parsing throw, and parsing
-never half-works silently: you get a result plus a list of structured errors
-(the [parser README](../parser/README.md#why-are-errors-collected-instead-of-thrown)
-lists what does throw out of it). Each error carries:
+Parsing never throws and never half-works silently: you always get a result
+plus a list of structured errors. Each error carries:
 
 - `kind` — `parse` (malformed syntax), `type` (well-formed but incorrectly
   typed), `security` (blocked by policy or resource limits), `config`
@@ -800,8 +689,8 @@ Errors you are most likely to see, with a minimal trigger for each:
 | `ARGUMENT_TYPES_MUST_HAVE_SAME_TYPE` | `LIST(1; "a")`, `IF(TRUE; "x"; 0)`                             |
 | `NULL_NOT_ALLOWED`                   | passing `EMPTY()` to a non-nullable parameter                  |
 | `EXPECTED_STRING_LITERAL_REFERENCE`  | `FILTER(LIST(1;2); value; 1)`                                  |
-| `LITERAL_VALUE_NOT_ALLOWED`          | `WORD_COUNT(value; "whitespce")`                               |
 | `UNKNOWN_FUNCTION_REFERENCE`         | `FILTER(LIST(1;2); "NOPE"; 1)`                                 |
+| `LITERAL_VALUE_NOT_ALLOWED`          | `WORDS("a b"; "whitespce")` (not one of the admitted values)   |
 | `PROPERTY_TARGET_NOT_OBJECT`         | `value.id` where `value` is a number                           |
 | `WILDCARD_TARGET_NOT_LIST`           | `value.*.id` where `value` is a number                         |
 | `PROPERTY_NOT_ALLOWLISTED`           | reading a property the type does not declare                   |
@@ -819,30 +708,23 @@ Formulas run inside conservative resource limits. The host can raise or
 lower them; the defaults below are what ships. Authors mostly notice these
 when a formula is generated or pathological.
 
-| Limit                                                                                                                                               | Default           | Error when exceeded         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | --------------------------- |
-| Source length                                                                                                                                       | 16,000 characters | `SOURCE_TOO_LONG`           |
-| Tokens                                                                                                                                              | 500               | `TOO_MANY_TOKENS`           |
-| String literal length                                                                                                                               | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
-| Identifier length                                                                                                                                   | 64 characters     | `IDENTIFIER_TOO_LONG`       |
-| Parenthesis nesting                                                                                                                                 | 16 levels         | `PARENS_TOO_DEEP`           |
-| AST nodes                                                                                                                                           | 500               | `TOO_MANY_AST_NODES`        |
-| List size (EACH/FILTER/wildcard/REDUCE input; the lists of `TAKE`, `INDEX_OF`, `FILTER_BY`, `DISTINCT`, `GROUP_COUNTS`; `keep`, `phrases`, `items`) | 1,000 items       | `LIST_TOO_LARGE`            |
-| Wildcard output size                                                                                                                                | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
-| List results (`FLAT`, `WORDS`, `SENTENCES`, `LINES`, `MARKDOWN_BLOCKS`)                                                                             | 5,000 items       | `LIST_TOO_LARGE`            |
-| Phrase length (`FIRST_CONTAINED` and `CONTAINS_ANY` phrases, `MISSING_FROM` items, as searched for; fixed, not a host limit)                        | 250 code units    | `PHRASE_TOO_LONG`           |
-| Regex pattern length                                                                                                                                | 100 characters    | `REGEX_UNSAFE`              |
-| Regex input length                                                                                                                                  | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
+| Limit                                                             | Default           | Error when exceeded         |
+| ----------------------------------------------------------------- | ----------------- | --------------------------- |
+| Source length                                                     | 16,000 characters | `SOURCE_TOO_LONG`           |
+| Tokens                                                            | 500               | `TOO_MANY_TOKENS`           |
+| String literal length                                             | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
+| Identifier length                                                 | 64 characters     | `IDENTIFIER_TOO_LONG`       |
+| Parenthesis nesting                                               | 16 levels         | `PARENS_TOO_DEEP`           |
+| AST nodes                                                         | 500               | `TOO_MANY_AST_NODES`        |
+| List size (EACH/FILTER/wildcard/REDUCE input)                     | 1,000 items       | `LIST_TOO_LARGE`            |
+| Wildcard output size                                              | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
+| Regex pattern length                                              | 100 characters    | `REGEX_UNSAFE`              |
+| Regex input length                                                | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
+| Phrase length (`FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`) | 250 code units    | `PHRASE_TOO_LONG`           |
 
 Evaluation is additionally bounded by step, cost, and wall-time budgets
 (`EVAL_LIMIT_EXCEEDED`, `COST_LIMIT_EXCEEDED`, `WALL_TIME_LIMIT_EXCEEDED`);
 a formula that stays within the sizes above will not normally meet them.
-
-The parser's check of modes passed on through callables visits at most
-16 × (n + 1) argument positions for a call of n arguments and then stops
-following, with no error: it is no limit a formula can exceed, and a mode it
-leaves reaches the function when the call runs (see
-[When a mode is checked](#when-a-mode-is-checked)).
 
 ## Cheat sheet
 
