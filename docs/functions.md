@@ -3,6 +3,9 @@
 This is the complete reference for the functions shipped by
 [`@formulang/core-functions`](../core-functions/README.md). Wiring
 `createCoreFormulaRuntime()` registers every function and operator listed here.
+`PLAIN_TEXT` and `MARKDOWN_BLOCKS`, which read HTML and markdown, are not
+built-ins: a host opts in to them with
+[`@formulang/formatted-text`](../formatted-text/README.md).
 
 Formula-language names are case-sensitive and written in `UPPER_CASE`. Examples
 use the default syntax (argument separator `;`, decimal separator `.`). If you

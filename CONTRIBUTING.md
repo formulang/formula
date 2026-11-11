@@ -35,15 +35,16 @@ definitions/     @formulang/definitions   — portable contracts, types, and reg
 parser/          @formulang/parser        — formula source -> typed, validated AST (TypedRule)
 runner/          @formulang/runner        — asynchronous evaluation engine
 core-functions/  @formulang/core-functions — built-in function definitions + implementations
+formatted-text/  @formulang/formatted-text — opt-in HTML and markdown functions (PLAIN_TEXT, MARKDOWN_BLOCKS)
 docs/            language, functions, architecture, extending, best-practices, and releasing guides
 scripts/         release tooling (set-version.js) and the 1.0.0 compatibility baseline (compat/)
 ```
 
-The four packages form a small dependency chain: `definitions` has no dependencies; `parser` and `core-functions` depend on `definitions`; `runner` depends on `definitions` and `parser`. Published packages must stay free of third-party runtime dependencies.
+The five packages form a small dependency chain: `definitions` has no dependencies; `parser`, `core-functions` and `formatted-text` depend on `definitions`; `runner` depends on `definitions` and `parser`. Published packages must stay free of third-party runtime dependencies.
 
 ## Testing
 
-Tests use [vitest](https://vitest.dev). Spec files are named `*.spec.ts` and live next to the source they cover (for example `parser/src/index.spec.ts` next to `parser/src/index.ts`). `core-functions/src/docs-examples.spec.ts` runs the `evalOk` examples in `docs/functions.md`.
+Tests use [vitest](https://vitest.dev). Spec files are named `*.spec.ts` and live next to the source they cover (for example `parser/src/index.spec.ts` next to `parser/src/index.ts`). `core-functions/src/docs-examples.spec.ts` runs the `evalOk` examples in `docs/functions.md`, and `formatted-text/src/readme-examples.spec.ts` those in `formatted-text/README.md`.
 
 ```sh
 # Everything
@@ -80,7 +81,7 @@ Write clear, imperative commit messages (for example, `Add wall-time guard for v
 
 ## Versions and releases
 
-All packages share a single version, and contributors normally never touch it — a maintainer bumps it when cutting a release, using `pnpm run set-version X.Y.Z` (never by editing the five `package.json` files individually; the script keeps them in lockstep and the release workflow fails on any mismatch). A release happens exactly when `main` carries a version that is not yet on npm. There is no `CHANGELOG.md`: release notes are auto-generated on the [GitHub Releases page](https://github.com/formulang/formula/releases). Details in [docs/releasing.md](docs/releasing.md).
+All packages share a single version, and contributors normally never touch it — a maintainer bumps it when cutting a release, using `pnpm run set-version X.Y.Z` (never by editing the six `package.json` files individually; the script keeps them in lockstep and the release workflow fails on any mismatch). A release happens exactly when `main` carries a version that is not yet on npm. There is no `CHANGELOG.md`: release notes are auto-generated on the [GitHub Releases page](https://github.com/formulang/formula/releases). Details in [docs/releasing.md](docs/releasing.md).
 
 ## Adding a built-in function
 

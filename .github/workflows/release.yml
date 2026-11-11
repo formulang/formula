@@ -29,7 +29,7 @@ jobs:
           VERSION="$(node scripts/set-version.js --check)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           PUBLISH=false
-          for PKG in definitions parser runner core-functions; do
+          for PKG in definitions parser runner core-functions formatted-text; do
             if ! npm view "@formulang/$PKG@$VERSION" version >/dev/null 2>&1; then
               PUBLISH=true
               echo "@formulang/$PKG@$VERSION is not on npm yet."

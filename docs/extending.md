@@ -2,7 +2,7 @@
 
 This guide is for embedders: adding your own functions and operators, exposing host data as typed variables, assembling registries, and wiring parse/evaluate into an application. It ends with a complete worked example — a custom `UPPERCASE_FIRST(text)` function registered and evaluated end to end.
 
-Prerequisite reading: [architecture.md](architecture.md) explains how the four packages fit together; [language.md](language.md) covers the formula syntax itself. Everything below uses public exports of `@formulang/definitions`, `@formulang/parser`, `@formulang/runner`, and `@formulang/core-functions`.
+Prerequisite reading: [architecture.md](architecture.md) explains how the packages fit together; [language.md](language.md) covers the formula syntax itself. Everything below uses public exports of `@formulang/definitions`, `@formulang/parser`, `@formulang/runner`, and `@formulang/core-functions`.
 
 ## 1. The extension model
 
@@ -354,6 +354,20 @@ registry.registerVariable({/* your VariableDefinition */});
 ```
 
 Registries are cheap in-memory objects. Build one per tenant/document type/security context rather than mutating a global one — the registry _is_ your capability policy.
+
+#### Opting in to the formatted-text functions
+
+`PLAIN_TEXT` (HTML or markdown to plain text) and `MARKDOWN_BLOCKS` (the headings, list items, table rows, paragraphs or code of a markdown document) are not built-ins: they ship in `@formulang/formatted-text`, which a host adds beside the core runtime.
+
+```ts
+import { createCoreFormulaRuntime } from '@formulang/core-functions';
+import { registerFormattedTextFunctions } from '@formulang/formatted-text';
+
+const runtime = createCoreFormulaRuntime();
+registerFormattedTextFunctions(runtime); // definitions and implementations
+```
+
+A parse-only host registers only the data-only definitions, from a module that imports nothing executable: `registerFormattedTextDefinitions(registry)` from `@formulang/formatted-text/definitions`. A backend that already holds those definitions adds `registerFormattedTextImplementations(implementations)` from the package root. The functions, the markup they read and what they leave as written are in the [package README](../formatted-text/README.md).
 
 #### Built-in names added in 1.1.0
 

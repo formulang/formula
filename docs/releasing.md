@@ -7,7 +7,7 @@ The two files that define the pipeline:
 - [`.github/workflows/release.yml`](../.github/workflows/release.yml) — the release workflow
 - [`scripts/set-version.js`](../scripts/set-version.js) — sets or verifies the single shared version (exposed as `pnpm run set-version`)
 
-All four packages (`@formulang/definitions`, `@formulang/parser`, `@formulang/runner`, `@formulang/core-functions`) always share one version and are published together, even when only one of them changed. The version lives in five `package.json` files — the private root package plus the four workspaces — and the release workflow fails any run where they disagree.
+All five packages (`@formulang/definitions`, `@formulang/parser`, `@formulang/runner`, `@formulang/core-functions`, `@formulang/formatted-text`) always share one version and are published together, even when only one of them changed. The version lives in six `package.json` files — the private root package plus the five workspaces — and the release workflow fails any run where they disagree.
 
 ## Cutting a release, step by step
 
@@ -17,7 +17,7 @@ All four packages (`@formulang/definitions`, `@formulang/parser`, `@formulang/ru
    pnpm run set-version 1.2.3
    ```
 
-   This writes the version into all five `package.json` files. You choose the number — apply semver judgment (breaking change → major, new features → minor, fixes/docs → patch). Always use the script rather than editing the files by hand, so they never drift apart; the workflow's `--check` gate rejects any mismatch.
+   This writes the version into all six `package.json` files. You choose the number — apply semver judgment (breaking change → major, new features → minor, fixes/docs → patch). Always use the script rather than editing the files by hand, so they never drift apart; the workflow's `--check` gate rejects any mismatch.
 
 2. **Commit.** Any message, e.g. `git commit -am "Release 1.2.3"`. No tooling parses commit messages — there is no required format.
 
@@ -25,7 +25,7 @@ All four packages (`@formulang/definitions`, `@formulang/parser`, `@formulang/ru
 
 4. **Let the workflow gate and publish.** On push to `main`, the `Release` workflow verifies the version lockstep (`node scripts/set-version.js --check`), builds, tests, then asks npm whether the version already exists:
    - **Already published** → the run ends green without doing anything (see [the green no-op](#when-the-version-is-unchanged-green-no-op)).
-   - **Not yet published** → it publishes all four packages to npm, then tags `v<version>` and creates the GitHub release.
+   - **Not yet published** → it publishes all five packages to npm, then tags `v<version>` and creates the GitHub release.
 
 A release therefore happens exactly when `main` carries a version that npm does not have yet.
 
@@ -35,13 +35,13 @@ The `Release` workflow triggers on every push to `main`. Runs are serialized thr
 
 1. `actions/checkout`, then pnpm + Node 22 setup with `registry-url: https://registry.npmjs.org`.
 2. `pnpm install --frozen-lockfile`.
-3. `node scripts/set-version.js --check` — fails the run unless all five `package.json` files carry the same version. On mismatch it lists every file's version so the offender is obvious.
+3. `node scripts/set-version.js --check` — fails the run unless all six `package.json` files carry the same version. On mismatch it lists every file's version so the offender is obvious.
 4. `pnpm run build` and `pnpm run test` — a broken build or failing tests stops the run here; nothing is published.
-5. **Version gate.** The workflow asks npm about all four packages at `<version>`. Only when every one of them already exists are the remaining steps skipped (green no-op); if any package is missing at that version, the run proceeds to publish.
+5. **Version gate.** The workflow asks npm about every package it lists (`for PKG in ...`) at `<version>`. Only when every one of them already exists are the remaining steps skipped (green no-op); if any package is missing at that version, the run proceeds to publish.
 6. **Publish.** `pnpm -r publish --access public --no-git-checks` publishes every workspace package to npmjs.org; the private root package is skipped automatically. Authentication is npm [trusted publishing](https://docs.npmjs.com/trusted-publishers): pnpm exchanges the workflow run's OIDC identity token (enabled by the `id-token: write` permission) for a short-lived npm credential — no npm token or secret is stored anywhere. npm generates [provenance attestations](https://docs.npmjs.com/generating-provenance-statements) linking the published tarballs to this exact workflow run.
 7. **Tag + GitHub release.** The workflow creates and pushes the `v<version>` git tag, then runs `gh release create v<version> --generate-notes` — GitHub generates the release notes from the merged pull requests and commits since the previous release.
 
-Order matters: tagging and the GitHub release run **only after a successful publish**. A failed publish leaves no tag and no release behind, so a failed run can simply be re-run once the cause is fixed. This holds for partial failures too: the version gate publishes as long as _any_ of the four packages is missing at that version, and `pnpm -r publish` skips the ones that already went out — so a re-run completes the release instead of no-opping. If a re-run still cannot get all four published, release a fresh version.
+Order matters: tagging and the GitHub release run **only after a successful publish**. A failed publish leaves no tag and no release behind, so a failed run can simply be re-run once the cause is fixed. This holds for partial failures too: the version gate publishes as long as _any_ of the packages is missing at that version, and `pnpm -r publish` skips the ones that already went out — so a re-run completes the release instead of no-opping. If a re-run still cannot get all of them published, release a fresh version.
 
 ## When the version is unchanged (green no-op)
 
@@ -51,11 +51,11 @@ Most pushes to `main` do not change the version — docs, refactors, tests. The 
 
 Publishing is **tokenless**: no npm token or repository secret exists. The release workflow authenticates itself to npm via [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC). The configuration, recorded here for reference:
 
-1. **Trusted publisher, per package.** Each of the four packages carries a Trusted Publisher entry on npmjs.com (package → Settings → Trusted Publisher → GitHub Actions): organization `formulang`, repository `formula`, workflow `release.yml`, no environment, allowed action Publish. The workflow's `permissions` block grants `id-token: write`, which lets the run mint the OIDC token that npm exchanges for a short-lived publish credential.
+1. **Trusted publisher, per package.** Each package carries a Trusted Publisher entry on npmjs.com (package → Settings → Trusted Publisher → GitHub Actions): organization `formulang`, repository `formula`, workflow `release.yml`, no environment, allowed action Publish. The workflow's `permissions` block grants `id-token: write`, which lets the run mint the OIDC token that npm exchanges for a short-lived publish credential.
 
    If a publish fails with an authentication or token-exchange error, compare the trusted-publisher fields against reality — a renamed workflow file or transferred repository breaks the OIDC claim match. Fix the entry and re-run the failed run from the Actions UI; nothing partial has happened, because tagging and the GitHub release only run after a successful publish.
 
-2. **Adding a new package to the workspace** needs a one-time bootstrap, because a trusted publisher is configured in a package's settings page, which exists only after its first publish. Create a **granular access token** on npmjs.com with read/write permission on the `@formulang` scope and a short expiration (a week is plenty; avoid the classic "Automation" token type — npm itself warns against it), add it as an `NPM_TOKEN` repository secret, and give the workflow's publish step an `env` line `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` for that one release. Afterwards: add the new package's trusted-publisher entry, delete the secret, and revert the workflow line.
+2. **Adding a new package to the workspace** means listing it in `pnpm-workspace.yaml` (which `set-version.js` reads) and in the workflow's version gate (`for PKG in ...`), and a one-time bootstrap, because a trusted publisher is configured in a package's settings page, which exists only after its first publish. Create a **granular access token** on npmjs.com with read/write permission on the `@formulang` scope and a short expiration (a week is plenty; avoid the classic "Automation" token type — npm itself warns against it), add it as an `NPM_TOKEN` repository secret, and give the workflow's publish step an `env` line `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` for that one release. Afterwards: add the new package's trusted-publisher entry, delete the secret, and revert the workflow line. Until the bootstrap is done, do not merge the new package into `main` with a version npm does not have: the run would fail to publish it, as npm has no trusted publisher for a package that does not exist yet.
 
 3. **`GITHUB_TOKEN`** is provided automatically by GitHub Actions — no setup. The workflow's `permissions` block grants it `contents: write` (push the tag, create the release) and `id-token: write` (the OIDC token for trusted publishing and provenance).
 4. **Branch protection needs no special-casing.** The workflow never pushes commits to `main` — it only pushes a tag — so `main` protection can be as strict as you like.
@@ -66,9 +66,10 @@ After the workflow run is green:
 
 ```sh
 npm view @formulang/parser version        # newest published version
-npm view @formulang/definitions version   # all four packages share it
+npm view @formulang/definitions version   # all five packages share it
 npm view @formulang/runner version
 npm view @formulang/core-functions version
+npm view @formulang/formatted-text version
 ```
 
 And on GitHub:
@@ -84,7 +85,7 @@ If a push did _not_ release when you expected one: check the "Check whether this
 
 - **Never reuse a published version.** npm permanently reserves published name+version pairs — a version cannot be published twice, not even after an unpublish. If a release shipped broken, fix the problem and release a new version.
 - **Never publish locally.** No `npm publish`/`pnpm publish` from a workstation: it bypasses CI tests, breaks the single-version guarantee, and cannot produce provenance attestations. Publishing happens only from the release workflow. (Consequently, npm tokens for the `@formulang` scope should not live on developer machines at all.)
-- **All packages always share one version.** Set it with `pnpm run set-version`, never by editing the five `package.json` files individually — the script keeps them in lockstep, and the workflow's `--check` gate fails the release on any mismatch.
+- **All packages always share one version.** Set it with `pnpm run set-version`, never by editing the six `package.json` files individually — the script keeps them in lockstep, and the workflow's `--check` gate fails the release on any mismatch.
 - **Never create or delete `v*` tags by hand.** The workflow creates tags as a mirror of what was published; a hand-made tag claims a release that npm does not have and skews the auto-generated notes of the next real release.
 - **Commit messages are free-form.** No required format, no linting, nothing parses them. Write clear messages anyway — they feed the auto-generated release notes.
 

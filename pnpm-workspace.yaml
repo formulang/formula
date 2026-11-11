@@ -3,3 +3,4 @@ packages:
   - parser
   - runner
   - core-functions
+  - formatted-text
