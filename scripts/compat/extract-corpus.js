@@ -116,7 +116,15 @@ function codeBlocks(markdown) {
   return blocks;
 }
 
-function main() {
+/** Writes `value` as JSON formatted by the repository prettier config, so prettier:check passes. */
+async function writeFormattedJson(target, value) {
+  const prettier = require('prettier');
+  const options = (await prettier.resolveConfig(target)) ?? {};
+  const text = await prettier.format(JSON.stringify(value), { ...options, parser: 'json' });
+  fs.writeFileSync(target, text);
+}
+
+async function main() {
   const [checkoutArg, commit] = process.argv.slice(2);
   if (!checkoutArg || !commit) {
     console.error('usage: node scripts/compat/extract-corpus.js <checkout> <commit>');
@@ -174,8 +182,11 @@ function main() {
     formulas,
   };
   const target = path.join(__dirname, 'corpus.json');
-  fs.writeFileSync(target, `${JSON.stringify(corpus, null, 2)}\n`);
+  await writeFormattedJson(target, corpus);
   console.log(`wrote ${formulas.length} formulas to ${path.relative(process.cwd(), target)}`);
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

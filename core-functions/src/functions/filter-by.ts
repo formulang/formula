@@ -19,11 +19,8 @@ function constProvider(value: unknown): FormulaValueProvider {
 }
 
 /**
- * The implementation `FILTER_BY` calls, with its signature id, found as `FILTER` finds its
- * operator's: the function behind an operator token, otherwise the first function of that name
- * that has an implementation. That need not be the overload the parser checked for the types of
- * the keys and of the operator value, which is why the parser checks a literal the call passes on
- * against every overload of the name.
+ * The implementation `FILTER_BY` calls, found as `FILTER` finds its operator: the function
+ * behind an operator token, otherwise the first function of that name that has an implementation.
  */
 function resolveCallable(
   ctx: FormulaExecutionContext,
@@ -93,12 +90,9 @@ export class FilterByImplementation extends AbstractEagerBatchImplementation {
       };
     });
     const predicateOuts = await chosen.implementation.evaluateMultiple(predicateCalls, ctx);
-    // Each answer of the operator is read as the runner reads the same call written in a formula
-    // (the context's readCall), on the path the runner would take for it: an answer that is no
-    // output is `null` where the runner answers the call through its cache and a failed call on
-    // every other path, and a failed call gives the error the runner raises for it. The first
-    // that is not ok, in the order of the keys, is returned as the call's own output. Outside the
-    // runner, with no readCall, an answer is read as the cache path reads it (readCallOutput).
+    // Each operator answer is read as the runner reads the same call written in a formula
+    // (readCall). The first failed call, in key order, is FILTER_BY's own output. Without a
+    // readCall (outside the runner) answers are read as the cached path reads them.
     const outs = keys.map((_key, i) =>
       ctx.readCall
         ? ctx.readCall(chosen.signatureId, callArgs[i], predicateOuts[i])

@@ -45,16 +45,6 @@ export function readOptionalMode<M extends string>(
   return isOneOf(modes, raw) ? raw : modeRefusal(fn, param, modes);
 }
 
-/** Reads a required mode: one of `modes`, or the call answers `null` with a `TYPE` warning. */
-export function readRequiredMode<M extends string>(
-  fn: string,
-  param: string,
-  raw: unknown,
-  modes: readonly M[],
-): M | FormulaNodeOutput {
-  return isOneOf(modes, raw) ? raw : modeRefusal(fn, param, modes);
-}
-
 /**
  * Reads a text argument: `null` answers null, and any value that is not text, the empty list
  * included, null with `TYPE`. The empty text is a text.
@@ -88,13 +78,21 @@ export function readTextList(
   return texts;
 }
 
-/** Bounds a list result by `maxWildcardOutputLength`, as `FLAT` does. */
-export function boundedListResult<T>(items: T[], limits: FormulaLimits): T[] {
-  if (items.length > limits.maxWildcardOutputLength) throw listTooLarge();
-  return items;
-}
+/** Estimated seconds per code unit for one linear pass over a text. */
+export const TEXT_PASS_COST = 0.0000001;
 
-/** A cost estimate proportional to the length of a text argument, capped at 50 ms. */
-export function textCost(text: unknown, factor = 1): number {
-  return Math.min(0.05, 0.00001 + 0.000001 * assumedTextLength(text) * factor);
+/**
+ * Estimated seconds per code unit for each search of the text (one phrase, item or `keep` token).
+ * Set above the slowest measured case, a whole-word search on a text of one repeated letter.
+ */
+export const TEXT_SEARCH_COST = 0.00000006;
+
+/**
+ * The cost estimate of a text function: one pass over the text plus `searches` searches of it.
+ * It is not capped, so a call whose text and search count multiply past `maxFunctionCostUnits`
+ * is refused with `FUNCTION_COST_LIMIT_EXCEEDED` before it runs.
+ */
+export function textCost(text: unknown, searches = 0): number {
+  const length = assumedTextLength(text);
+  return 0.00001 + TEXT_PASS_COST * length + TEXT_SEARCH_COST * length * searches;
 }

@@ -21,14 +21,11 @@ import {
 } from './argument-readers';
 import { isWordCharacterAt, isWordCharacterBefore } from './helpers';
 import { someOccurrence } from './text-search';
-import { chargeWork } from './work-meter';
 
 /**
- * The longest phrase, in code units as searched for, that the phrase functions take. Each phrase
- * goes to the runtime's own substring search, which V8 builds its Boyer-Moore tables for over a
- * needle's last 250 code units: up to that length they cover the whole phrase, while a longer one
- * whose mismatch lies before them is compared afresh at almost every place in the text. A longer
- * phrase is refused, as an over-long regular expression is.
+ * The longest phrase, in code units, that the phrase functions search for. The runtime's substring
+ * search slows sharply on longer needles, so a longer phrase is refused, as an over-long regular
+ * expression is.
  */
 const LONGEST_PHRASE = 250;
 
@@ -92,8 +89,7 @@ function normalise(value: string, mode: PhraseNormalisation): string {
 }
 
 /**
- * Whether `phrase` occurs in `text` with no letter, mark or number directly on either side: one
- * Knuth-Morris-Pratt search, linear in their lengths however often the occurrences overlap.
+ * Whether `phrase` occurs in `text` with no letter, mark or number directly on either side.
  */
 function containsAsWord(text: string, phrase: string): boolean {
   return someOccurrence(
@@ -122,8 +118,6 @@ function firstContained(
       if (containsAsWord(haystack, needle)) return phrases[index];
       continue;
     }
-    // The runtime's own search: one unit for each code unit of the text handed to it.
-    chargeWork(haystack.length);
     if (haystack.includes(needle)) return phrases[index];
   }
   return null;
@@ -166,7 +160,7 @@ export class FirstContainedImplementation extends AbstractEagerBatchImplementati
   }
 
   estimateCostsInSeconds(args: unknown[]): number {
-    return textCost(args[0], 1 + (Array.isArray(args[1]) ? args[1].length : 0));
+    return textCost(args[0], Array.isArray(args[1]) ? args[1].length : 0);
   }
 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
@@ -184,7 +178,7 @@ export class ContainsAnyImplementation extends AbstractEagerBatchImplementation 
   }
 
   estimateCostsInSeconds(args: unknown[]): number {
-    return textCost(args[0], 1 + (Array.isArray(args[1]) ? args[1].length : 0));
+    return textCost(args[0], Array.isArray(args[1]) ? args[1].length : 0);
   }
 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
@@ -202,7 +196,7 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
   }
 
   estimateCostsInSeconds(args: unknown[]): number {
-    return textCost(args[1], 1 + (Array.isArray(args[0]) ? args[0].length : 0));
+    return textCost(args[1], Array.isArray(args[0]) ? args[0].length : 0);
   }
 
   protected evaluate(args: unknown[], ctx: FormulaExecutionContext): FormulaNodeOutput {
@@ -219,8 +213,6 @@ export class MissingFromImplementation extends AbstractEagerBatchImplementation 
     const haystack = normalise(text, mode);
     const missing = items.filter((_item, index) => {
       if (needles[index].length === 0) return false;
-      // The runtime's own search: one unit for each code unit of the text handed to it.
-      chargeWork(haystack.length);
       return !haystack.includes(needles[index]);
     });
     return makeOkList('MISSING_FROM', missing);

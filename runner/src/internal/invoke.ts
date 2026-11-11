@@ -89,9 +89,7 @@ export async function invokeFunctionBatch(
       pendingCache.set(k, p as unknown as Promise<unknown>);
       try {
         const outArr = await p;
-        // On this path an answer that is no output, any falsy value, reads as `null`, as in 1.0.0
-        // (readCallOutput); readWrittenCall reads a call an implementation makes itself the same
-        // way, on this path and on the others.
+        // On this path an answer that is no output reads as `null` (readCallOutput).
         const out0 = readCallOutput(def.name, signatureId, outArr[0]);
         if (!outArr[0]) return [out0];
         if (!out0.ok) return outArr;

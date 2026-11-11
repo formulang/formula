@@ -46,13 +46,9 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
       throw new Error(`Function already registered: ${def.signatureId}`);
     }
 
-    // An admitted-value list takes effect only where the parser checks a literal (`literalCheckAt`,
-    // which the parser reads too) and a string literal passes both of the parser's checks of the
-    // parameter's type: choosing among the overloads (`argumentSelects`) and checking the call once
-    // it binds the definition (`argumentFits`); where it fails either, the parser refuses the
-    // literal in some calls before it reads the list. The list holds texts (the literals a formula
-    // writes), and an empty list would refuse every call, as a list on a parameter no string
-    // literal fits would. Anything else is a definition mistake, so it fails here.
+    // A `literalValues` list must be a non-empty list of texts, on a parameter where the parser
+    // checks literals (`literalCheckAt`) and whose type takes a string literal. Anything else is
+    // a definition mistake, so registration fails.
     def.params.forEach((param, position) => {
       if (param.literalValues === undefined) return;
       if (literalCheckAt(def.params, position, admittedValues)?.param !== param) {

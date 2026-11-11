@@ -6,7 +6,6 @@ import {
 } from '@formulang/definitions';
 import { describe, expect, it } from 'vitest';
 import { parseFormula } from './index';
-import { observeWork } from './work-trace';
 
 describe('parseFormula failures', () => {
   function makeRegistry() {
@@ -91,32 +90,6 @@ describe('parseFormula failures', () => {
     const registry = makeRegistry();
     const rule = parseFormula('NOPE(1)', { registry });
     expect(rule.errors.some((e) => e.code === FormulaErrorCodes.UNKNOWN_FUNCTION)).toBe(true);
-  });
-
-  it('reads each error once to tell UNKNOWN_FUNCTION from NO_MATCHING_OVERLOAD', () => {
-    // A call that binds no definition is UNKNOWN_FUNCTION unless NO_MATCHING_OVERLOAD was
-    // reported where it starts, as on 1.0.0. The parse indexes its errors as they come, so m such
-    // calls read each error once, where reading every error for each call reads m(m - 1) / 2.
-    // Smallest first: reading them again fails at the first size.
-    const registry = makeRegistry();
-    const limits = { maxTokens: 1_000_000, maxAstNodes: 1_000_000, maxSourceLength: 10_000_000 };
-    const calls = (m: number, call: string) =>
-      `LIST(${Array.from({ length: m }, () => call).join('; ')})`;
-    const codes = (m: number, code: string) => Array.from({ length: m }, () => code);
-    for (const m of [10, 100, 1_000, 8_000]) {
-      const unknown = observeWork(() => parseFormula(calls(m, 'NOPE()'), { registry, limits }));
-      expect(unknown.result.errors.map((e) => e.code)).toStrictEqual(
-        codes(m, FormulaErrorCodes.UNKNOWN_FUNCTION),
-      );
-      // Each call reads the errors the calls before it reported, one each.
-      expect(unknown.work.units.errors, `${m} unknown calls`).toBe(m - 1);
-      // LEN's two definitions take no number: NO_MATCHING_OVERLOAD, and no UNKNOWN_FUNCTION.
-      const unmatched = observeWork(() => parseFormula(calls(m, 'LEN(1)'), { registry, limits }));
-      expect(unmatched.result.errors.map((e) => e.code)).toStrictEqual(
-        codes(m, FormulaErrorCodes.NO_MATCHING_OVERLOAD),
-      );
-      expect(unmatched.work.units.errors, `${m} calls matching no overload`).toBe(m);
-    }
   });
 
   it('WILDCARD_TARGET_NOT_LIST', () => {
@@ -422,11 +395,15 @@ describe('parseFormula failures', () => {
       for (const malformed of ['whitespace', { length: 2 }, [1, 2], [null], ['x', 2], holed]) {
         expect(codes(malformed), JSON.stringify(malformed)).toStrictEqual(none);
       }
-      // Not vacuous: a list of texts is read, at a direct call and through EACH.
+      // Not vacuous: a list of texts is read at a direct call. What EACH passes on is checked by
+      // the function when it runs, not by the parser.
       expect(none.every((errors) => errors.length === 0)).toBe(true);
-      expect(codes(['y'])).toStrictEqual(
-        sources.map(() => [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]),
-      );
+      expect(codes(['y'])).toStrictEqual([
+        [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED],
+        [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED],
+        [],
+        [],
+      ]);
     });
   });
 
@@ -519,122 +496,30 @@ describe('parseFormula failures', () => {
       ]);
     });
 
-    it("applies the callable's literal rules to every argument a higher-order call forwards", () => {
-      const source = 'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")';
-      const errors = errorsOf(source);
-      expect(errors).toHaveLength(1);
-      expect(errors[0]?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
-      expect(errors[0]?.message).toBe(
-        `Parameter 'mode' of WORD_COUNT must be one of "whitespace", "letters", "locale", "pattern"; got "whitespce"`,
-      );
-      expect(errors[0]?.path).toStrictEqual(['call', 'EACH/v1', 'arg', '2']);
-      expect(source.slice(errors[0]?.span?.start, errors[0]?.span?.end)).toBe('"whitespce"');
-
-      const nonLiteral = 'EACH(LIST("a b"); "WORD_COUNT"; value)';
-      const [notLiteral, ...others] = errorsOf(nonLiteral);
-      expect(others).toStrictEqual([]);
-      expect(notLiteral?.code).toBe(FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE);
-      expect(nonLiteral.slice(notLiteral?.span?.start, notLiteral?.span?.end)).toBe('value');
-
-      for (const misspelt of [
-        'EACH(LIST("a b"); "LEADING_WORDS"; 2; "whitspace")',
-        'EACH(LIST("a b"); "FIRST_CONTAINED"; LIST("a"); "wrd")',
-        'EACH(LIST("a b"); "PLAIN_TEXT"; "htm")',
+    it('leaves a literal a higher-order call passes on to the function, which checks it when it runs', () => {
+      for (const source of [
+        'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")',
+        'EACH(LIST("a b"); "WORD_COUNT"; value)',
         'EACH(LIST("x"); "TAG"; "a"; "zzz")',
         'FILTER(LIST("x"); "IS_MODE"; "uper")',
         'FILTER_PROPERTY(value; "p"; "IS_MODE"; "uper")',
         'FILTER_BY(LIST(1); LIST("x"); "IS_MODE"; "uper")',
+        'EACH(value; "EACH"; "WORD_COUNT"; "whitespce")',
+        'REDUCE("x"; LIST("a"); "TAG")',
       ]) {
-        expect(codesOf(misspelt), misspelt).toStrictEqual([
-          FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-        ]);
-      }
-      for (const admitted of [
-        'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "letters")',
-        'EACH(LIST("x"); "TAG"; "a"; "b")',
-        'FILTER(LIST("x"); "IS_MODE"; "upper")',
-        'FILTER_BY(LIST(1); LIST("x"); "IS_MODE"; "lower")',
-      ]) {
-        expect(codesOf(admitted), admitted).toStrictEqual([]);
+        expect(codesOf(source), source).toStrictEqual([]);
       }
     });
 
-    it('refuses a literal-only parameter that a higher-order call fills at run time', () => {
-      const errors = errorsOf('REDUCE("x"; LIST("a"); "TAG")');
-      expect(errors.map((e) => e.code)).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+    it('checks the callable FILTER_BY names against how FILTER_BY calls it', () => {
+      // FILTER_BY calls operator(key) or operator(key, operatorValue).
+      expect(codesOf('FILTER_BY(LIST(1); LIST(1); ">"; 0)')).toStrictEqual([]);
+      expect(codesOf('FILTER_BY(LIST("a"); LIST("a"); "IS_EMPTY")')).toStrictEqual([]);
+      expect(codesOf('FILTER_BY(LIST(1); LIST(1); "IS_EMPTY"; 0)')).toStrictEqual([
+        FormulaErrorCodes.NO_MATCHING_OVERLOAD,
       ]);
-      expect(errors[0]?.message).toBe(
-        `Parameter 'modes' of TAG must be a string literal; REDUCE passes it a value at run time`,
-      );
-    });
-
-    it('applies the passed-on rule only to parameters that list admitted values', () => {
-      // These parameters are literal-only but list no admitted values; what a higher-order call
-      // passes them is parsed as in 1.0.0.
-      expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; "name")')).toStrictEqual([]);
-      expect(codesOf('EACH(value; "SORT_BY_PROPERTY"; value)')).toStrictEqual([]);
-      expect(codesOf('REDUCE(value; LIST("name"); "SORT_BY_PROPERTY")')).toStrictEqual([]);
-      expect(codesOf('EACH(value; "FILTER_PROPERTY"; value; ">"; 1)')).toStrictEqual([]);
-      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; ">"; 0)')).toStrictEqual([]);
-      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; value; 0)')).toStrictEqual([]);
-      // Written directly in the call, the argument is required to be a literal, as in 1.0.0.
-      expect(codesOf('SORT_BY_PROPERTY(value; "name")')).toStrictEqual([]);
-      expect(codesOf('SORT_BY_PROPERTY(value; value)')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-      ]);
-    });
-
-    it('holds an argument to the admitted values of every overload the name has', () => {
-      // EACH invokes the first PICK that has an implementation, whichever overload the parser
-      // chose, so PICK(text; mode)'s enumerated mode binds the argument PICK(list; key) takes too.
-      const registry = makeTagRegistry();
-      registry.registerFunction({
-        signatureId: 'PICK/v1',
-        name: 'PICK',
-        category: 'core',
-        description: 'Test overload with an enumerated mode.',
-        params: [
-          { name: 'text', type: FormulaTypes.text(true) },
-          {
-            name: 'mode',
-            type: FormulaTypes.text(false),
-            literalOnly: true,
-            literalValues: ['a', 'b'],
-          },
-        ],
-        returnType: FormulaTypes.text(true),
-        purity: 'pure',
-      });
-      registry.registerFunction({
-        signatureId: 'PICK_LIST/v1',
-        name: 'PICK',
-        category: 'core',
-        description: 'Test overload whose second parameter lists no admitted values.',
-        params: [
-          { name: 'list', type: FormulaTypes.list(FormulaTypes.text(true), true) },
-          { name: 'key', type: FormulaTypes.text(true) },
-        ],
-        returnType: FormulaTypes.text(true),
-        purity: 'pure',
-      });
-      const codes = (source: string) =>
-        parseFormula(source, { registry }).errors.map((e) => e.code);
-      // Whichever item type selects which overload, a non-admitted literal at the mode position is
-      // refused and an admitted one compiles.
-      expect(codes('EACH(LIST("x"); "PICK"; "a")')).toStrictEqual([]);
-      expect(codes('EACH(LIST(LIST("x")); "PICK"; "a")')).toStrictEqual([]);
-      expect(codes('EACH(LIST("x"); "PICK"; "zzz")')).toStrictEqual([
-        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-      ]);
-      expect(codes('EACH(LIST(LIST("x")); "PICK"; "zzz")')).toStrictEqual([
-        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-      ]);
-      expect(codes('EACH(LIST(LIST("x")); "PICK"; value)')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-      ]);
-      expect(codes('EACH(LIST(LIST(LIST("x"))); "EACH"; "PICK"; value)')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      expect(codesOf('FILTER_BY(LIST(1); LIST(1); "NOPE")')).toStrictEqual([
+        FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
       ]);
     });
 
@@ -646,64 +531,6 @@ describe('parseFormula failures', () => {
       expect(codesOf('FILTER(LIST(1); "NOPE")')).toStrictEqual([
         FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
       ]);
-    });
-
-    it('follows a nested higher-order call to the callable it names, at any depth', () => {
-      const source = 'EACH(value; "EACH"; "WORD_COUNT"; "whitespce")';
-      const errors = errorsOf(source);
-      expect(errors).toHaveLength(1);
-      expect(errors[0]?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
-      expect(errors[0]?.message).toBe(
-        `Parameter 'mode' of WORD_COUNT must be one of "whitespace", "letters", "locale", "pattern"; got "whitespce"`,
-      );
-      expect(errors[0]?.path).toStrictEqual(['call', 'EACH/v1', 'arg', '3']);
-      expect(source.slice(errors[0]?.span?.start, errors[0]?.span?.end)).toBe('"whitespce"');
-
-      const twoDeep = 'EACH(value; "EACH"; "WORD_COUNT"; value)';
-      const [notLiteral, ...others] = errorsOf(twoDeep);
-      expect(others).toStrictEqual([]);
-      expect(notLiteral?.code).toBe(FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE);
-      expect(notLiteral?.message).toBe(`Parameter 'mode' of WORD_COUNT must be a string literal`);
-      expect(twoDeep.slice(notLiteral?.span?.start, notLiteral?.span?.end)).toBe('value');
-
-      const filled = errorsOf('EACH(value; "REDUCE"; LIST("a"); "TAG")');
-      expect(filled.map((e) => e.message)).toStrictEqual([
-        `Parameter 'modes' of TAG must be a string literal; REDUCE passes it a value at run time`,
-      ]);
-
-      for (const misspelt of [
-        'EACH(value; "EACH"; "MARKDOWN_BLOCKS"; "heding-2")',
-        'EACH(value; "EACH"; "PLAIN_TEXT"; "htm")',
-        'EACH(value; "EACH"; "SENTENCES"; "punctuaton")',
-        'EACH(value; "EACH"; "LEADING_WORDS"; 2; "whitspace")',
-        'EACH(value; "EACH"; "TAG"; "a"; "zzz")',
-        'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; "whitespce")',
-        'EACH(value; "EACH"; "EACH"; "EACH"; "WORD_COUNT"; "whitespce")',
-        'EACH(value; "FILTER"; "IS_MODE"; "uper")',
-        'EACH(value; "FILTER_PROPERTY"; "p"; "IS_MODE"; "uper")',
-        'EACH(value; "FILTER_BY"; LIST("x"); "IS_MODE"; "uper")',
-        'COUNT(FLAT(EACH(value; "EACH"; "WORD_COUNT"; "whitespce")))',
-      ]) {
-        expect(codesOf(misspelt), misspelt).toStrictEqual([
-          FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
-        ]);
-      }
-      // A non-literal reaching an enumerated parameter, however deep, is refused.
-      expect(codesOf('EACH(value; "EACH"; "EACH"; "WORD_COUNT"; value)')).toStrictEqual([
-        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
-      ]);
-      // A non-literal reaching a value-less literal-only parameter, or naming a nested callable,
-      // keeps 1.0.0 behaviour and compiles.
-      for (const compiles of [
-        'EACH(value; "EACH"; value; "whitespace")',
-        'EACH(value; "EACH"; "SORT_BY_PROPERTY"; value)',
-        'EACH(value; "EACH"; "WORD_COUNT"; "whitespace")',
-        'EACH(value; "EACH"; "EACH"; "WORD_COUNT"; "letters")',
-        'EACH(value; "FILTER"; "IS_MODE"; "upper")',
-        'EACH(value; "EACH"; "SORT_BY_PROPERTY"; "name")',
-      ]) {
-        expect(codesOf(compiles), compiles).toStrictEqual([]);
-      }
     });
   });
 });

@@ -30,8 +30,6 @@ describe('empty values', () => {
       'FIRST_CONTAINED(value; LIST("a"))',
       'CONTAINS_ANY(value; LIST("a"))',
       'MISSING_FROM(LIST("a"); value)',
-      'PLAIN_TEXT(value; "html")',
-      'MARKDOWN_BLOCKS(value; "paragraph")',
     ]) {
       expect(await answer(source, []), source).toStrictEqual(TYPE);
       expect(await answer(source, null), source).toStrictEqual(NULL);

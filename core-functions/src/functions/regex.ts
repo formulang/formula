@@ -1,8 +1,4 @@
-import type {
-  BaseFunctionConfig,
-  FormulaExecutionContext,
-  FormulaLimits,
-} from '@formulang/definitions';
+import type { BaseFunctionConfig, FormulaExecutionContext } from '@formulang/definitions';
 import {
   FormulaErrorCodes,
   FormulaRuntimeError,
@@ -14,8 +10,7 @@ import {
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
 import { asText, assumedTextLength, isEmptyValue } from './helpers';
 
-export type RegexCompileFailure =
-  'invalid_flags' | 'backreferences' | 'lookbehind' | 'invalid_pattern';
+type RegexCompileFailure = 'invalid_flags' | 'backreferences' | 'lookbehind' | 'invalid_pattern';
 
 function isProbablySafeRegex(pattern: string): boolean {
   // Conservative heuristics to reduce ReDoS risk.
@@ -33,25 +28,18 @@ function parseSlashRegex(patternRaw: string): { source: string; flags: string } 
   return { source: patternRaw, flags: '' };
 }
 
-/**
- * Compiles an author-supplied regular expression under the safety rules every regex built-in
- * shares: the text and pattern lengths are bounded by `limits` (security errors), nested
- * quantifiers are refused (`REGEX_UNSAFE`), and flags outside `allowedFlags`, backreferences,
- * lookbehind and invalid patterns come back as a `failure` for the caller to report.
- *
- * `allowedFlags` is tested against the flags the author wrote; `forceGlobal` then adds `g`.
- */
-export function compileSafeRegex(args: {
+function compileSafeRegex(args: {
   text: string;
   patternRaw: string;
-  limits: FormulaLimits;
+  ctx: FormulaExecutionContext;
   allowSlashSyntax: boolean;
   flagsFromCall?: string;
   allowedFlags: RegExp;
   forceGlobal?: boolean;
 }): { re: RegExp | null; failure?: RegexCompileFailure } {
-  const { text, patternRaw, limits } = args;
+  const { text, patternRaw, ctx } = args;
 
+  const limits = ctx.limits;
   if (text.length > limits.maxRegexTextLength) {
     throw new FormulaRuntimeError(
       FormulaErrorCodes.REGEX_INPUT_TOO_LONG,
@@ -72,10 +60,10 @@ export function compileSafeRegex(args: {
     : { source: patternRaw, flags: '' };
   const pattern = parts.source;
 
-  const authoredFlags = args.flagsFromCall ?? parts.flags;
-  if (!args.allowedFlags.test(authoredFlags)) return { re: null, failure: 'invalid_flags' };
-  const flags =
-    args.forceGlobal && !authoredFlags.includes('g') ? `${authoredFlags}g` : authoredFlags;
+  let flags = args.flagsFromCall ?? parts.flags;
+  if (args.forceGlobal && !flags.includes('g')) flags = `${flags}g`;
+
+  if (!args.allowedFlags.test(flags)) return { re: null, failure: 'invalid_flags' };
   if (/\\[1-9]/.test(pattern)) return { re: null, failure: 'backreferences' };
   if (/(\(\?<=|\(\?<!)/.test(pattern)) return { re: null, failure: 'lookbehind' };
 
@@ -137,7 +125,7 @@ export class MatchExpressionImplementation extends AbstractEagerBatchImplementat
     const { re, failure } = compileSafeRegex({
       text,
       patternRaw: pattern,
-      limits: ctx.limits,
+      ctx,
       allowSlashSyntax: false,
       flagsFromCall: flagsRaw ?? '',
       allowedFlags: /^[imsu]*$/,
@@ -186,7 +174,7 @@ export class RegexExtractImplementation extends AbstractEagerBatchImplementation
     const { re } = compileSafeRegex({
       text,
       patternRaw: pattern,
-      limits: ctx.limits,
+      ctx,
       allowSlashSyntax: true,
       allowedFlags: /^[gimsu]*$/,
     });
@@ -218,7 +206,7 @@ export class RegexReplaceImplementation extends AbstractEagerBatchImplementation
     const { re } = compileSafeRegex({
       text,
       patternRaw: pattern,
-      limits: ctx.limits,
+      ctx,
       allowSlashSyntax: true,
       allowedFlags: /^[gimsu]*$/,
       forceGlobal: true,

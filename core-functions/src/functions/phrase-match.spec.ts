@@ -266,10 +266,10 @@ describe('Phrase matching', () => {
       expect(await errorCodes('CONTAINS_ANY("abc"; LIST("a"); "words")')).toStrictEqual([
         FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
       ]);
-      // Also when EACH passes the mode on.
-      expect(
-        await errorCodes('EACH(LIST("a b"); "FIRST_CONTAINED"; LIST("a"); "wrd")'),
-      ).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
+      // A mode EACH passes on is checked when the call runs: the item is null.
+      expect(await evalOk('EACH(LIST("a b"); "FIRST_CONTAINED"; LIST("a"); "wrd")')).toStrictEqual([
+        null,
+      ]);
     });
 
     it('maps over a list of texts with EACH', async () => {

@@ -217,10 +217,10 @@ describe('builtins', () => {
     expect(opening.res.value).toBe('Wir helfen');
   });
 
-  it('checks phrases and headings of a markdown document variable', async () => {
-    const document = ['## 1. Erstens', 'Kennst du das?', '## 2. Zweitens', '- Punkt'].join('\n');
+  it('checks the phrases of a document variable', async () => {
+    const document = ['1. Erstens', 'Kennst du das?', '2. Zweitens', 'Punkt'].join('\n');
     const missing = await evalFormula(
-      'MISSING_FROM(LIST("1. Erstens"; "3. Drittens"); JOIN(MARKDOWN_BLOCKS(value; "heading-2"); " | "))',
+      'MISSING_FROM(LIST("1. Erstens"; "3. Drittens"); JOIN(LINES(value); " | "))',
       { value: document },
       FormulaTypes.text(true),
     );
@@ -228,7 +228,7 @@ describe('builtins', () => {
     expect(missing.res.value).toStrictEqual(['3. Drittens']);
 
     const phrase = await evalFormula(
-      'FIRST_CONTAINED(LOWER(PLAIN_TEXT(value; "markdown")); LIST("oder?"; "kennst du das?"))',
+      'FIRST_CONTAINED(LOWER(value); LIST("oder?"; "kennst du das?"))',
       { value: document },
       FormulaTypes.text(true),
     );

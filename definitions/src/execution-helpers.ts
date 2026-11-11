@@ -116,13 +116,10 @@ export function makeOkUnknown(
 }
 
 /**
- * The output of one call that the runner answers through its cache, read from what the
- * implementation gives for it: that output, or, where it gives no output, the value `null`. An
- * answer counts as no output when it is falsy (`undefined`, `null`, `false`, `0`, `""` or `NaN`),
- * as 1.0.0 read it on that path. The runner reads such a call with this function; an output that
- * is not ok stays as it is, for the runner to read as a failed call's. On its other paths the
- * runner reads an answer that is no output as a failed call (the execution context's `readCall`
- * gives both readings to an implementation).
+ * How the runner reads an answer on its cached path: the output as given, or an ok `null` when
+ * the implementation gave no output (any falsy answer).
+ *
+ * @experimental May change in a minor release.
  */
 export function readCallOutput(
   name: string,

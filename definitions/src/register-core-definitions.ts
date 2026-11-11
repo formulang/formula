@@ -1425,15 +1425,15 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
   // objects, so no two definitions share a mutable `literalValues` array.
   const wordModeParam = (): FunctionParamDefinition => ({
     name: 'mode',
-    description: 'How words are found: "whitespace" (default), "letters", "locale" or "pattern".',
+    description: 'How words are found: "whitespace" (default), "letters" or "locale".',
     type: FormulaTypes.text(false),
     optional: true,
     literalOnly: true,
-    literalValues: ['whitespace', 'letters', 'locale', 'pattern'],
+    literalValues: ['whitespace', 'letters', 'locale'],
   });
   const wordOptionParam = (): FunctionParamDefinition => ({
     name: 'option',
-    description: 'The BCP 47 language tag in "locale" mode, the token pattern in "pattern" mode.',
+    description: 'The BCP 47 language tag in "locale" mode.',
     type: FormulaTypes.text(true),
     optional: true,
   });
@@ -1531,7 +1531,7 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
     purity: 'pure',
   });
 
-  // Phrases and markup.
+  // Phrases.
   const phraseParams = (): FunctionParamDefinition[] => [
     { name: 'text', type: FormulaTypes.text(true) },
     {
@@ -1590,57 +1590,6 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
         optional: true,
         literalOnly: true,
         literalValues: ['whitespace', 'exact', 'loose'],
-      },
-    ],
-    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
-    purity: 'pure',
-  });
-
-  registry.registerFunction({
-    signatureId: BuiltinSignatureIds.PLAIN_TEXT,
-    name: 'PLAIN_TEXT',
-    category: 'core',
-    description: 'The text of HTML or markdown markup, one line per block.',
-    params: [
-      { name: 'markup', type: FormulaTypes.text(true) },
-      {
-        name: 'format',
-        description: 'The markup language: "html" or "markdown".',
-        type: FormulaTypes.text(false),
-        literalOnly: true,
-        literalValues: ['html', 'markdown'],
-      },
-    ],
-    returnType: FormulaTypes.text(true),
-    purity: 'pure',
-  });
-
-  registry.registerFunction({
-    signatureId: BuiltinSignatureIds.MARKDOWN_BLOCKS,
-    name: 'MARKDOWN_BLOCKS',
-    category: 'core',
-    description: 'The text of the markdown blocks of one kind, in order.',
-    params: [
-      { name: 'text', type: FormulaTypes.text(true) },
-      {
-        name: 'kind',
-        description:
-          'The block kind: "heading", "heading-1" to "heading-6", "list-item", "table-row", "paragraph" or "code".',
-        type: FormulaTypes.text(false),
-        literalOnly: true,
-        literalValues: [
-          'heading',
-          'heading-1',
-          'heading-2',
-          'heading-3',
-          'heading-4',
-          'heading-5',
-          'heading-6',
-          'list-item',
-          'table-row',
-          'paragraph',
-          'code',
-        ],
       },
     ],
     returnType: FormulaTypes.list(FormulaTypes.text(false), true),

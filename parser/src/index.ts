@@ -1,5 +1,4 @@
 import type {
-  CallableReferenceKind,
   FormulaLimits,
   FormulaRegistry,
   FormulaRequirements,
@@ -10,8 +9,7 @@ import type {
   VariableOnlyRegistry,
 } from '@formulang/definitions';
 import {
-  argumentFits,
-  argumentSelects,
+  admittedValues,
   BuiltinSignatureIds,
   emptyRequirements,
   formatType,
@@ -24,27 +22,13 @@ import {
   resolveFormulaLimits,
   stripNullability,
 } from '@formulang/definitions';
-import { invocationOf, invokedArguments, RESULTS_BY_NAME } from './callable-invocations';
 import { isDenylistedPropertyName } from './denylist';
-import {
-  admittedLists,
-  callableCandidates,
-  callWalk,
-  readLiteralArgument,
-  referenceExists,
-  refusalError,
-  runWalk,
-  seedCallable,
-  type AdmittedLists,
-  type CallWalk,
-} from './enumerated-literals';
 import { assignStableNodeIds } from './node-id';
 import { TokenStream } from './pratt';
 import type { FormulaSyntax } from './syntax';
 import { resolveFormulaSyntax } from './syntax';
 import { tokenize } from './tokenizer';
 import type { Token } from './tokens';
-import { chargeWork } from './work-trace';
 
 export { isDenylistedPropertyName } from './denylist';
 export { DEFAULT_FORMULA_SYNTAX, resolveFormulaSyntax } from './syntax';
@@ -155,13 +139,7 @@ export function parseFormula(source: string, options: ParseFormulaOptions): Type
     }
   }
 
-  const returnType = bindTypesAndRequirements(
-    root,
-    options.registry,
-    requirements,
-    errors,
-    parseScope(errors),
-  );
+  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors);
 
   // Requirements: variablesRead is based on full accessor paths, not just root variables.
   // NOTE: we compute this separately so property/wildcard chains can be collapsed into
@@ -275,13 +253,7 @@ export function parseVariableReference(
     }
   }
 
-  const returnType = bindTypesAndRequirements(
-    root,
-    options.registry,
-    requirements,
-    errors,
-    parseScope(errors),
-  );
+  const returnType = bindTypesAndRequirements(root, options.registry, requirements, errors);
   requirements.variablesRead = collectVariablesReadPaths(root);
   requirements.functionsUsed = uniqStable(requirements.functionsUsed);
   requirements.externalData = uniqExternalData(requirements.externalData);
@@ -732,47 +704,11 @@ function parsePrimary(
   };
 }
 
-/**
- * What one parse reads and keeps while it binds the tree: the admitted values of the parameters
- * it checks literals against, each list read on its first check (`AdmittedLists`), and where the
- * NO_MATCHING_OVERLOAD errors among its errors start, indexed as they are reported, each error
- * once (`overloadMissAt`).
- */
-type ParseScope = {
-  readonly lists: AdmittedLists;
-  readonly errors: TypedRule['errors'];
-  readonly missStarts: Set<number | undefined>;
-  /** How many of `errors`, from the first, `missStarts` has indexed. */
-  indexed: number;
-};
-
-/** The scope of a parse that reports into `errors`. */
-function parseScope(errors: TypedRule['errors']): ParseScope {
-  return { lists: admittedLists(), errors, missStarts: new Set(), indexed: 0 };
-}
-
-/**
- * Whether a NO_MATCHING_OVERLOAD error starting at `start` is among the parse's errors, as 1.0.0
- * asked by reading every error: the errors reported since the last question are indexed first,
- * so every error is read once, however many calls ask.
- */
-function overloadMissAt(scope: ParseScope, start: number | undefined): boolean {
-  for (; scope.indexed < scope.errors.length; scope.indexed++) {
-    chargeWork('errors', 1);
-    const error = scope.errors[scope.indexed];
-    if (error?.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD) {
-      scope.missStarts.add(error.span?.start);
-    }
-  }
-  return scope.missStarts.has(start);
-}
-
 function bindTypesAndRequirements(
   node: RuleNode,
   registry: RegistryLike,
   requirements: FormulaRequirements,
   errors: TypedRule['errors'],
-  scope: ParseScope,
 ): FormulaType {
   switch (node.kind) {
     case 'literal': {
@@ -817,7 +753,7 @@ function bindTypesAndRequirements(
       return node.type;
     }
     case 'property': {
-      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors, scope);
+      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors);
       const base = stripNullability(objType);
       let out: FormulaType = FormulaTypes.any(true);
 
@@ -877,7 +813,7 @@ function bindTypesAndRequirements(
       return out;
     }
     case 'wildcard': {
-      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors, scope);
+      const objType = bindTypesAndRequirements(node.object, registry, requirements, errors);
       const base = stripNullability(objType);
       if (base.kind !== 'list' && base.kind !== 'template') {
         errors.push(
@@ -944,7 +880,7 @@ function bindTypesAndRequirements(
         return node.type;
       }
       const argTypes = node.args.map((a) =>
-        bindTypesAndRequirements(a, registry, requirements, errors, scope),
+        bindTypesAndRequirements(a, registry, requirements, errors),
       );
       // If already bound (operator call), just use signature
       let def = node.signatureId ? registry.getFunction(node.signatureId) : undefined;
@@ -982,7 +918,10 @@ function bindTypesAndRequirements(
       if (!def) {
         // Distinguish truly unknown functions from known functions with bad argument types.
         // If NO_MATCHING_OVERLOAD was already reported, don't also report UNKNOWN_FUNCTION.
-        const alreadyReported = overloadMissAt(scope, node.span?.start);
+        const alreadyReported = errors.some(
+          (e) =>
+            e.span?.start === node.span?.start && e.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+        );
         if (!alreadyReported) {
           errors.push(
             makeFormulaError({
@@ -1003,17 +942,18 @@ function bindTypesAndRequirements(
       const params = def.params;
       const lastParam = params[params.length - 1];
       const variadic = lastParam?.variadic === true;
-      chargeWork('arguments', node.args.length);
       for (let i = 0; i < node.args.length; i++) {
         const param = i < params.length ? params[i] : variadic ? lastParam : undefined;
         if (!param) continue;
 
         const argType = argTypes[i] ?? FormulaTypes.any(true);
         const argNoNull = stripNullability(argType);
+        const paramNoNull = stripNullability(param.type);
 
-        // Any argument fits an Any or a template parameter (`argumentFits`, the rule registration
-        // reads for a string literal at a parameter that lists admitted values).
-        if (!argumentFits(argType, param.type)) {
+        // Skip validation for Any/template parameters.
+        if (paramNoNull.kind === 'any' || paramNoNull.kind === 'template') continue;
+
+        if (!isAssignable(argNoNull, paramNoNull)) {
           // Prefer the more specific NULL_NOT_ALLOWED code when the arg is literally null.
           const code =
             argNoNull.kind === 'null' && param.type.nullable !== true
@@ -1038,107 +978,158 @@ function bindTypesAndRequirements(
 
       const baseReturnType = instantiateGenericReturnType(def, argTypes);
 
-      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)) at the positions
-      // `literalCheckAt` answers, the rule the walk and registration read too: each literal-only
-      // parameter at its own position and, past the list, a variadic literal-only parameter that
-      // lists its admitted values; without that list it keeps 1.0.0 behaviour, where only the first
-      // argument it takes was checked. Every callable parameter of the call seeds one walk through
-      // the callables it names, which runs once, after the loop, breadth first across all of them.
-      let walk: CallWalk | undefined;
-      let callables: CallCallables | undefined;
-      chargeWork('arguments', Math.max(def.params.length, node.args.length));
-      for (let i = 0; i < Math.max(def.params.length, node.args.length); i++) {
-        const check = literalCheckAt(def.params, i, scope.lists.list(def));
-        if (check === undefined) continue;
-        const p = check.param;
+      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)). A variadic literal-only
+      // parameter is checked at every argument when it lists admitted values, otherwise at its
+      // first argument only (literalCheckAt).
+      const literalPositions = Math.max(def.params.length, node.args.length);
+      for (let i = 0; i < literalPositions; i++) {
+        const p = literalCheckAt(def.params, i, admittedValues)?.param;
+        if (!p) continue;
         const arg = node.args[i];
-        // Optional literal-only parameters may be omitted.
-        if (!arg && p.optional === true) continue;
-        const literal = readLiteralArgument(arg, scope.lists.written(def, p), {
-          span: arg?.span ?? node.span,
-          path: ['call', def.signatureId, 'arg', String(i)],
-        });
-        if (literal.kind === 'not a literal') {
-          errors.push(literal.error);
+        if (!arg) {
+          // Optional literal-only parameters may be omitted.
+          if (p.optional === true) continue;
+        }
+        if (!arg || arg.kind !== 'literal' || typeof arg.predictableValue !== 'string') {
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+              message: `Parameter '${p.name}' must be a string literal`,
+              span: arg?.span ?? node.span,
+            }),
+          );
           continue;
         }
-        if (literal.kind === 'refused') {
-          errors.push(refusalError(literal.refusal));
+
+        // Enumerated literals: a parameter that lists its admitted values takes only those. A mode
+        // that reaches a function another way, such as through a higher-order call, is checked by
+        // the function when it runs.
+        const admitted = admittedValues(p);
+        if (admitted !== undefined && !admitted.includes(arg.predictableValue)) {
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+              message: `Parameter '${p.name}' must be one of ${admitted
+                .map((value) => JSON.stringify(value))
+                .join(', ')}; got ${JSON.stringify(arg.predictableValue)}`,
+              span: arg.span,
+              path: ['call', def.signatureId, 'arg', String(i)],
+            }),
+          );
           continue;
         }
-        const ref = literal.value;
 
         const paramBase = stripNullability(p.type);
         if (paramBase.kind === 'callable') {
-          if (!referenceExists(registry, paramBase.reference, ref)) {
+          const ref = arg.predictableValue;
+          const ok =
+            paramBase.reference === 'function'
+              ? registry.listFunctionsByName(ref).length > 0
+              : paramBase.reference === 'operator'
+                ? !!registry.getOperator(ref)
+                : registry.listFunctionsByName(ref).length > 0 || !!registry.getOperator(ref);
+
+          if (!ok) {
             errors.push(
               makeFormulaError({
                 kind: 'type',
                 code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
                 message: `Unknown function/operator reference: ${ref}`,
-                span: literal.span,
+                span: arg.span,
               }),
             );
             continue;
           }
 
-          // Strict callable validation for the higher-order functions whose invocation the parser
-          // knows (`invocationOf`: the table's entry for the definition's name):
-          // arity, overload, return type, and the referenced function's literal-only rules for
-          // every argument the invocation passes it. What the call passes its callables, and the
-          // templates its own arguments bind, are worked out once per call (`callCallables`).
-          callables ??= callCallables(def, argTypes);
-          const outerBindings = new Map(callables.bindings);
+          // Strict callable signature validation (when the callable type declares param/return types).
+          // This is only implemented for core higher-order functions that invoke the referenced
+          // callable in a known way.
+          const defName = def.name.toUpperCase();
+          const outerBindings = inferGenericBindingsForCall(def, argTypes);
           const expectedCallable = substituteTemplates(paramBase, outerBindings);
-          const invokedCount = callables.invokedCount;
 
-          if (invokedCount !== undefined) {
+          let invokedArgTypes: FormulaType[] | null = null;
+          // TODO: This should be generalized if we add more higher-order functions. Functions must declare how they invoke their callable parameters.
+          if (defName === 'EACH') {
+            const targetType = stripNullability(argTypes[0] ?? FormulaTypes.any(true));
+            const elementType = targetType.kind === 'list' ? targetType.of : FormulaTypes.any(true);
+            invokedArgTypes = [elementType, ...argTypes.slice(2)];
+          } else if (defName === 'FILTER') {
+            const targetType = stripNullability(argTypes[0] ?? FormulaTypes.any(true));
+            const elementType = targetType.kind === 'list' ? targetType.of : FormulaTypes.any(true);
+            invokedArgTypes = [elementType];
+            if (node.args[2]) invokedArgTypes.push(argTypes[2] ?? FormulaTypes.any(true));
+          } else if (defName === 'FILTER_PROPERTY') {
+            invokedArgTypes = [FormulaTypes.any(true)];
+            if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
+          } else if (defName === 'REDUCE') {
+            const accType = argTypes[0] ?? FormulaTypes.any(true);
+            const listType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
+            const elementType = listType.kind === 'list' ? listType.of : FormulaTypes.any(true);
+            invokedArgTypes = [accType, elementType];
+          } else if (defName === 'FILTER_BY') {
+            // FILTER_BY(list, keys, operator, operatorValue?) calls operator(key[, operatorValue]).
+            const keysType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
+            const keyType = keysType.kind === 'list' ? keysType.of : FormulaTypes.any(true);
+            invokedArgTypes = [keyType];
+            if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
+          }
+
+          if (invokedArgTypes) {
             if (
               expectedCallable.kind === 'callable' &&
               expectedCallable.minArity !== undefined &&
-              invokedCount < expectedCallable.minArity
+              invokedArgTypes.length < expectedCallable.minArity
             ) {
               errors.push(
                 makeFormulaError({
                   kind: 'type',
                   code: FormulaErrorCodes.NO_MATCHING_OVERLOAD,
                   message: `Callable '${ref}' must accept at least ${expectedCallable.minArity} arguments`,
-                  span: literal.span,
+                  span: arg.span,
                 }),
               );
             }
             if (
               expectedCallable.kind === 'callable' &&
               expectedCallable.maxArity !== undefined &&
-              invokedCount > expectedCallable.maxArity
+              invokedArgTypes.length > expectedCallable.maxArity
             ) {
               errors.push(
                 makeFormulaError({
                   kind: 'type',
                   code: FormulaErrorCodes.NO_MATCHING_OVERLOAD,
                   message: `Callable '${ref}' must accept no more than ${expectedCallable.maxArity} arguments`,
-                  span: literal.span,
+                  span: arg.span,
                 }),
               );
             }
 
-            // The walk checks what the callable receives whether or not one of its overloads takes
-            // the arguments, as it does at every level below this one, where no overload is chosen:
-            // the literal rule does not wait on the choice of an overload.
-            walk ??= callWalk(registry, errors, scope.lists, {
-              signatureId: def.signatureId,
-              args: node.args,
-              span: node.span,
-            });
-            seedCallable(walk, {
-              host: def,
-              reference: paramBase.reference,
-              name: ref,
-              index: i,
-              span: literal.span,
-            });
+            const candidates: FunctionDefinition[] = [];
+            const op = registry.getOperator(ref);
+            if (
+              op &&
+              (paramBase.reference === 'operator' || paramBase.reference === 'function_or_operator')
+            ) {
+              const opDef = registry.getFunction(op.functionSignatureId);
+              if (opDef) candidates.push(opDef);
+            }
+            if (
+              paramBase.reference === 'function' ||
+              paramBase.reference === 'function_or_operator'
+            ) {
+              candidates.push(...registry.listFunctionsByName(ref));
+            }
 
-            const chosen = chosenCallable(callables, registry, paramBase.reference, ref);
+            const chosen =
+              candidates.length > 0
+                ? chooseOverload(
+                    candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
+                    invokedArgTypes,
+                  )
+                : null;
 
             if (!chosen) {
               errors.push(
@@ -1146,82 +1137,80 @@ function bindTypesAndRequirements(
                   kind: 'type',
                   code: FormulaErrorCodes.NO_MATCHING_OVERLOAD,
                   message: `No matching overload for callable reference: ${ref}`,
-                  span: literal.span,
+                  span: arg.span,
                 }),
               );
-            } else {
-              if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
-                const expectedReturn = expectedCallable.returnType;
-                const chosenReturn = chosen.returnType ?? FormulaTypes.any(true);
+            } else if (expectedCallable.kind === 'callable' && expectedCallable.returnType) {
+              const expectedReturn = expectedCallable.returnType;
+              const chosenReturn = chosen.returnType ?? FormulaTypes.any(true);
 
-                if (expectedReturn.kind === 'template') {
-                  // Bind unbound template return (e.g., EACH<T,R> binds R from the referenced callable).
-                  const existing = outerBindings.get(expectedReturn.name);
-                  if (!existing) {
-                    outerBindings.set(expectedReturn.name, stripNullability(chosenReturn));
-                  }
-                } else {
-                  const okReturn = isAssignable(
-                    stripNullability(chosenReturn),
-                    stripNullability(expectedReturn),
+              if (expectedReturn.kind === 'template') {
+                // Bind unbound template return (e.g., EACH<T,R> binds R from the referenced callable).
+                const existing = outerBindings.get(expectedReturn.name);
+                if (!existing) {
+                  outerBindings.set(expectedReturn.name, stripNullability(chosenReturn));
+                }
+              } else {
+                const okReturn = isAssignable(
+                  stripNullability(chosenReturn),
+                  stripNullability(expectedReturn),
+                );
+                if (!okReturn) {
+                  errors.push(
+                    makeFormulaError({
+                      kind: 'type',
+                      code: FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
+                      message: `Callable '${ref}' must return ${formatType(expectedReturn)} but returns ${formatType(chosenReturn)}`,
+                      span: arg.span,
+                    }),
                   );
-                  if (!okReturn) {
-                    errors.push(
-                      makeFormulaError({
-                        kind: 'type',
-                        code: FormulaErrorCodes.ARGUMENT_TYPE_MISMATCH,
-                        message: `Callable '${ref}' must return ${formatType(expectedReturn)} but returns ${formatType(chosenReturn)}`,
-                        span: literal.span,
-                      }),
-                    );
-                  }
                 }
               }
             }
           }
         }
 
-        if (p.reference === 'function' && !referenceExists(registry, p.reference, ref)) {
-          errors.push(
-            makeFormulaError({
-              kind: 'type',
-              code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-              message: `Unknown function reference: ${ref}`,
-              span: literal.span,
-            }),
-          );
+        if (p.reference === 'function') {
+          const ref = arg.predictableValue;
+          if (registry.listFunctionsByName(ref).length === 0) {
+            errors.push(
+              makeFormulaError({
+                kind: 'type',
+                code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+                message: `Unknown function reference: ${ref}`,
+                span: arg.span,
+              }),
+            );
+          }
         }
-        if (p.reference === 'operator' && !referenceExists(registry, p.reference, ref)) {
-          errors.push(
-            makeFormulaError({
-              kind: 'type',
-              code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-              message: `Unknown operator reference: ${ref}`,
-              span: literal.span,
-            }),
-          );
+        if (p.reference === 'operator') {
+          const ref = arg.predictableValue;
+          if (!registry.getOperator(ref)) {
+            errors.push(
+              makeFormulaError({
+                kind: 'type',
+                code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+                message: `Unknown operator reference: ${ref}`,
+                span: arg.span,
+              }),
+            );
+          }
         }
-        if (
-          p.reference === 'function_or_operator' &&
-          !referenceExists(registry, p.reference, ref)
-        ) {
-          errors.push(
-            makeFormulaError({
-              kind: 'type',
-              code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
-              message: `Unknown function/operator reference: ${ref}`,
-              span: literal.span,
-            }),
-          );
+        if (p.reference === 'function_or_operator') {
+          const ref = arg.predictableValue;
+          const ok = registry.listFunctionsByName(ref).length > 0 || !!registry.getOperator(ref);
+          if (!ok) {
+            errors.push(
+              makeFormulaError({
+                kind: 'type',
+                code: FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+                message: `Unknown function/operator reference: ${ref}`,
+                span: arg.span,
+              }),
+            );
+          }
         }
       }
-
-      if (walk !== undefined) runWalk(walk);
-
-      // Result types refined by name, as 1.0.0 refines them; the higher-order functions' rules and
-      // what their callables receive come from the invocation table.
-      const resultRule = RESULTS_BY_NAME.get(def.name.toUpperCase());
-      const tableEntry = invocationOf(def);
 
       // Special-case: LIST() should be type-consistent (spec: values must have same type).
       // We infer element type from the first concrete (non-null, non-any) argument.
@@ -1259,7 +1248,10 @@ function bindTypesAndRequirements(
         } else {
           node.type = def.returnType;
         }
-      } else if (resultRule === 'items') {
+      } else if (
+        def.name.toUpperCase() === 'FILTER' ||
+        def.name.toUpperCase() === 'FILTER_PROPERTY'
+      ) {
         const targetType = argTypes[0];
         const stripped = stripNullability(targetType);
         if (stripped.kind === 'list') {
@@ -1267,7 +1259,7 @@ function bindTypesAndRequirements(
         } else {
           node.type = def.returnType;
         }
-      } else if (resultRule === 'results' && tableEntry !== undefined) {
+      } else if (def.name.toUpperCase() === 'EACH') {
         const targetType = argTypes[0];
         const opArg = node.args[1];
 
@@ -1285,11 +1277,7 @@ function bindTypesAndRequirements(
           } else {
             const candidates = registry.listFunctionsByName(opName);
             if (candidates.length > 0) {
-              // What the table's entry passes the callable: for EACH, the item and every argument
-              // after the callable.
-              const opArgTypes = invokedArguments(tableEntry, argTypes).map(
-                (invoked) => invoked.type,
-              );
+              const opArgTypes: FormulaType[] = [stripped.of, ...argTypes.slice(2)];
               chosenOp =
                 chooseOverload(
                   candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
@@ -1407,7 +1395,6 @@ function inferGenericBindingsForCall(
     return p?.type ?? null;
   };
 
-  chargeWork('arguments', argTypes.length);
   for (let i = 0; i < argTypes.length; i++) {
     const p = paramAt(i);
     if (!p) continue;
@@ -1505,10 +1492,9 @@ function chooseOverload(
       returnType: FormulaType;
     } & any
   >,
-  argTypes: readonly FormulaType[],
+  argTypes: FormulaType[],
 ) {
   for (const def of candidates) {
-    chargeWork('arguments', argTypes.length);
     const requiredCount = def.params.filter((p: any) => !p.optional).length;
     if (argTypes.length < requiredCount) continue;
 
@@ -1527,9 +1513,10 @@ function chooseOverload(
         ok = false;
         break;
       }
-      // Nullability aside, a template's constraint included (`argumentSelects`, which registration
-      // reads for a string literal at a parameter that lists admitted values).
-      if (!argumentSelects(arg, param.type)) {
+      // Null overlap rule: allow nullable arg even if param isn't nullable.
+      const argNoNull = stripNullability(arg);
+      const paramNoNull = stripNullability(param.type);
+      if (!isAssignable(argNoNull, paramNoNull) && param.type.kind !== 'any') {
         ok = false;
         break;
       }
@@ -1537,61 +1524,6 @@ function chooseOverload(
     if (ok) return def;
   }
   return null;
-}
-
-/**
- * What the callable parameters of one call share while the parser validates them: how many
- * arguments the call passes its callables (undefined where the parser does not know its
- * invocation) and their types, which only `invoked` reads, charging every type it reads to the
- * work record a spec observes; the templates the call's own arguments bind; and the overload each
- * name, of each reference kind, chooses for those arguments. The first callable parameter of the
- * call works them out and every other one reads them, so validating all of them takes work linear
- * in the call, however many callable parameters it has.
- */
-type CallCallables = {
-  readonly invokedCount: number | undefined;
-  readonly invoked: () => readonly FormulaType[];
-  readonly bindings: ReadonlyMap<string, FormulaType>;
-  readonly chosen: Map<string, ReturnType<typeof chooseOverload>>;
-};
-
-function callCallables(def: FunctionDefinition, argTypes: FormulaType[]): CallCallables {
-  const invocation = invocationOf(def);
-  const types =
-    invocation === undefined
-      ? undefined
-      : invokedArguments(invocation, argTypes).map((invokedArg) => invokedArg.type);
-  return {
-    invokedCount: types?.length,
-    invoked: () => {
-      chargeWork('arguments', types?.length ?? 0);
-      return types ?? [];
-    },
-    bindings: inferGenericBindingsForCall(def, argTypes),
-    chosen: new Map(),
-  };
-}
-
-/** The overload `name`, a reference of kind `reference`, chooses for what the call passes it. */
-function chosenCallable(
-  callables: CallCallables,
-  registry: FormulaRegistry,
-  reference: CallableReferenceKind,
-  name: string,
-): ReturnType<typeof chooseOverload> {
-  const key = `${reference}:${name}`;
-  const known = callables.chosen.get(key);
-  if (known !== undefined) return known;
-  const candidates = callableCandidates(registry, reference, name);
-  const chosen =
-    candidates.length > 0 && callables.invokedCount !== undefined
-      ? chooseOverload(
-          candidates.map((c) => ({ ...c, params: c.params, returnType: c.returnType })),
-          callables.invoked(),
-        )
-      : null;
-  callables.chosen.set(key, chosen);
-  return chosen;
 }
 
 function computeIsStatic(node: RuleNode, registry: RegistryLike): boolean {

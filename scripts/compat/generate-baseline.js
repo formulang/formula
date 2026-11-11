@@ -147,6 +147,14 @@ function storedOutcomes(source, shapes, outcomes) {
   return entry;
 }
 
+/** Writes `value` as JSON formatted by the repository prettier config, so prettier:check passes. */
+async function writeFormattedJson(target, value) {
+  const prettier = require('prettier');
+  const options = (await prettier.resolveConfig(target)) ?? {};
+  const text = await prettier.format(JSON.stringify(value), { ...options, parser: 'json' });
+  fs.writeFileSync(target, text);
+}
+
 async function main() {
   const [checkoutArg, commit] = process.argv.slice(2);
   if (!checkoutArg || !commit) {
@@ -197,7 +205,7 @@ async function main() {
     formulas,
   };
   const target = path.join(__dirname, 'baseline-1.0.0.json');
-  fs.writeFileSync(target, `${JSON.stringify(baseline, null, 2)}\n`);
+  await writeFormattedJson(target, baseline);
   const differing = formulas.filter((f) => f.byShape).length;
   console.log(
     `wrote ${formulas.length} outcomes under ${shapes.length} shapes (${differing} differ by shape) to ${path.relative(process.cwd(), target)}`,

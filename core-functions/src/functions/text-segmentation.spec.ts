@@ -166,9 +166,12 @@ describe('Text segmentation', () => {
     });
 
     it('segments with Intl.Segmenter in locale mode', async () => {
-      expect(await evalOk('WORDS("Kund:innen"; "locale"; "de")')).toStrictEqual(['Kund:innen']);
-      expect(await evalOk('WORD_COUNT("Don\'t"; "locale"; "en")')).toBe(1);
-      expect(await evalOk('WORD_COUNT(value; "locale"; "de")', { value: 'E-Mail-Adressen' })).toBe(
+      // Exact splits depend on the runtime's locale data, so only stable cases are pinned.
+      expect(await evalOk('WORDS("Hallo, Welt!"; "locale"; "de")')).toStrictEqual([
+        'Hallo',
+        'Welt',
+      ]);
+      expect(await evalOk('WORD_COUNT(value; "locale"; "en")', { value: 'one two  three.' })).toBe(
         3,
       );
 
@@ -192,64 +195,6 @@ describe('Text segmentation', () => {
       });
     });
 
-    it('returns every non-empty match in pattern mode', async () => {
-      expect(
-        await evalOk('WORDS(LOWER("Für 50$ – sofort!"); "pattern"; "[A-Za-z0-9$\']+")'),
-      ).toStrictEqual(['f', 'r', '50$', 'sofort']);
-      expect(await evalOk('WORDS("Ab aB ba"; "pattern"; "/ab/i")')).toStrictEqual(['Ab', 'aB']);
-      expect(await evalOk('WORDS("abc"; "pattern"; "x*")')).toStrictEqual([]);
-
-      // `g` is implied, so it is not an admitted flag; other refusals mirror MATCH_EXPRESSION.
-      expect(await warningCodes('WORDS("ab"; "pattern"; "/ab/g")')).toStrictEqual({
-        value: null,
-        codes: ['REGEX'],
-      });
-      expect(await warningCodes('WORDS("ab"; "pattern"; "[a")')).toStrictEqual({
-        value: null,
-        codes: ['REGEX'],
-      });
-      expect(await warningCodes('WORDS("ab"; "pattern")')).toStrictEqual({
-        value: null,
-        codes: ['TYPE'],
-      });
-
-      expect(await errorCodes('WORDS("aaaa"; "pattern"; "(a+)+")')).toContain(
-        FormulaErrorCodes.REGEX_UNSAFE,
-      );
-      expect(
-        await errorCodes('WORD_COUNT(value; "pattern"; "a")', { value: 'a'.repeat(8_001) }),
-      ).toContain(FormulaErrorCodes.REGEX_INPUT_TOO_LONG);
-    });
-
-    it('admits the pattern flags i, m, s and u, and refuses every other flag', async () => {
-      const words = (value: string, pattern: string) =>
-        evalOk(`WORDS(value; "pattern"; "${pattern}")`, { value });
-      expect(await words('a\nB', '/^[a-z]/imsu')).toStrictEqual(['a', 'B']);
-      expect(await words('a\nb', '/^[a-z]/m')).toStrictEqual(['a', 'b']);
-      expect(await words('a\nb', '/^[a-z]/')).toStrictEqual(['a']);
-      expect(await words('a\nb', '/a.b/s')).toStrictEqual(['a\nb']);
-      expect(await words('a\nb', '/a.b/')).toStrictEqual([]);
-      expect(await words('\u{1F600}', '/./u')).toStrictEqual(['\u{1F600}']);
-      expect(await words('\u{1F600}', '/./')).toStrictEqual(['\uD83D', '\uDE00']);
-      for (const flags of ['g', 'y', 'd', 'v', 'x', 'iy']) {
-        expect(await warningCodes(`WORDS("ab"; "pattern"; "/ab/${flags}")`), flags).toStrictEqual({
-          value: null,
-          codes: ['REGEX'],
-        });
-      }
-    });
-
-    it('takes /pattern/flags only with lower-case flags, and any other option as a raw pattern', async () => {
-      const value = 'ab AB /ab/I /ab/i1 a/b';
-      const words = (pattern: string) => evalOk(`WORDS(value; "pattern"; "${pattern}")`, { value });
-      expect(await words('/ab/I')).toStrictEqual(['/ab/I']);
-      expect(await words('/ab/i1')).toStrictEqual(['/ab/i1']);
-      expect(await words('/ab/')).toStrictEqual(['ab', 'ab', 'ab']);
-      expect(await words('/ab/i')).toStrictEqual(['ab', 'AB', 'ab', 'ab']);
-      // Split at the last slash.
-      expect(await words('/a/b/')).toStrictEqual(['a/b']);
-    });
-
     it('bounds the WORDS list but counts past the bound', async () => {
       const value = 'a '.repeat(5_001);
       expect(await errorCodes('WORDS(value)', { value })).toContain(
@@ -259,7 +204,7 @@ describe('Text segmentation', () => {
       expect(await evalOk('COUNT(WORDS(value))', { value: 'a '.repeat(5_000) })).toBe(5_000);
     });
 
-    it('refuses a misspelt mode at parse time and an option outside locale and pattern', async () => {
+    it('refuses a misspelt mode at parse time and an option outside locale mode', async () => {
       expect(await errorCodes('WORD_COUNT(value; "whitespce")', { value: 'a' })).toStrictEqual([
         FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
       ]);
@@ -274,8 +219,7 @@ describe('Text segmentation', () => {
     });
 
     it('answers null with TYPE for an empty option in every mode', async () => {
-      // The empty text is an option: refused outside locale and pattern, an empty tag or pattern
-      // inside them.
+      // The empty text is an option: refused outside locale mode, and an empty tag inside it.
       for (const mode of WORD_SPLIT_MODES) {
         for (const source of [
           `WORDS("a b"; "${mode}"; "")`,
@@ -297,17 +241,19 @@ describe('Text segmentation', () => {
       ).toStrictEqual({ value: null, codes: ['TYPE'] });
     });
 
-    it('refuses a misspelt or non-literal mode passed on by a higher-order call', async () => {
-      // EACH passes its extra arguments to the callable's parameters, whose literal rules hold.
-      expect(
-        await errorCodes('EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")'),
-      ).toStrictEqual([FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED]);
-      expect(await errorCodes('EACH(LIST("a b"); "LEADING_WORDS"; 2; "whitspace")')).toStrictEqual([
-        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+    it('checks a mode a higher-order call passes on when the call runs', async () => {
+      // The parser checks a mode written directly; one EACH passes on is checked by the function,
+      // and a mode it does not list makes that item null.
+      expect(await evalOk('EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")')).toStrictEqual([
+        null,
+        null,
+      ]);
+      expect(await evalOk('EACH(LIST("a b"); "LEADING_WORDS"; 2; "whitspace")')).toStrictEqual([
+        null,
       ]);
       expect(
-        await errorCodes('EACH(LIST("a b"); "WORD_COUNT"; value)', { value: 'letters' }),
-      ).toStrictEqual([FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE]);
+        await evalOk('EACH(LIST("a b"); "WORD_COUNT"; value)', { value: 'letters' }),
+      ).toStrictEqual([2]);
       expect(await evalOk('EACH(LIST("a b"; "c"); "WORD_COUNT"; "letters")')).toStrictEqual([2, 1]);
     });
   });
@@ -350,9 +296,7 @@ describe('Text segmentation', () => {
         'c d',
       ]);
       expect(
-        await evalOk(
-          'LEADING_WORDS(LOWER("Kennst du das? Du willst mehr!"); 3; "pattern"; "[A-Za-z0-9$\']+")',
-        ),
+        await evalOk('LEADING_WORDS(LOWER("Kennst du das? Du willst mehr!"); 3; "letters")'),
       ).toBe('kennst du das');
     });
   });
@@ -636,20 +580,20 @@ describe('Text segmentation', () => {
             .filter((word) => word.length > 0),
         );
       }
-      expect(splitWords('Kund:innen', 'locale', 'de')).toStrictEqual(['Kund:innen']);
-      expect(splitWords('a1 b2', 'pattern', '[a-z]')).toStrictEqual(['a', 'b']);
+      expect(splitWords('Hallo, Welt!', 'locale', 'de')).toStrictEqual(
+        await evalOk('WORDS("Hallo, Welt!"; "locale"; "de")'),
+      );
       expect(() => splitWords('a', 'whitespace', 'de')).toThrow(TypeError);
       expect(() => splitWords('a', 'locale')).toThrow(TypeError);
-      expect(() => splitWords('a', 'pattern', '(a')).toThrow(TypeError);
     });
 
     it('splitWords throws TypeError for a text, mode or option that is not one, and only then', () => {
       let words: string[] = [];
-      expect(() => (words = splitWords('a1 b2', 'pattern', '[a-z]'))).not.toThrow();
-      expect(words).toStrictEqual(['a', 'b']);
+      expect(() => (words = splitWords('a1 b2', 'letters'))).not.toThrow();
+      expect(words).toStrictEqual(['a1', 'b2']);
       expect(() => splitWords(5 as never, 'locale', 'en')).toThrow(TypeError);
       // A String object as the option throws, as a keep entry of splitSentences does.
-      expect(() => splitWords('a1 b2', 'pattern', new String('[a-z]') as never)).toThrow(TypeError);
+      expect(() => splitWords('a1 b2', 'locale', new String('en') as never)).toThrow(TypeError);
       expect(() => splitWords('a', 'nope' as never)).toThrow(TypeError);
     });
 

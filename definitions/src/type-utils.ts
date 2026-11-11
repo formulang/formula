@@ -15,11 +15,11 @@ export function sameTypeKind(a: FormulaType, b: FormulaType): boolean {
 }
 
 /**
- * Whether an argument of type `argument` passes the parser's check of a parameter of type `param`
- * once a call binds the definition: any argument fits `any`, and a template, which the call's
- * arguments bind; otherwise the argument's type must be assignable to the parameter's, nullability
- * aside. Registration requires a string literal to pass this check and `argumentSelects` at a
- * parameter that lists admitted values.
+ * Whether an argument of type `argument` passes the parser's type check of a bound parameter of
+ * type `param`: anything fits `any` or a template; otherwise the types must be assignable,
+ * nullability aside.
+ *
+ * @experimental May change in a minor release.
  */
 export function argumentFits(argument: FormulaType, param: FormulaType): boolean {
   const target = stripNullability(param);
@@ -28,12 +28,11 @@ export function argumentFits(argument: FormulaType, param: FormulaType): boolean
 }
 
 /**
- * Whether an argument of type `argument` lets the parser choose a definition for a parameter of
- * type `param` when it picks among the overloads of a name, for a call written in the formula and
- * for a callable a call passes on: any argument for `any`; otherwise the argument's type must be
- * assignable to the parameter's, nullability aside, a template's constraint included. Registration
- * requires a string literal to pass this check and `argumentFits` at a parameter that lists
- * admitted values, so a string literal there never keeps its definition from being chosen.
+ * Whether an argument of type `argument` lets the parser choose an overload with a parameter of
+ * type `param`: anything selects `any`; otherwise the types must be assignable, nullability aside,
+ * a template's constraint included.
+ *
+ * @experimental May change in a minor release.
  */
 export function argumentSelects(argument: FormulaType, param: FormulaType): boolean {
   if (param.kind === 'any') return true;

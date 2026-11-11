@@ -6,11 +6,11 @@ import { createTestRuntime } from '../test-helpers/eval-formula';
 
 /**
  * What a formula answers for a mode that reaches a function when the call runs, which the parser
- * does not see: a core function answers a mode it does not list with `null` and a `TYPE` warning,
- * wherever the mode comes from, and a core higher-order function that called it keeps the `null`
- * and drops the warning, as on 1.0.0. Every core definition with a parameter that lists admitted
- * values comes from the live registry, reconciled both ways with the calls below, and is run with
- * each admitted mode and with misspelt ones given as values when the call runs.
+ * does not check: a mode passed on by a higher-order call, or given as a value. A core function
+ * answers a mode it does not list with `null` and a `TYPE` warning, wherever the mode comes from,
+ * and a core higher-order function that called it keeps the `null` and drops the warning, as on
+ * 1.0.0. Every core definition with a parameter that lists admitted values is read from the live
+ * registry and checked against the calls below.
  */
 
 const MODE = 'MODE';
@@ -26,8 +26,6 @@ const CALLS: Record<string, unknown[]> = {
   'FIRST_CONTAINED/v1': ['the cat sat', ['at', 'cat'], MODE],
   'CONTAINS_ANY/v1': ['concatenate', ['cat'], MODE],
   'MISSING_FROM/v1': [['Cat', 'dog'], 'the  cat', MODE],
-  'PLAIN_TEXT/v1': ['<b>Hi</b> *there*', MODE],
-  'MARKDOWN_BLOCKS/v1': ['# Title\n\ntext', MODE],
 };
 
 /** Values no definition lists, each standing for a mistake a run-time mode can carry. */
@@ -151,106 +149,25 @@ describe('a mode received when the call runs', () => {
     ).toStrictEqual({ value: [[null]], warnings: [] });
   });
 
-  it('answers null, with no error and no warning, for a mode past where the parser stops following', async () => {
-    // A host's EACH overload with forty parameters makes the parser visit forty positions at every
-    // level of a chain of EACH, so its walk reaches its limit (linear in the call) long before the
-    // end of a chain of forty levels. The formula compiles, and WORD_COUNT receives the misspelt
-    // mode at the end of the chain when the call runs: it answers null with a TYPE warning, which
-    // the core EACH that called it drops while keeping the null, as on 1.0.0. With the core
-    // definitions alone the same formula does not compile: the walk reaches the mode.
-    const levels = 40;
-    const list = `${'LIST('.repeat(levels + 1)}"a b"${')'.repeat(levels + 1)}`;
-    const source = (mode: string) =>
-      `EACH(${list}; ${'"EACH"; '.repeat(levels)}"WORD_COUNT"; "${mode}")`;
-    const limits = { maxParenDepth: 2 * levels };
-    const nested = (value: unknown): unknown => {
-      let out = value;
-      for (let level = 0; level <= levels; level++) out = [out];
-      return out;
-    };
-    const wide = () => {
-      const built = runtime();
-      const [each] = built.registry.listFunctionsByName('EACH');
-      if (each === undefined) throw new Error('no EACH');
-      built.registry.registerFunction({
-        ...each,
-        signatureId: 'WIDE_EACH/v1',
-        params: [
-          { name: 'target', type: FormulaTypes.list(FormulaTypes.number(true)) },
-          ...each.params.slice(1, 2),
-          ...Array.from({ length: 38 }, (_, index) => ({
-            name: `option${index}`,
-            type: FormulaTypes.text(true),
-            optional: true,
-          })),
-        ],
-      });
-      return built;
-    };
-    const outcome = async (built: ReturnType<typeof runtime>, mode: string) => {
-      const parsed = parseFormula(source(mode), { registry: built.registry, limits });
-      if (parsed.errors.length > 0) return { parse: parsed.errors.map((error) => error.code) };
-      const out = await evaluateRuleOutputAsync(
-        optimizeRule(parsed, { registry: built.registry }),
-        {
-          registry: built.registry,
-          resolver: built.implementations,
-          variables: {},
-        },
-      );
-      return {
-        value: out.output.value ?? null,
-        errors: out.errors.map((error) => error.code),
-        warnings: warningsIn(out.output),
-      };
-    };
-    expect(await outcome(runtime(), 'whitespce')).toStrictEqual({
-      parse: ['LITERAL_VALUE_NOT_ALLOWED'],
-    });
-    // The mode past the bound: the item is null, and the formula reports neither an error nor a
-    // warning, at any node.
-    const past = await outcome(wide(), 'whitespce');
-    expect(past).toStrictEqual({ value: nested(null), errors: [], warnings: [] });
-    // Not vacuous: an admitted mode answers through the same chain...
-    expect(await outcome(wide(), 'letters')).toStrictEqual({
-      value: nested(2),
-      errors: [],
+  it('answers null, with no error and no warning, for a misspelt mode a higher-order call passes on', async () => {
+    expect(
+      await run('EACH(LIST(LIST("a b")); "EACH"; "WORD_COUNT"; "whitespce")', {}),
+    ).toStrictEqual({
+      value: [[null]],
       warnings: [],
     });
-    // ...and WORD_COUNT itself answers the misspelt mode with null and a TYPE warning, which the
-    // chain drops.
+    expect(await run('EACH(LIST("a b"); "WORD_COUNT"; "whitespce")', {})).toStrictEqual({
+      value: [null],
+      warnings: [],
+    });
+    // Called through a host function that keeps warnings, the TYPE warning shows.
     expect(
       await run('APPLY(fn; a0; mode)', { fn: 'WORD_COUNT', a0: 'a b', mode: 'whitespce' }),
     ).toStrictEqual({ value: null, warnings: ['TYPE'] });
   });
 
-  it('answers null for a nested call that omits a required mode', async () => {
-    const required = enumerated.filter(({ optional }) => !optional);
-    // Not vacuous: PLAIN_TEXT and MARKDOWN_BLOCKS require theirs.
-    expect(required.length).toBeGreaterThanOrEqual(2);
-    for (const { def, position } of required) {
-      const call = CALLS[def.signatureId] ?? [];
-      const inputs = Object.fromEntries(call.map((value, index) => [`a${index}`, value]));
-      const before = call.slice(1, position).map((_, index) => `; a${index + 1}`);
-      const source = `EACH(LIST(LIST(a0)); "EACH"; "${def.name}"${before.join('')})`;
-      expect(await run(source, inputs), source).toStrictEqual({ value: [[null]], warnings: [] });
-      // Passed on by the call written in the formula, the callable must take what it is given.
-      const forwarded = `EACH(LIST(a0); "${def.name}"${before.join('')})`;
-      const { registry } = runtime();
-      expect(
-        parseFormula(forwarded, { registry }).errors.map((error) => error.code),
-        forwarded,
-      ).toStrictEqual(['NO_MATCHING_OVERLOAD']);
-    }
-    // The block kind omitted where the text is written in the formula.
-    expect(await run('EACH(LIST(LIST("# T")); "EACH"; "MARKDOWN_BLOCKS")', {})).toStrictEqual({
-      value: [[null]],
-      warnings: [],
-    });
-  });
-
   it('has a call for every core definition that lists admitted values, and only those', () => {
-    expect(enumerated.length).toBeGreaterThanOrEqual(11);
+    expect(enumerated.length).toBeGreaterThanOrEqual(9);
     expect(enumerated.map(({ def }) => def.signatureId).sort()).toStrictEqual(
       Object.keys(CALLS).sort(),
     );

@@ -22,24 +22,22 @@ export interface FormulaExecutionContext {
   pending?: Map<string, Promise<unknown>>;
 
   /**
-   * Charges a call that an implementation makes of the function with signature id `signatureId`,
-   * with the argument values `args`, as the runner charges a call of a formula, by the one rule
-   * it charges every call by: a control-flow callee a flat 0.05 units, any other its
-   * `estimateCostsInSeconds(args)`, or 0.05 units when it has no estimator, against
-   * `maxFunctionCostUnits` and `maxTotalCostUnits`, throwing `FUNCTION_COST_LIMIT_EXCEEDED` or
-   * `COST_LIMIT_EXCEEDED` past either. The runner provides it; `FILTER_BY` charges each call it
-   * makes of its operator through it, while the higher-order functions of 1.0.0 do not use it.
+   * Charges a call that an implementation makes itself, of the function `signatureId` with the
+   * argument values `args`, exactly as the runner charges the same call written in a formula. It
+   * throws `FUNCTION_COST_LIMIT_EXCEEDED` or `COST_LIMIT_EXCEEDED` past either cost limit. The
+   * runner provides it; `FILTER_BY` charges each operator call through it.
+   *
+   * @experimental May change in a minor release.
    */
   chargeCall?: (signatureId: string, args: unknown[]) => void;
 
   /**
-   * Reads what the implementation of `signatureId` answered for one call with the argument values
-   * `args` as the runner reads the same call written in a formula, on the path the runner would
-   * take for it: where it answers the call through its cache (a pure or run-cached function that is
-   * not control flow, with arguments it can key), an answer that is no output, any falsy value, is
-   * `null`; an ok output gives its value; any other answer is a failed call, whose output carries
-   * the error the runner raises for it (`EVAL_CRASH` for an answer that is no output). The runner
-   * provides it; `FILTER_BY` reads each answer of its operator through it.
+   * Reads an implementation's raw `answer` for a call of `signatureId` with `args` exactly as the
+   * runner reads the same call written in a formula, so a function that calls another
+   * implementation itself gets the same value or error a formula would. The runner provides it;
+   * `FILTER_BY` reads each operator answer through it.
+   *
+   * @experimental May change in a minor release.
    */
   readCall?: (signatureId: string, args: unknown[], answer: unknown) => FormulaNodeOutput;
 }
