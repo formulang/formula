@@ -9,12 +9,14 @@ import {
   FormulaRuntimeError,
   makeError,
   makeOkUnknown,
+  readCallOutput,
 } from '@formulang/definitions';
 
 import { resolveMaybeAsync } from './async';
-import { cacheKey, isCacheableByArgs } from './cache';
+import { cacheKey } from './cache';
+import { answeredThroughCache } from './read-call';
 import type { RunnerState } from './state';
-import { addCostOrThrow, checkWallTime, estimateCallCostUnits } from './state';
+import { addCostOrThrow, callChargeUnits, checkWallTime } from './state';
 
 export async function invokeFunctionBatch(
   signatureId: string,
@@ -57,7 +59,7 @@ export async function invokeFunctionBatch(
     const c = calls[0];
     const argOutputs = await Promise.all(c.args.map((p) => p.output()));
     const argValues = argOutputs.map((o) => o.value);
-    if (!isCacheableByArgs(argValues, state.limits)) {
+    if (!answeredThroughCache(def, argValues, state.limits)) {
       // Too-large/unbounded args: skip caching.
     } else {
       const k = cacheKey(signatureId, argValues, c.expectedCast, state.limits);
@@ -71,8 +73,7 @@ export async function invokeFunctionBatch(
 
       const p = (async (): Promise<FormulaNodeOutput[]> => {
         const started = Date.now();
-        const cost = estimateCallCostUnits(execCtx.resolver, signatureId, argValues);
-        addCostOrThrow(state, cost);
+        addCostOrThrow(state, callChargeUnits(def, execCtx.resolver, signatureId, argValues));
         const outArr = await resolveMaybeAsync(impl.evaluateMultiple(calls, execCtx));
         const elapsed = Date.now() - started;
         if (elapsed > state.limits.maxFunctionWallTimeMs) {
@@ -88,8 +89,9 @@ export async function invokeFunctionBatch(
       pendingCache.set(k, p as unknown as Promise<unknown>);
       try {
         const outArr = await p;
-        const out0 = outArr[0];
-        if (!out0) return [makeOkUnknown(def.name, null, { signatureId: signatureId })];
+        // On this path an answer that is no output reads as `null` (readCallOutput).
+        const out0 = readCallOutput(def.name, signatureId, outArr[0]);
+        if (!outArr[0]) return [out0];
         if (!out0.ok) return outArr;
 
         // Only cache warning-free outputs so cache hits never lose warning evidence.
@@ -105,14 +107,12 @@ export async function invokeFunctionBatch(
   }
 
   const started = Date.now();
-  // Apply cost estimate per call where possible.
+  // Charge each call; a control-flow function's arguments are not evaluated for its charge.
   for (const call of calls) {
-    if (def.controlFlow) {
-      addCostOrThrow(state, 0.05);
-      continue;
-    }
-    const argValues = (await Promise.all(call.args.map((p) => p.output()))).map((o) => o.value);
-    addCostOrThrow(state, estimateCallCostUnits(execCtx.resolver, signatureId, argValues));
+    const argValues = def.controlFlow
+      ? []
+      : (await Promise.all(call.args.map((p) => p.output()))).map((o) => o.value);
+    addCostOrThrow(state, callChargeUnits(def, execCtx.resolver, signatureId, argValues));
   }
 
   const out = await resolveMaybeAsync(impl.evaluateMultiple(calls, execCtx));

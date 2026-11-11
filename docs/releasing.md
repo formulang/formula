@@ -88,6 +88,10 @@ If a push did _not_ release when you expected one: check the "Check whether this
 - **Never create or delete `v*` tags by hand.** The workflow creates tags as a mirror of what was published; a hand-made tag claims a release that npm does not have and skews the auto-generated notes of the next real release.
 - **Commit messages are free-form.** No required format, no linting, nothing parses them. Write clear messages anyway — they feed the auto-generated release notes.
 
+## Compatibility baseline
+
+`scripts/compat/` holds a baseline recorded from the 1.0.0 release (commit `699d57e`), which `runner/src/compat.spec.ts` compares against: a 1.0.0 formula that names no later built-in must keep giving the same result. The baseline is frozen and normally never regenerated; [scripts/README.md](../scripts/README.md) describes how it was generated.
+
 ## See also
 
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — the development workflow that produces the changes being released.

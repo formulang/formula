@@ -13,6 +13,13 @@ export interface FunctionParamDefinition {
 
   /** If true, the argument must be a literal at parse-time (semantic validation). */
   literalOnly?: boolean;
+  /**
+   * The values a `literalOnly` argument may take. A literal outside the list is the parse-time
+   * error `LITERAL_VALUE_NOT_ALLOWED`, whose message names the admitted values. Registration
+   * requires a non-empty list of texts on a `literalOnly` parameter whose type a string literal
+   * fits. `null` stands for no list, as on the other optional fields.
+   */
+  literalValues?: string[];
   /** If set, validates the literal string against the registry. */
   reference?: 'function' | 'operator' | 'function_or_operator';
   /** If true, this parameter can repeat (must be the last param). */

@@ -66,6 +66,8 @@ describe('Text extras', () => {
 
     // REGEXREPLACE is global.
     expect(await evalOk('REGEXREPLACE("a1a2a3"; "a"; "X")')).toBe('X1X2X3');
+    // A g the author wrote is taken as it is, not added a second time.
+    expect(await evalOk('REGEXREPLACE("a1a2"; "/a/g"; "X")')).toBe('X1X2');
   });
 
   it('rejects disallowed regex constructs (backrefs/lookbehind/flags)', async () => {

@@ -493,8 +493,8 @@ OR(TRUE; NOT(1))          -- true: second argument skipped
 
 ## Callable references
 
-Higher-order functions — `FILTER`, `FILTER_PROPERTY`, `EACH`, `REDUCE` —
-take another function or operator as an argument. You pass it **by name, as
+Higher-order functions — `FILTER`, `FILTER_PROPERTY`, `FILTER_BY`, `EACH`,
+`REDUCE` — take another function or operator as an argument. You pass it **by name, as
 a string literal**: either the function's `UPPER_SNAKE_CASE` name or an
 operator token.
 
@@ -529,12 +529,13 @@ parsing:
 
 How each host function invokes the reference:
 
-| Call                                      | Reference invoked as                                |
-| ----------------------------------------- | --------------------------------------------------- |
-| `FILTER(list; "OP"; x?)`                  | `OP(item)` or `OP(item; x)` — keep items where true |
-| `FILTER_PROPERTY(list; "path"; "OP"; x?)` | `OP(item.path)` or `OP(item.path; x)`               |
-| `EACH(list; "OP"; extra...)`              | `OP(item; extra...)` — collect results              |
-| `REDUCE(init; list; "OP")`                | `OP(accumulator; item)`                             |
+| Call                                      | Reference invoked as                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------- |
+| `FILTER(list; "OP"; x?)`                  | `OP(item)` or `OP(item; x)` — keep items where true                          |
+| `FILTER_PROPERTY(list; "path"; "OP"; x?)` | `OP(item.path)` or `OP(item.path; x)`                                        |
+| `FILTER_BY(list; keys; "OP"; x?)`         | `OP(key)` or `OP(key; x)` — keep items whose key at the same position passes |
+| `EACH(list; "OP"; extra...)`              | `OP(item; extra...)` — collect results                                       |
+| `REDUCE(init; list; "OP")`                | `OP(accumulator; item)`                                                      |
 
 A related literal-only rule applies to property-path parameters of
 `FILTER_PROPERTY` and `SORT_BY_PROPERTY`: the path is a string literal and
@@ -544,6 +545,22 @@ may use dots to reach nested properties.
 FILTER_PROPERTY(value; "a.b"; "="; 2)
 SORT_BY_PROPERTY(value; "a.b")
 ```
+
+### Enumerated literals
+
+Some literal-only parameters take one of a fixed set of words, such as the
+`mode` of `WORDS` (`"whitespace"`, `"letters"` or `"locale"`). Any other
+literal in a call written in the formula fails at parse time with
+`LITERAL_VALUE_NOT_ALLOWED`; matching is exact and case-sensitive:
+
+```
+WORDS("a b"; "whitespce")   -- error: Parameter 'mode' must be one of "whitespace", "letters", "locale"; got "whitespce"
+```
+
+A literal that reaches a function another way — passed on by `EACH`,
+`FILTER`, `FILTER_PROPERTY`, `FILTER_BY` or `REDUCE` to the callable it names,
+or produced by an expression — is not checked while parsing. The built-in
+functions check it when the call runs and return `null` with a type warning.
 
 ## Types
 
@@ -673,6 +690,7 @@ Errors you are most likely to see, with a minimal trigger for each:
 | `NULL_NOT_ALLOWED`                   | passing `EMPTY()` to a non-nullable parameter                  |
 | `EXPECTED_STRING_LITERAL_REFERENCE`  | `FILTER(LIST(1;2); value; 1)`                                  |
 | `UNKNOWN_FUNCTION_REFERENCE`         | `FILTER(LIST(1;2); "NOPE"; 1)`                                 |
+| `LITERAL_VALUE_NOT_ALLOWED`          | `WORDS("a b"; "whitespce")` (not one of the admitted values)   |
 | `PROPERTY_TARGET_NOT_OBJECT`         | `value.id` where `value` is a number                           |
 | `WILDCARD_TARGET_NOT_LIST`           | `value.*.id` where `value` is a number                         |
 | `PROPERTY_NOT_ALLOWLISTED`           | reading a property the type does not declare                   |
@@ -690,18 +708,19 @@ Formulas run inside conservative resource limits. The host can raise or
 lower them; the defaults below are what ships. Authors mostly notice these
 when a formula is generated or pathological.
 
-| Limit                                         | Default           | Error when exceeded         |
-| --------------------------------------------- | ----------------- | --------------------------- |
-| Source length                                 | 16,000 characters | `SOURCE_TOO_LONG`           |
-| Tokens                                        | 500               | `TOO_MANY_TOKENS`           |
-| String literal length                         | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
-| Identifier length                             | 64 characters     | `IDENTIFIER_TOO_LONG`       |
-| Parenthesis nesting                           | 16 levels         | `PARENS_TOO_DEEP`           |
-| AST nodes                                     | 500               | `TOO_MANY_AST_NODES`        |
-| List size (EACH/FILTER/wildcard/REDUCE input) | 1,000 items       | `LIST_TOO_LARGE`            |
-| Wildcard output size                          | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
-| Regex pattern length                          | 100 characters    | `REGEX_UNSAFE`              |
-| Regex input length                            | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
+| Limit                                                             | Default           | Error when exceeded         |
+| ----------------------------------------------------------------- | ----------------- | --------------------------- |
+| Source length                                                     | 16,000 characters | `SOURCE_TOO_LONG`           |
+| Tokens                                                            | 500               | `TOO_MANY_TOKENS`           |
+| String literal length                                             | 8,000 characters  | `STRING_LITERAL_TOO_LONG`   |
+| Identifier length                                                 | 64 characters     | `IDENTIFIER_TOO_LONG`       |
+| Parenthesis nesting                                               | 16 levels         | `PARENS_TOO_DEEP`           |
+| AST nodes                                                         | 500               | `TOO_MANY_AST_NODES`        |
+| List size (EACH/FILTER/wildcard/REDUCE input)                     | 1,000 items       | `LIST_TOO_LARGE`            |
+| Wildcard output size                                              | 5,000 items       | `WILDCARD_OUTPUT_TOO_LARGE` |
+| Regex pattern length                                              | 100 characters    | `REGEX_UNSAFE`              |
+| Regex input length                                                | 8,000 characters  | `REGEX_INPUT_TOO_LONG`      |
+| Phrase length (`FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`) | 250 code units    | `PHRASE_TOO_LONG`           |
 
 Evaluation is additionally bounded by step, cost, and wall-time budgets
 (`EVAL_LIMIT_EXCEEDED`, `COST_LIMIT_EXCEEDED`, `WALL_TIME_LIMIT_EXCEEDED`);

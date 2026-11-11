@@ -178,4 +178,359 @@ describe('parseFormula failures', () => {
     const rule = parseFormula('EACH(LIST("a"); "LEN"; 1)', { registry });
     expect(rule.errors.some((e) => e.code === FormulaErrorCodes.NO_MATCHING_OVERLOAD)).toBe(true);
   });
+
+  it('checks a callable that admits functions only, or operators only, against its own kind', () => {
+    // A host's FILTER of four parameters, which a call of four arguments binds beside the core one:
+    // the parser checks the callable it names as FILTER's entry passes it the item and `x`. The
+    // host's operator token LEN stands for MATCHES(text, number), beside the function LEN.
+    const codes = (reference: 'function' | 'operator', source: string) => {
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'MATCHES/v1',
+        name: 'MATCHES',
+        category: 'core',
+        description: 'Whether a text and a number match, behind the operator token LEN.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          { name: 'n', type: FormulaTypes.number(true) },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+      registry.registerOperator({
+        token: 'LEN',
+        precedence: 10,
+        associativity: 'left',
+        functionSignatureId: 'MATCHES/v1',
+      });
+      registry.registerFunction({
+        signatureId: 'FILTER/v9',
+        name: 'FILTER',
+        category: 'core',
+        description: `A host's FILTER whose callable admits ${reference}s only.`,
+        params: [
+          { name: 'target', type: FormulaTypes.list(FormulaTypes.text(true), true) },
+          { name: 'check', type: FormulaTypes.callable(reference), literalOnly: true },
+          { name: 'x', type: FormulaTypes.number(true) },
+          { name: 'y', type: FormulaTypes.number(true) },
+        ],
+        returnType: FormulaTypes.list(FormulaTypes.text(true), true),
+        purity: 'pure',
+      });
+      return parseFormula(source, { registry }).errors.map((e) => e.code);
+    };
+    // An operator token names no function: unknown, and ADD behind it is not checked.
+    expect(codes('function', 'FILTER(LIST("a"); "+"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+    ]);
+    expect(codes('function', 'FILTER(LIST("a"); "GT"; 1; 2)')).toStrictEqual([]);
+    // A function's name names no operator; the function behind an operator token is checked.
+    expect(codes('operator', 'FILTER(LIST("a"); "ADD"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+    ]);
+    expect(codes('operator', 'FILTER(LIST("a"); "+"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+    ]);
+    expect(codes('operator', 'FILTER(LIST("a"); ">"; 1; 2)')).toStrictEqual([]);
+    // LEN names a function, which takes one argument, and an operator token, behind which MATCHES
+    // takes two: a reference that admits functions only is checked against the function alone.
+    expect(codes('function', 'FILTER(LIST("a"); "LEN"; 1; 2)')).toStrictEqual([
+      FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+    ]);
+    expect(codes('operator', 'FILTER(LIST("a"); "LEN"; 1; 2)')).toStrictEqual([]);
+  });
+
+  describe('enumerated literal values (literalValues)', () => {
+    function makeModeRegistry() {
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'SHOUT/v1',
+        name: 'SHOUT',
+        category: 'core',
+        description: 'Test function with an optional enumerated mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            optional: true,
+            literalOnly: true,
+            literalValues: ['upper', 'lower'],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      return registry;
+    }
+
+    it('compiles a listed literal and an omitted optional mode', () => {
+      const registry = makeModeRegistry();
+      expect(parseFormula('SHOUT("a"; "lower")', { registry }).errors).toStrictEqual([]);
+      expect(parseFormula('SHOUT("a")', { registry }).errors).toStrictEqual([]);
+    });
+
+    it('EXPECTED_STRING_LITERAL_REFERENCE (non-literal mode)', () => {
+      const rule = parseFormula('SHOUT("a"; value)', { registry: makeModeRegistry() });
+      expect(
+        rule.errors.some((e) => e.code === FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE),
+      ).toBe(true);
+      expect(rule.errors.some((e) => e.code === FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED)).toBe(
+        false,
+      );
+    });
+
+    it('LITERAL_VALUE_NOT_ALLOWED names the admitted values', () => {
+      const source = 'SHOUT("a"; "uper")';
+      const rule = parseFormula(source, { registry: makeModeRegistry() });
+      expect(rule.errors).toHaveLength(1);
+      const error = rule.errors[0];
+      expect(error?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
+      expect(error?.kind).toBe('type');
+      expect(error?.message).toBe(`Parameter 'mode' must be one of "upper", "lower"; got "uper"`);
+      expect(error?.path).toStrictEqual(['call', 'SHOUT/v1', 'arg', '1']);
+      expect(source.slice(error?.span?.start, error?.span?.end)).toBe('"uper"');
+    });
+
+    it('matches admitted values exactly (case-sensitive)', () => {
+      const rule = parseFormula('SHOUT("a"; "Upper")', { registry: makeModeRegistry() });
+      expect(rule.errors.map((e) => e.code)).toStrictEqual([
+        FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+      ]);
+    });
+
+    it('reads a null list as none, at a direct call and through EACH alike', () => {
+      // A definition as a format that writes absent fields as `null` gives it: registration drops
+      // the `null`, and a registry that hands it to the parser as written gets the answers the
+      // same definition without the field gets.
+      const mode = (literalValues?: null) => ({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'A literal-only mode without admitted values.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          literalValues === null
+            ? {
+                name: 'mode',
+                type: FormulaTypes.text(false),
+                literalOnly: true,
+                literalValues: literalValues as unknown as string[],
+              }
+            : { name: 'mode', type: FormulaTypes.text(false), literalOnly: true },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure' as const,
+      });
+      const registryFor = (def: ReturnType<typeof mode>, asWritten: boolean) => {
+        const registry = makeRegistry();
+        registry.registerFunction(def);
+        if (!asWritten) return registry;
+        const handing = Object.create(registry) as typeof registry;
+        handing.getFunction = (id) => (id === def.signatureId ? def : registry.getFunction(id));
+        handing.listFunctionsByName = (name) =>
+          name.toUpperCase() === 'MODE' ? [def] : registry.listFunctionsByName(name);
+        return handing;
+      };
+      const sources = [
+        'MODE("a"; "x")',
+        'MODE("a"; value)',
+        'EACH(LIST("a"); "MODE"; "x")',
+        'EACH(LIST("a"); "MODE"; value)',
+        'EACH(LIST(LIST("a")); "EACH"; "MODE"; "x")',
+      ];
+      const codes = (registry: ReturnType<typeof makeRegistry>) =>
+        sources.map((source) => parseFormula(source, { registry }).errors.map((e) => e.code));
+      const absent = codes(registryFor(mode(), false));
+      expect(codes(registryFor(mode(null), false))).toStrictEqual(absent);
+      expect(codes(registryFor(mode(null), true))).toStrictEqual(absent);
+      // Not vacuous: the direct value is refused, as for any literal-only parameter.
+      expect(absent[1]).toStrictEqual([FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE]);
+      expect(absent.filter((errors) => errors.length === 0).length).toBe(4);
+    });
+
+    it('reads admitted values handed on as written that are not a list of texts as none', () => {
+      // Registration refuses them; a registry that hands the parser a definition as written can
+      // still carry one, and the parser answers as for no list instead of throwing.
+      const listing = (literalValues: unknown) => ({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'A literal-only mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            literalValues: literalValues as string[],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure' as const,
+      });
+      const handing = (literalValues: unknown) => {
+        const registry = makeRegistry();
+        registry.registerFunction(listing(undefined));
+        const def = listing(literalValues);
+        const asWritten = Object.create(registry) as typeof registry;
+        asWritten.getFunction = (id) => (id === def.signatureId ? def : registry.getFunction(id));
+        asWritten.listFunctionsByName = (name) =>
+          name.toUpperCase() === 'MODE' ? [def] : registry.listFunctionsByName(name);
+        return asWritten;
+      };
+      const sources = [
+        'MODE("a"; "x")',
+        'MODE("a"; "w")',
+        'EACH(LIST("a"); "MODE"; "x")',
+        'EACH(LIST(LIST("a")); "EACH"; "MODE"; "x")',
+      ];
+      const codes = (literalValues: unknown) =>
+        sources.map((source) =>
+          parseFormula(source, { registry: handing(literalValues) }).errors.map((e) => e.code),
+        );
+      const none = codes(undefined);
+      const holed: unknown[] = [];
+      holed[1] = 'x';
+      for (const malformed of ['whitespace', { length: 2 }, [1, 2], [null], ['x', 2], holed]) {
+        expect(codes(malformed), JSON.stringify(malformed)).toStrictEqual(none);
+      }
+      // Not vacuous: a list of texts is read at a direct call. What EACH passes on is checked by
+      // the function when it runs, not by the parser.
+      expect(none.every((errors) => errors.length === 0)).toBe(true);
+      expect(codes(['y'])).toStrictEqual([
+        [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED],
+        [FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED],
+        [],
+        [],
+      ]);
+    });
+  });
+
+  describe('literal-only arguments: variadic parameters and higher-order calls', () => {
+    function makeTagRegistry() {
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'TAG/v1',
+        name: 'TAG',
+        category: 'core',
+        description: 'Test function with a variadic enumerated mode.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'modes',
+            type: FormulaTypes.text(false),
+            optional: true,
+            variadic: true,
+            literalOnly: true,
+            literalValues: ['a', 'b'],
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      registry.registerFunction({
+        signatureId: 'IS_MODE/v1',
+        name: 'IS_MODE',
+        category: 'core',
+        description: 'Test predicate with an enumerated mode.',
+        params: [
+          { name: 'value', type: FormulaTypes.any(true) },
+          {
+            name: 'mode',
+            type: FormulaTypes.text(false),
+            literalOnly: true,
+            literalValues: ['upper', 'lower'],
+          },
+        ],
+        returnType: FormulaTypes.boolean(true),
+        purity: 'pure',
+      });
+      return registry;
+    }
+
+    const errorsOf = (source: string) =>
+      parseFormula(source, { registry: makeTagRegistry() }).errors;
+    const codesOf = (source: string) => errorsOf(source).map((e) => e.code);
+
+    it('checks every argument a variadic literal-only parameter takes', () => {
+      expect(codesOf('TAG("x")')).toStrictEqual([]);
+      expect(codesOf('TAG("x"; "a"; "b"; "a")')).toStrictEqual([]);
+      const [notAdmitted, ...rest] = errorsOf('TAG("x"; "a"; "zzz")');
+      expect(rest).toStrictEqual([]);
+      expect(notAdmitted?.code).toBe(FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED);
+      expect(notAdmitted?.path).toStrictEqual(['call', 'TAG/v1', 'arg', '2']);
+      expect(codesOf('TAG("x"; "a"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+    });
+
+    it('checks only the first argument of a variadic literal-only parameter that lists no values', () => {
+      // 1.0.0 behaviour: a variadic literal-only parameter without literalValues is validated at
+      // its own position only; the extra arguments it takes are not re-checked.
+      const registry = makeRegistry();
+      registry.registerFunction({
+        signatureId: 'JOIN_MODES/v1',
+        name: 'JOIN_MODES',
+        category: 'core',
+        description: 'Test function with a variadic literal-only parameter and no admitted values.',
+        params: [
+          { name: 'text', type: FormulaTypes.text(true) },
+          {
+            name: 'parts',
+            type: FormulaTypes.text(false),
+            optional: true,
+            variadic: true,
+            literalOnly: true,
+          },
+        ],
+        returnType: FormulaTypes.text(true),
+        purity: 'pure',
+      });
+      const codes = (source: string) =>
+        parseFormula(source, { registry }).errors.map((e) => e.code);
+      expect(codes('JOIN_MODES("x")')).toStrictEqual([]);
+      expect(codes('JOIN_MODES("x"; "a"; value; value)')).toStrictEqual([]);
+      expect(codes('JOIN_MODES("x"; value)')).toStrictEqual([
+        FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
+      ]);
+    });
+
+    it('leaves a literal a higher-order call passes on to the function, which checks it when it runs', () => {
+      for (const source of [
+        'EACH(LIST("a b"; "c d e"); "WORD_COUNT"; "whitespce")',
+        'EACH(LIST("a b"); "WORD_COUNT"; value)',
+        'EACH(LIST("x"); "TAG"; "a"; "zzz")',
+        'FILTER(LIST("x"); "IS_MODE"; "uper")',
+        'FILTER_PROPERTY(value; "p"; "IS_MODE"; "uper")',
+        'FILTER_BY(LIST(1); LIST("x"); "IS_MODE"; "uper")',
+        'EACH(value; "EACH"; "WORD_COUNT"; "whitespce")',
+        'REDUCE("x"; LIST("a"); "TAG")',
+      ]) {
+        expect(codesOf(source), source).toStrictEqual([]);
+      }
+    });
+
+    it('checks the callable FILTER_BY names against how FILTER_BY calls it', () => {
+      // FILTER_BY calls operator(key) or operator(key, operatorValue).
+      expect(codesOf('FILTER_BY(LIST(1); LIST(1); ">"; 0)')).toStrictEqual([]);
+      expect(codesOf('FILTER_BY(LIST("a"); LIST("a"); "IS_EMPTY")')).toStrictEqual([]);
+      expect(codesOf('FILTER_BY(LIST(1); LIST(1); "IS_EMPTY"; 0)')).toStrictEqual([
+        FormulaErrorCodes.NO_MATCHING_OVERLOAD,
+      ]);
+      expect(codesOf('FILTER_BY(LIST(1); LIST(1); "NOPE")')).toStrictEqual([
+        FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+      ]);
+    });
+
+    it('resolves a function name passed on when the call runs, so an unknown one compiles', () => {
+      // The nested FILTER invokes nothing for "NOPE" and yields null, as it always has; only the
+      // name written as a higher-order function's own argument is checked against the registry.
+      expect(codesOf('EACH(LIST(LIST(1)); "FILTER"; "NOPE")')).toStrictEqual([]);
+      expect(codesOf('EACH(value; "EACH"; "WORD_CONT"; "whitespce")')).toStrictEqual([]);
+      expect(codesOf('FILTER(LIST(1); "NOPE")')).toStrictEqual([
+        FormulaErrorCodes.UNKNOWN_FUNCTION_REFERENCE,
+      ]);
+    });
+  });
 });

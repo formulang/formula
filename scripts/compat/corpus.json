@@ -1,0 +1,2138 @@
+{
+  "provenance": {
+    "extractor": "scripts/compat/extract-corpus.js",
+    "commit": "699d57efa2c51e8f32747b1aa081c00538c0fa05",
+    "specFiles": 60,
+    "docFiles": 16
+  },
+  "formulas": [
+    {
+      "source": "1 + 2",
+      "origin": "core-functions/src/functions/add.spec.ts"
+    },
+    {
+      "source": "ADD(1/0; 2)",
+      "origin": "core-functions/src/functions/add.spec.ts"
+    },
+    {
+      "source": "AND(TRUE; \"true\")",
+      "origin": "core-functions/src/functions/and.spec.ts"
+    },
+    {
+      "source": "AND(FALSE; NOT(1))",
+      "origin": "core-functions/src/functions/and.spec.ts"
+    },
+    {
+      "source": "AVG(LIST(1;2;3))",
+      "origin": "core-functions/src/functions/avg.spec.ts"
+    },
+    {
+      "source": "AVG(LIST(1; 1/0; 3))",
+      "origin": "core-functions/src/functions/avg.spec.ts"
+    },
+    {
+      "source": "CONCAT(\"a\";\"b\")",
+      "origin": "core-functions/src/functions/concat.spec.ts"
+    },
+    {
+      "source": "CONCAT(1; \"a\")",
+      "origin": "core-functions/src/functions/concat.spec.ts"
+    },
+    {
+      "source": "CONTAINS(\"abc\"; \"b\")",
+      "origin": "core-functions/src/functions/contains.spec.ts"
+    },
+    {
+      "source": "CONTAINS(value; \"a\")",
+      "origin": "core-functions/src/functions/contains.spec.ts"
+    },
+    {
+      "source": "COUNT_UNIQUE(\"a\";\"a\";\"b\";\"\";1/0)",
+      "origin": "core-functions/src/functions/count-unique.spec.ts"
+    },
+    {
+      "source": "COUNT(LIST(1; 1/0; 2))",
+      "origin": "core-functions/src/functions/count.spec.ts"
+    },
+    {
+      "source": "COUNT(1; \"\"; 1/0; \"x\")",
+      "origin": "core-functions/src/functions/count.spec.ts"
+    },
+    {
+      "source": "COUNT(value)",
+      "origin": "core-functions/src/functions/count.spec.ts"
+    },
+    {
+      "source": "DAY(DATE(2024; 2; 29))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "MONTH(DATE(2024; 2; 29))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "YEAR(DATE(2024; 2; 29))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 2).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 13; 1)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 2; 30)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 2; 29).day",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 2; 29).month",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 2; 29).year",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATE(2024; 2; 29).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(1; 2; 3).hour",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(1; 2; 3).minute",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(1; 2; 3).second",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(1; 2; 3).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "NOW().date.iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(\"2024-02-29T01:02:03Z\").iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIMEVALUE(\"2024-02-29T01:02:03Z\").iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(\"2024-02-29 01:02Z\").iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIMEVALUE(\"2024-02-29 01:02Z\").iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(0).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(86400).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(1700000000000).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(1700000000).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEVALUE(1/0)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(DATE(2024; 2; 29))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(TIME(1; 2; 3))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(NOW())",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "HOUR(TIME(1; 2; 3))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "MINUTE(TIME(1; 2; 3))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "SECOND(TIME(1; 2; 3))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(1).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(1; 2).iso",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(24; 0; 0)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(23; 60; 0)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "TIME(23; 0; 60)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DAYS(DATE(2024;1;2); DATE(2024;1;1))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEDIF(DATE(2024;1;1); DATE(2025;1;1); \"Y\")",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEDIF(DATE(2024;1;15); DATE(2024;3;14); \"M\")",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DATEDIF(DATE(2024;1;1); DATE(2024;1;31); \"D\")",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "WEEKDAY(DATE(2024;1;1); 1)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "WEEKDAY(DATE(2024;1;1); 2)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "ISOWEEKNUM(DATE(2024;1;4))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "WEEKNUM(DATE(2024;1;1); 2)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "WEEKNUM(DATE(2024;1;8); 2)",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "DAY()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "MONTH()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "YEAR()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "HOUR()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "MINUTE()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "SECOND()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "ISOWEEKNUM()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "WEEKDAY()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "WEEKNUM()",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "ISDATE(DATEVALUE(\"2024-02-29\"))",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "ISDATE(\"2024-02-30\")",
+      "origin": "core-functions/src/functions/datetime.spec.ts"
+    },
+    {
+      "source": "6 / 2",
+      "origin": "core-functions/src/functions/div.spec.ts"
+    },
+    {
+      "source": "1 / 0",
+      "origin": "core-functions/src/functions/div.spec.ts"
+    },
+    {
+      "source": "EACH(LIST(\"a\";\"bb\"); \"LEN\")",
+      "origin": "core-functions/src/functions/each.spec.ts"
+    },
+    {
+      "source": "EACH(value; \"LEN\")",
+      "origin": "core-functions/src/functions/each.spec.ts"
+    },
+    {
+      "source": "EMPTY()",
+      "origin": "core-functions/src/functions/empty.spec.ts"
+    },
+    {
+      "source": "BLANK()",
+      "origin": "core-functions/src/functions/empty.spec.ts"
+    },
+    {
+      "source": "ENDS_WITH(\"abc\"; \"bc\")",
+      "origin": "core-functions/src/functions/ends-with.spec.ts"
+    },
+    {
+      "source": "ENDS_WITH(\"abc\"; \"d\")",
+      "origin": "core-functions/src/functions/ends-with.spec.ts"
+    },
+    {
+      "source": "1 = \"1\"",
+      "origin": "core-functions/src/functions/eq.spec.ts"
+    },
+    {
+      "source": "\"\" = 0",
+      "origin": "core-functions/src/functions/eq.spec.ts"
+    },
+    {
+      "source": "FILTER_PROPERTY(value; \"a.b\"; \"=\"; 2)",
+      "origin": "core-functions/src/functions/filter-property.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(1;2;3); \">\"; 1)",
+      "origin": "core-functions/src/functions/filter.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\";\"x\"); \"STARTS_WITH\"; \"data:\")",
+      "origin": "core-functions/src/functions/filter.spec.ts"
+    },
+    {
+      "source": "FLAT(LIST(LIST(1;2); LIST(3)))",
+      "origin": "core-functions/src/functions/flat.spec.ts"
+    },
+    {
+      "source": "FLAT(value)",
+      "origin": "core-functions/src/functions/flat.spec.ts"
+    },
+    {
+      "source": "2 > 1",
+      "origin": "core-functions/src/functions/gt.spec.ts"
+    },
+    {
+      "source": "value > 0",
+      "origin": "core-functions/src/functions/gt.spec.ts"
+    },
+    {
+      "source": "2 >= 2",
+      "origin": "core-functions/src/functions/gte.spec.ts"
+    },
+    {
+      "source": "value >= 2",
+      "origin": "core-functions/src/functions/gte.spec.ts"
+    },
+    {
+      "source": "value >= 3",
+      "origin": "core-functions/src/functions/gte.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; TRUE; NOT(1))",
+      "origin": "core-functions/src/functions/if.spec.ts"
+    },
+    {
+      "source": "IF(FALSE; NOT(1); FALSE)",
+      "origin": "core-functions/src/functions/if.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; \"x\"; 0)",
+      "origin": "core-functions/src/functions/if.spec.ts"
+    },
+    {
+      "source": "IF(1; TRUE; FALSE)",
+      "origin": "core-functions/src/functions/if.spec.ts"
+    },
+    {
+      "source": "IF(obj.n; TRUE; FALSE)",
+      "origin": "core-functions/src/functions/if.spec.ts"
+    },
+    {
+      "source": "INCLUDES(LIST(\"a\";\"b\"); \"b\")",
+      "origin": "core-functions/src/functions/includes.spec.ts"
+    },
+    {
+      "source": "INCLUDES(LIST(\"a\"); \"b\")",
+      "origin": "core-functions/src/functions/includes.spec.ts"
+    },
+    {
+      "source": "IS_EMPTY(1/0)",
+      "origin": "core-functions/src/functions/is-empty.spec.ts"
+    },
+    {
+      "source": "IS_EMPTY(\"\")",
+      "origin": "core-functions/src/functions/is-empty.spec.ts"
+    },
+    {
+      "source": "IS_EMPTY(value)",
+      "origin": "core-functions/src/functions/is-empty.spec.ts"
+    },
+    {
+      "source": "IS_EMPTY(0)",
+      "origin": "core-functions/src/functions/is-empty.spec.ts"
+    },
+    {
+      "source": "IS_EMPTY(\"x\")",
+      "origin": "core-functions/src/functions/is-empty.spec.ts"
+    },
+    {
+      "source": "JOIN(LIST(\"a\";\"b\";\"c\"); \"-\")",
+      "origin": "core-functions/src/functions/join.spec.ts"
+    },
+    {
+      "source": "JOIN(LIST(); \"-\")",
+      "origin": "core-functions/src/functions/join.spec.ts"
+    },
+    {
+      "source": "JOIN(value; \"-\")",
+      "origin": "core-functions/src/functions/join.spec.ts"
+    },
+    {
+      "source": "JOIN(LIST(\"a\"; \"b\"); value)",
+      "origin": "core-functions/src/functions/join.spec.ts"
+    },
+    {
+      "source": "LEN(\"abc\")",
+      "origin": "core-functions/src/functions/len.spec.ts"
+    },
+    {
+      "source": "LEN(LIST(1;2))",
+      "origin": "core-functions/src/functions/len.spec.ts"
+    },
+    {
+      "source": "LENGTH(\"abcd\")",
+      "origin": "core-functions/src/functions/len.spec.ts"
+    },
+    {
+      "source": "SORT(LIST(3; 1; 2))",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT(LIST(3; 1; 2); true)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT(LIST(\"b\"; \"A\"; \"a\"))",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT(LIST(\"b\"; \"B\"; \"a\"))",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT(value)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT(1)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 2)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 0)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 4)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "INDEX(LIST(10; 20; 30); 1.2)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "INDEX(1; 1)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "REDUCE(0; LIST(1; 2; 3); \"+\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "REDUCE(1; LIST(2; 3; 4); \"*\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "REDUCE(\"\"; LIST(\"a\"; \"b\"); \"CONCAT\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "REDUCE(123; LIST(); \"+\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "REDUCE(0; LIST(1; 2); \"NOT_A_FUNCTION\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "REDUCE(0; value; \"+\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; \"a\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; \"a.b\")",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; \"a\"; true)",
+      "origin": "core-functions/src/functions/list-ops.spec.ts"
+    },
+    {
+      "source": "LIST(1;2;3)",
+      "origin": "core-functions/src/functions/list.spec.ts"
+    },
+    {
+      "source": "LIST(1; \"2\")",
+      "origin": "core-functions/src/functions/list.spec.ts"
+    },
+    {
+      "source": "LOWER(\"AbC\")",
+      "origin": "core-functions/src/functions/lower.spec.ts"
+    },
+    {
+      "source": "1 < 2",
+      "origin": "core-functions/src/functions/lt.spec.ts"
+    },
+    {
+      "source": "value < 2",
+      "origin": "core-functions/src/functions/lt.spec.ts"
+    },
+    {
+      "source": "value < 3",
+      "origin": "core-functions/src/functions/lt.spec.ts"
+    },
+    {
+      "source": "2 <= 2",
+      "origin": "core-functions/src/functions/lte.spec.ts"
+    },
+    {
+      "source": "value <= 2",
+      "origin": "core-functions/src/functions/lte.spec.ts"
+    },
+    {
+      "source": "value <= 1",
+      "origin": "core-functions/src/functions/lte.spec.ts"
+    },
+    {
+      "source": "MATCH_EXPRESSION(\"abc123\"; \"^abc\")",
+      "origin": "core-functions/src/functions/match-expression.spec.ts"
+    },
+    {
+      "source": "MATCH_EXPRESSION(\"abc\"; \"(\")",
+      "origin": "core-functions/src/functions/match-expression.spec.ts"
+    },
+    {
+      "source": "ROUND(SIN(0); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(COS(0); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(TAN(0); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(ASIN(0); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(ACOS(1); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(ATAN(0); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ASIN(2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ACOS(-2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "SIN(\"x\")",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "CEILING(1.2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "FLOOR(1.8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(1.4; 0)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(1.5; 0)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(-1.5; 0)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUNDDOWN(1.29; 1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUNDUP(1.21; 1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ROUND(EXP(1); 8)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG(8; 2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG(100)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG(0.1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG10(1000)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "SQRT(9)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG(-1; 10)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG(-1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG(10; 1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "LOG10(-1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "SQRT(-1)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "PI()",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "MOD(10; 3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "MOD(-10; 3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "MOD(1; 0)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "MOD(\"x\"; 3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "PRODUCT()",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "PRODUCT(2; 3; 4)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "PRODUCT(2; INDEX(LIST(1); 0); 3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "PRODUCT(2; \"x\")",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISEVEN(2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISEVEN(3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISEVEN(-2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISEVEN(2.2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISODD(3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISODD(2)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISODD(-3)",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "ISODD(INDEX(LIST(1); 0))",
+      "origin": "core-functions/src/functions/math-extra.spec.ts"
+    },
+    {
+      "source": "MAX(LIST(3;1;2))",
+      "origin": "core-functions/src/functions/max.spec.ts"
+    },
+    {
+      "source": "MAX(LIST(3; 1/0; 2))",
+      "origin": "core-functions/src/functions/max.spec.ts"
+    },
+    {
+      "source": "MEDIAN(LIST(1;3;2))",
+      "origin": "core-functions/src/functions/median.spec.ts"
+    },
+    {
+      "source": "MEDIAN(LIST(1;2;3;4))",
+      "origin": "core-functions/src/functions/median.spec.ts"
+    },
+    {
+      "source": "MEDIAN(LIST(1; 1/0; 3))",
+      "origin": "core-functions/src/functions/median.spec.ts"
+    },
+    {
+      "source": "MIN(LIST(3;1;2))",
+      "origin": "core-functions/src/functions/min.spec.ts"
+    },
+    {
+      "source": "MIN(LIST(3; 1/0; 2))",
+      "origin": "core-functions/src/functions/min.spec.ts"
+    },
+    {
+      "source": "2 * 3",
+      "origin": "core-functions/src/functions/mul.spec.ts"
+    },
+    {
+      "source": "MUL(1/0; 2)",
+      "origin": "core-functions/src/functions/mul.spec.ts"
+    },
+    {
+      "source": "1 <> \"1\"",
+      "origin": "core-functions/src/functions/neq.spec.ts"
+    },
+    {
+      "source": "\"\" <> 0",
+      "origin": "core-functions/src/functions/neq.spec.ts"
+    },
+    {
+      "source": "NOT(TRUE)",
+      "origin": "core-functions/src/functions/not.spec.ts"
+    },
+    {
+      "source": "NOT(\"false\")",
+      "origin": "core-functions/src/functions/not.spec.ts"
+    },
+    {
+      "source": "NOT(1)",
+      "origin": "core-functions/src/functions/not.spec.ts"
+    },
+    {
+      "source": "OR(FALSE; \"false\")",
+      "origin": "core-functions/src/functions/or.spec.ts"
+    },
+    {
+      "source": "OR(TRUE; NOT(1))",
+      "origin": "core-functions/src/functions/or.spec.ts"
+    },
+    {
+      "source": "POW(2; 3)",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "POW(9; 0.5)",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "POW(2; -3)",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 ^ 3",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 ^ -3",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 ^ 3 ^ 2",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "(2 ^ 3) ^ 2",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 * 3 ^ 2",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 ^ 3 * 2",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "1 + 2 ^ 3",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "POW(INDEX(LIST(1); 9); 2)",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 ^ INDEX(LIST(1); 9)",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "POW(\"x\"; 2)",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "2 ^ \"x\"",
+      "origin": "core-functions/src/functions/pow.spec.ts"
+    },
+    {
+      "source": "RANGE_SCORE(5; 0; 3; 7; 10)",
+      "origin": "core-functions/src/functions/range-score.spec.ts"
+    },
+    {
+      "source": "RANGE_SCORE(-1; 0; 3; 7; 10)",
+      "origin": "core-functions/src/functions/range-score.spec.ts"
+    },
+    {
+      "source": "RANGE_SCORE(5; 10; 0; 7; 3)",
+      "origin": "core-functions/src/functions/range-score.spec.ts"
+    },
+    {
+      "source": "STARTS_WITH(\"abc\"; \"a\")",
+      "origin": "core-functions/src/functions/starts-with.spec.ts"
+    },
+    {
+      "source": "STARTS_WITH(\"abc\"; \"x\")",
+      "origin": "core-functions/src/functions/starts-with.spec.ts"
+    },
+    {
+      "source": "STARTS_WITH(\"xyz123\"; LIST(\"abc\";\"xyz\"))",
+      "origin": "core-functions/src/functions/starts-with.spec.ts"
+    },
+    {
+      "source": "5 - 2",
+      "origin": "core-functions/src/functions/sub.spec.ts"
+    },
+    {
+      "source": "SUB(1/0; 2)",
+      "origin": "core-functions/src/functions/sub.spec.ts"
+    },
+    {
+      "source": "SUM(LIST(1;2;3))",
+      "origin": "core-functions/src/functions/sum.spec.ts"
+    },
+    {
+      "source": "SUM(LIST(1; 1/0; 3))",
+      "origin": "core-functions/src/functions/sum.spec.ts"
+    },
+    {
+      "source": "SWITCH(2; 1; \"a\"; 2; \"b\"; \"d\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(\"x\"; \"x\"; 123; \"y\"; 456; 0)",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(\"1\"; 1; \"ok\"; \"no\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(\"true\"; TRUE; \"y\"; \"n\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(LIST(1;2;3); 3; \"len\"; \"no\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(2; 1; \"a\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(\"z\"; \"x\"; 1; \"y\"; 2)",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(3; 1; \"a\"; 2; \"b\"; \"d\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(INDEX(LIST(1); 0); INDEX(LIST(1); 0); \"ok\"; \"no\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "SWITCH(INDEX(LIST(1); 0); 1; \"a\"; \"d\")",
+      "origin": "core-functions/src/functions/switch.spec.ts"
+    },
+    {
+      "source": "LEFT(\"hello\"; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "RIGHT(\"hello\"; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "MID(\"hello\"; 2; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "LEFT(\"hello\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "RIGHT(\"hello\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "LEFT(\"hello\"; 0)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "LEFT(\"hello\"; -10)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "RIGHT(\"hello\"; 0)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "RIGHT(\"hello\"; -10)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "MID(\"hello\"; 100; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "MID(\"hello\"; 1; 0)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "LEFT(1; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "RIGHT(1; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "MID(1; 2; 3)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REPLACE(\"hello\"; 2; 2; \"xx\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REPLACE(\"hello\"; 1; 0; \"X\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "SUBSTITUTE(\"a a a\"; \"a\"; \"b\"; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "SUBSTITUTE(\"a a a\"; \"a\"; \"b\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TRIM(\"  a   b  \")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REPLACE(\"hi\"; 10; 2; \"X\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "SUBSTITUTE(\"abc\"; \"\"; \"X\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "SUBSTITUTE(\"abc\"; \"\"; \"X\"; 2)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "SUBSTITUTE(\"abc\"; \"a\"; \"b\"; 0)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TRIM(\"\n\t  a\r\n  b\t\t  \")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"abc123\"; \"([0-9]+)\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXREPLACE(\"abc123def\"; \"[0-9]+\"; \"X\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"nope\"; \"([0-9]+)\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"abc123\"; \"[0-9]+\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXREPLACE(\"a1a2a3\"; \"a\"; \"X\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"aba\"; \"(a)\\1\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"ab\"; \"(?<=a)b\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"a\"; \"/a/x\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXEXTRACT(\"aaaaaaaaaaaaaaaaaaaa\"; \"(a+)+$\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "REGEXREPLACE(value; \"a\"; \"b\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ENCODEURL(\"a b\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"https://example.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"http://sub.example.com:8080/path?q=1#frag\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"ftp://example.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"gopher://example.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"telnet:example.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"news:comp.lang.javascript\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"aim:goim?screenname=test\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"mailto:test@example.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"example.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"www.example.technology\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"sub.example.co.uk/path?q=1\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"example\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"localhost\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"http://localhost\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"-bad.example\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"exa_mple.com\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"example.c\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISURL(\"not a url\")",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(123)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(true)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(DATE(2024;2;29))",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(TIME(1;2;3))",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(LIST(1;2;3))",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(INDEX(LIST(1); 0))",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "TO_TEXT(value)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "CHAR(65)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "CHAR(0)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "CHAR(128512)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "CHAR(1114112)",
+      "origin": "core-functions/src/functions/text-extra.spec.ts"
+    },
+    {
+      "source": "ISNUMBER(1)",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISNUMBER(\"1\")",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISNUMBER(INDEX(LIST(1); 0))",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISNUMBER(true)",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISTEXT(\"a\")",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISTEXT(1)",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISTEXT(INDEX(LIST(1); 0))",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISDATE(DATE(2024;2;29))",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISDATE(NOW())",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "ISDATE(\"2024-02-29\")",
+      "origin": "core-functions/src/functions/type-predicates.spec.ts"
+    },
+    {
+      "source": "UPPER(\"AbC\")",
+      "origin": "core-functions/src/functions/upper.spec.ts"
+    },
+    {
+      "source": "LIST(1;2)",
+      "origin": "definitions/src/optimize.spec.ts"
+    },
+    {
+      "source": "value",
+      "origin": "definitions/src/optimize.spec.ts"
+    },
+    {
+      "source": "MY_CALC(2)",
+      "origin": "definitions/src/registry-legacy.spec.ts"
+    },
+    {
+      "source": "APPLY(\"MY_HELPER\"; 2)",
+      "origin": "definitions/src/registry-legacy.spec.ts"
+    },
+    {
+      "source": "QUX(1)",
+      "origin": "definitions/src/registry-legacy.spec.ts"
+    },
+    {
+      "source": "abcd",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "foo(1)",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "Foo",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "value.Bad",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "value.",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "(1 + 2",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "1 2",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "1 + 2 + 3 + 4",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "missing",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "NOPE(1)",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "value.*.id",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "value.id",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "value.__proto__",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "1234",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "1",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "(1)",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "\"ab\"",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(1;2); value; 1)",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(\"a\";\"bb\"); \"LEN\")",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "EACH(LIST(\"a\"); \"LEN\"; 1)",
+      "origin": "parser/src/failures.spec.ts"
+    },
+    {
+      "source": "-1",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "-1 + 2",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "2 + -1",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "\"a\" & \"b\" & \"c\"",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(max_length > 0, \"this\", \"that\")",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(some_variable<>some_other_variable,\"stuff\",\"yes\")",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "Value",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "value.Property",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "snake_name",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "value.snake_name",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "NOT_A_BUILTIN(1)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "LIST(1; 2; 3)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "LIST(1, 2, 3)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "1,23",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "FOO(1)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "FOO(\"x\")",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(1;2); \"NOPE\"; 1)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "LIST(1; \"a\")",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "ADD(\"x\"; 1)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "1 + \"x\"",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "LEN(1)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(cond; 1; 2)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(1; 1; 2)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "COUNT(LIST(LIST(1); LIST(2); LIST(3)))",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "  COUNT( LIST( LIST( 1 ) ; LIST(2) ; LIST( 3 ) ) )  ",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "LIST(1; 999; 3)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "LIST(0; 1; 2; 3)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "COUNT(LIST(1; AVG(LIST(2;3)); 4))",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "COUNT(LIST(1; AVG(LIST(200;300)); 4))",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; 1; n)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; 1; nil)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; nums; nums)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; nums; txts)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; nums; nil)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; x; 1)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\";\"x\"); \"STARTS_WITH\"; value.prefix)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\";\"x\"); \"STARTS_WITH\"; value.suffix)",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "1 + 2 * 3",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "  ( 1)  +  (2* 3 ) ",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "(1 + 2) * 3",
+      "origin": "parser/src/index.spec.ts"
+    },
+    {
+      "source": "value.a.b",
+      "origin": "parser/src/variable-reference.spec.ts"
+    },
+    {
+      "source": "list.*.name",
+      "origin": "parser/src/variable-reference.spec.ts"
+    },
+    {
+      "source": "IF(TRUE; 1; value.foo)",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "\"Issues to fix:\" & CHAR(10) & \"A\"",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "FILTER(LIST(1;2); op; 1)",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "IS_EMPTY(LIST())",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "LENGTH(\"abc\")",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "LEN(CONCAT(a; b))",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "CONCAT(a; b)",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "LEN(x)",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "FILTER(items; \"=\"; 1)",
+      "origin": "runner/src/builtins.spec.ts"
+    },
+    {
+      "source": "UNIMPL(1)",
+      "origin": "runner/src/failures.spec.ts"
+    },
+    {
+      "source": "CRASH()",
+      "origin": "runner/src/failures.spec.ts"
+    },
+    {
+      "source": "NONNULL(value)",
+      "origin": "runner/src/failures.spec.ts"
+    },
+    {
+      "source": "value.*.ids",
+      "origin": "runner/src/failures.spec.ts"
+    },
+    {
+      "source": "constructor",
+      "origin": "runner/src/failures.spec.ts"
+    },
+    {
+      "source": "BADRET()",
+      "origin": "runner/src/failures.spec.ts"
+    },
+    {
+      "source": "value.a + 1",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "value + 1",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "SLOW(1)",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "OBJTEST(value)",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "ECHO(\"abcd\")",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "ECHO(\"ab\")",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "COSTLY(1)",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "COST(1) + COST(2)",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "SLEEP(1)",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "IF(false; COSTLY(1); 123)",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "FILTER(value; \"PRED\")",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "MATCH_EXPRESSION(\"aaaa\"; \"(a+)+$\")",
+      "origin": "runner/src/index-async.spec.ts"
+    },
+    {
+      "source": "\"2\" > 1",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "\"01\" = \"1\"",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "\"\" = \"0\"",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "\"\" = \"\"",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "\"true\" = true",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "\"FALSE\" = false",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "\"yes\" = true",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "value = 0",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "value > \"0\"",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "max_length > 0",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "max_length >= 2",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "max_length < 3",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "max_length <= 2",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "max_length = 2",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "max_length <> 2",
+      "origin": "runner/src/index.spec.ts"
+    },
+    {
+      "source": "EACH(value; \"+\"; 1)",
+      "origin": "runner/src/security.spec.ts"
+    },
+    {
+      "source": "MATCH_EXPRESSION(text; \"(a+)+$\")",
+      "origin": "runner/src/security.spec.ts"
+    },
+    {
+      "source": "MATCH_EXPRESSION(text; \"a+\")",
+      "origin": "runner/src/security.spec.ts"
+    },
+    {
+      "source": "value.secret",
+      "origin": "runner/src/security.spec.ts"
+    },
+    {
+      "source": "UPPERCASE_FIRST(name) & \"!\"",
+      "origin": "core-functions/README.md"
+    },
+    {
+      "source": "TAX(10)",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "TAX(10; 2)",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "IF(deal.amount > 100; UPPER(\"x\"); \"small\")",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "UPPER(\"x\")",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "SLUGIFY(\"Hello World\") & \"!\"",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "SLUGIFY(name)",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "SLUGIFY(\"x\")",
+      "origin": "docs/best-practices.md"
+    },
+    {
+      "source": "IF(deal.amount > 100, \"big\", \"small\")",
+      "origin": "docs/extending.md"
+    },
+    {
+      "source": "IF(deal.amount > 100; UPPER(deal.owner); \"unassigned\")",
+      "origin": "docs/extending.md"
+    },
+    {
+      "source": "UPPERCASE_FIRST(name)",
+      "origin": "docs/extending.md"
+    },
+    {
+      "source": "6 - 2",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "MAX(LIST(3; 1; 2))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "MEDIAN(LIST(1; 2; 3; 4))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "COUNT_UNIQUE(\"a\"; \"a\"; \"b\"; \"\"; 1/0)",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "1 <> 2",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "CONCAT(\"a\"; \"b\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "JOIN(LIST(\"a\"; \"b\"; \"c\"); \"-\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "LEN(LIST(1; 2))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "TO_TEXT(LIST(1; 2; 3))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "STARTS_WITH(\"xyz123\"; LIST(\"abc\"; \"xyz\"))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "FLAT(LIST(LIST(1; 2); LIST(3)))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "FILTER(LIST(1; 2; 3); \">\"; 1)",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "FILTER(LIST(\"data:a\"; \"x\"); \"STARTS_WITH\"; \"data:\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "EACH(LIST(\"a\"; \"bb\"); \"LEN\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "INCLUDES(LIST(\"a\"; \"b\"); \"b\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "TODAY().iso",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "DAYS(DATE(2024; 1; 2); DATE(2024; 1; 1))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "DATEDIF(DATE(2024; 1; 1); DATE(2025; 1; 1); \"Y\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "DATEDIF(DATE(2024; 1; 1); DATE(2024; 1; 31); \"D\")",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "WEEKDAY(DATE(2024; 1; 1); 1)",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "WEEKDAY(DATE(2024; 1; 1); 2)",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "WEEKNUM(DATE(2024; 1; 1); 2)",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "WEEKNUM(DATE(2024; 1; 8); 2)",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "ISOWEEKNUM(DATE(2024; 1; 4))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "ISDATE(DATE(2024; 2; 29))",
+      "origin": "docs/functions.md"
+    },
+    {
+      "source": "IF(max_length > 0; \"this\"; \"that\")",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "COUNT( LIST( LIST( 1 ) ; LIST(2) ; LIST( 3 ) ) )",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "IF(some_variable<>some_other_variable;\"stuff\";\"yes\")",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "formula    := expression",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "expression := postfix (binary-operator expression)*",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "postfix    := primary accessor*",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "accessor   := \".\" property | \".*.\" property",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "primary    := number | text | boolean | variable",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "| FUNCTION_NAME \"(\" [expression (\";\" expression)*] \")\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "| \"(\" expression \")\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "UNEXPECTED_TOKEN: Use ';' to separate function arguments.",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "1.5",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": ".5",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-0.5",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "0.125",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "1-2",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "0 -1",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "(-3)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "value * -1",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"hello\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"data:\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"a\\\"b\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"a\\\\b\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"a\\nb\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "TRUE",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "FALSE",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "LIST()",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "value.items.*.id",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"a\" & \"b\" = \"ab\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "max_length <= 100",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "max_length <> 10",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "CONCAT(TO_TEXT(123); \"a\")",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "ROUND(AVG(LIST(1; 2; 3)) * 100; 0)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "Len(\"x\")",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "COUNT_UNIQUE(1; 2; 2)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "FILTER(LIST(1;2); UPPER(\"gt\"); 1)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Parameter 'a' expected number? but got text",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "IF(IS_EMPTY(value); 0; value)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "IF(value > 0; value; EMPTY())",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "ADD(EMPTY(); 1)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Parameter 'a' expected number? but got null",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Literals",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "1   1.5   .5   -0.5",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "\"text\"  \"say \\\"hi\\\"\\n\"",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "TRUE  FALSE  true",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Variables and access",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "max_length",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Operators (tightest to loosest; all map to functions)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Functions",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "LEN(\"abc\")  LEN(LIST(1;2))",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Callable references (literal strings only)",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "-- Null handling",
+      "origin": "docs/language.md"
+    },
+    {
+      "source": "max_length.__proto__",
+      "origin": "parser/README.md"
+    },
+    {
+      "source": "CONCAT(user.first_name; \" \"; user.last_name)",
+      "origin": "parser/README.md"
+    },
+    {
+      "source": "IF(STARTS_WITH(api_key; \"sk-\"); \"live\"; \"test\")",
+      "origin": "runner/README.md"
+    },
+    {
+      "source": "FILTER(LIST(\"a\"; \"bb\"); \"LEN\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "FILTER(LIST(1; 2); \"STARTS_WITH\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "REDUCE(0; LIST(1; 2); \"LEN\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "FILTER_PROPERTY(value; \"a\"; \"LEN\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "EACH(LIST(1; 2); \"UPPER\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "EACH(LIST(LIST(\"a\")); \"UPPER\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "FILTER(LIST(1; 2); value; 1)",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "FILTER(LIST(1; 2); \"NOPE\"; 1)",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "EACH(LIST(LIST(1)); \"FILTER\"; \"NOPE\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "EACH(LIST(LIST(1; 2)); \"FILTER\"; \">\"; 1)",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "SORT_BY_PROPERTY(value; value)",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "MAP_ALL(LIST(\"a\"; \"bb\"); \"LEN\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "MAP_ALL(LIST(1; 2); \"NOPE\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "MAP_ALL(LIST(1); value)",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "MAP_ALL(LIST(\"a\"); \"LEN\"; 1)",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "MAP_ALL(LIST(LIST(1; 2)); \"LEN\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "MAP_ALL(LIST(1; 2); \">\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "EACH(value; \"EACH\"; \"WORD_COUNT\"; \"whitespce\")",
+      "origin": "compatibility probe"
+    },
+    {
+      "source": "IF(FALSE; EACH(LIST(LIST(\"a b\")); \"EACH\"; \"WORD_COUNT\"; \"whitespce\"); EMPTY())",
+      "origin": "compatibility probe"
+    }
+  ]
+}

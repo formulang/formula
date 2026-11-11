@@ -6,6 +6,13 @@ import {
 import { registerPrimitiveFormulaImplementations } from './functions/register-primitive-implementations';
 import { InMemoryFunctionImplementationRegistry } from './implementation-registry';
 
+export {
+  splitSentences,
+  splitWords,
+  type SentenceSplitMode,
+  type WordSplitMode,
+} from './functions/text-segmentation';
+
 export type FormulaRuntime = {
   registry: MutableFormulaRegistry;
   implementations: InMemoryFunctionImplementationRegistry;

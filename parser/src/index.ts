@@ -9,6 +9,7 @@ import type {
   VariableOnlyRegistry,
 } from '@formulang/definitions';
 import {
+  admittedValues,
   BuiltinSignatureIds,
   emptyRequirements,
   formatType,
@@ -16,6 +17,7 @@ import {
   FormulaLimitError,
   FormulaTypes,
   isAssignable,
+  literalCheckAt,
   makeFormulaError,
   resolveFormulaLimits,
   stripNullability,
@@ -976,10 +978,13 @@ function bindTypesAndRequirements(
 
       const baseReturnType = instantiateGenericReturnType(def, argTypes);
 
-      // Literal-only reference validation (e.g., FILTER(list, "STARTS_WITH", ...))
-      for (let i = 0; i < def.params.length; i++) {
-        const p = def.params[i];
-        if (!p || p.literalOnly !== true) continue;
+      // Literal-only validation (e.g., FILTER(list, "STARTS_WITH", ...)). A variadic literal-only
+      // parameter is checked at every argument when it lists admitted values, otherwise at its
+      // first argument only (literalCheckAt).
+      const literalPositions = Math.max(def.params.length, node.args.length);
+      for (let i = 0; i < literalPositions; i++) {
+        const p = literalCheckAt(def.params, i, admittedValues)?.param;
+        if (!p) continue;
         const arg = node.args[i];
         if (!arg) {
           // Optional literal-only parameters may be omitted.
@@ -992,6 +997,25 @@ function bindTypesAndRequirements(
               code: FormulaErrorCodes.EXPECTED_STRING_LITERAL_REFERENCE,
               message: `Parameter '${p.name}' must be a string literal`,
               span: arg?.span ?? node.span,
+            }),
+          );
+          continue;
+        }
+
+        // Enumerated literals: a parameter that lists its admitted values takes only those. A mode
+        // that reaches a function another way, such as through a higher-order call, is checked by
+        // the function when it runs.
+        const admitted = admittedValues(p);
+        if (admitted !== undefined && !admitted.includes(arg.predictableValue)) {
+          errors.push(
+            makeFormulaError({
+              kind: 'type',
+              code: FormulaErrorCodes.LITERAL_VALUE_NOT_ALLOWED,
+              message: `Parameter '${p.name}' must be one of ${admitted
+                .map((value) => JSON.stringify(value))
+                .join(', ')}; got ${JSON.stringify(arg.predictableValue)}`,
+              span: arg.span,
+              path: ['call', def.signatureId, 'arg', String(i)],
             }),
           );
           continue;
@@ -1045,6 +1069,12 @@ function bindTypesAndRequirements(
             const listType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
             const elementType = listType.kind === 'list' ? listType.of : FormulaTypes.any(true);
             invokedArgTypes = [accType, elementType];
+          } else if (defName === 'FILTER_BY') {
+            // FILTER_BY(list, keys, operator, operatorValue?) calls operator(key[, operatorValue]).
+            const keysType = stripNullability(argTypes[1] ?? FormulaTypes.any(true));
+            const keyType = keysType.kind === 'list' ? keysType.of : FormulaTypes.any(true);
+            invokedArgTypes = [keyType];
+            if (node.args[3]) invokedArgTypes.push(argTypes[3] ?? FormulaTypes.any(true));
           }
 
           if (invokedArgTypes) {

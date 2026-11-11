@@ -2,6 +2,7 @@ import type {
   BaseFunctionConfig,
   BatchEvaluationCall,
   FormulaExecutionContext,
+  FormulaNodeOutput,
   FormulaValueProvider,
   FunctionImplementation,
 } from '@formulang/definitions';
@@ -10,11 +11,20 @@ import {
   FormulaRuntimeError,
   makeOkList,
   makeOkNull,
+  makeOkNumber,
   makeOkUnknown,
   withWarnings,
 } from '@formulang/definitions';
 import { AbstractEagerBatchImplementation } from './abstract-eager-batch-implementation';
-import { asNumber, asText, isEmptyValue, readNestedProperty } from './helpers';
+import { listTooLarge, typeWarning } from './argument-readers';
+import {
+  asNumber,
+  asText,
+  assumedListLength,
+  equalsUnknownType,
+  isEmptyValue,
+  readNestedProperty,
+} from './helpers';
 
 function constProvider(value: unknown): FormulaValueProvider {
   const out = makeOkUnknown('const', value);
@@ -237,5 +247,169 @@ export class IndexImplementation extends AbstractEagerBatchImplementation {
     if (idx <= 0) return makeOkNull('INDEX');
     const v = list[idx - 1];
     return makeOkUnknown('INDEX', v ?? null);
+  }
+}
+
+/**
+ * The list argument of `TAKE`, `INDEX_OF`, `DISTINCT` and `GROUP_COUNTS`, refused over
+ * `maxListLength`; `null` when the argument is not a list (see `notAList`).
+ */
+function readList(raw: unknown, ctx: FormulaExecutionContext): unknown[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.length > ctx.limits.maxListLength) throw listTooLarge();
+  return raw;
+}
+
+/** `null` answers null; any other value that is not a list, the empty text included, null with `TYPE`. */
+function notAList(fn: string, raw: unknown): FormulaNodeOutput {
+  return raw == null ? makeOkNull(fn) : typeWarning(fn, `${fn} expects a list`);
+}
+
+/** A list holding a list or an object answers null with `TYPE`: only scalars are compared. */
+function notScalars(fn: string): FormulaNodeOutput {
+  return typeWarning(
+    fn,
+    `${fn} compares text, numbers, booleans, dates and times, not lists or objects`,
+  );
+}
+
+function listCost(list: unknown): number {
+  return 0.00002 + 0.00002 * assumedListLength(list);
+}
+
+/** The kinds of the library's date and time values, which carry their `iso` text. */
+const TEMPORAL_KINDS: ReadonlySet<unknown> = new Set(['date', 'time', 'datetime']);
+
+/**
+ * The equality of `DISTINCT` and `GROUP_COUNTS`: the key of a text, number or boolean, equal
+ * exactly for equal values (no conversion between them), and of a date, time or datetime value,
+ * equal when its kind and `iso` text are; `null` for a list or another object, which these
+ * functions do not compare.
+ */
+function scalarKey(value: unknown): string | null {
+  if (typeof value === 'string') return `text:${JSON.stringify(value)}`;
+  if (typeof value === 'number') return `number:${value}`;
+  if (typeof value === 'boolean') return `boolean:${value}`;
+  // Anything else is keyed only as a date, time or datetime: an object whose own kind is one of
+  // those and whose own `iso` is a text. A list holds neither property of its own.
+  const own = (property: string): unknown =>
+    Object.prototype.hasOwnProperty.call(value, property)
+      ? (value as Record<string, unknown>)[property]
+      : undefined;
+  const kind = own('__formula_object_kind');
+  const iso = own('iso');
+  if (!TEMPORAL_KINDS.has(kind) || typeof iso !== 'string') return null;
+  return `${String(kind)}:${JSON.stringify(iso)}`;
+}
+
+/**
+ * The distinct non-empty members of a list, in first-occurrence order, and how often each occurs;
+ * `null` when a member is a list, the empty one included, or another object.
+ */
+function groupMembers(list: readonly unknown[]): { members: unknown[]; counts: number[] } | null {
+  const positions = new Map<string, number>();
+  const members: unknown[] = [];
+  const counts: number[] = [];
+  for (const item of list) {
+    if (!Array.isArray(item) && isEmptyValue(item)) continue;
+    const key = scalarKey(item);
+    if (key === null) return null;
+    const position = positions.get(key);
+    if (position === undefined) {
+      positions.set(key, members.length);
+      members.push(item);
+      counts.push(1);
+    } else {
+      counts[position] += 1;
+    }
+  }
+  return { members, counts };
+}
+
+export class TakeImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('TAKE', args[0]);
+    const rawCount = args[1];
+    if (rawCount == null) return makeOkNull('TAKE');
+    const count = asNumber(rawCount);
+    if (count === null || !Number.isInteger(count) || count < 0) {
+      return typeWarning('TAKE', 'TAKE count must be a whole number of 0 or more');
+    }
+    const rawStart = args[2];
+    const start = rawStart == null ? 1 : asNumber(rawStart);
+    if (start === null || !Number.isInteger(start) || start < 1) {
+      return typeWarning('TAKE', 'TAKE start must be a whole number of 1 or more');
+    }
+    return makeOkList('TAKE', list.slice(start - 1, start - 1 + count));
+  }
+}
+
+export class IndexOfImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('INDEX_OF', args[0]);
+    // A list, the empty one included, is neither a member to find nor a value to look for: the
+    // equality below would compare it with a number by its length. The list comes first.
+    if (list.some((item) => Array.isArray(item))) {
+      return typeWarning('INDEX_OF', 'INDEX_OF does not compare lists');
+    }
+    const value = args[1];
+    if (Array.isArray(value)) return typeWarning('INDEX_OF', 'INDEX_OF does not compare lists');
+    // The coerced equality of INCLUDES and `=`, under which null and "" equal nothing.
+    const index = list.findIndex((item) => equalsUnknownType(item, value) === true);
+    return index < 0 ? makeOkNull('INDEX_OF') : makeOkNumber('INDEX_OF', index + 1);
+  }
+}
+
+export class DistinctImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('DISTINCT', args[0]);
+    const groups = groupMembers(list);
+    if (groups === null) return notScalars('DISTINCT');
+    return makeOkList('DISTINCT', groups.members);
+  }
+}
+
+export class GroupCountsImplementation extends AbstractEagerBatchImplementation {
+  constructor(config: BaseFunctionConfig) {
+    super(config);
+  }
+
+  estimateCostsInSeconds(args: unknown[]): number {
+    return listCost(args[0]);
+  }
+
+  protected evaluate(args: unknown[], ctx: FormulaExecutionContext) {
+    const list = readList(args[0], ctx);
+    if (list === null) return notAList('GROUP_COUNTS', args[0]);
+    const groups = groupMembers(list);
+    if (groups === null) return notScalars('GROUP_COUNTS');
+    return makeOkList('GROUP_COUNTS', groups.counts);
   }
 }

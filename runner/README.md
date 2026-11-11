@@ -248,6 +248,8 @@ only the arguments they need — untaken branches are marked `skipped: true`. Li
 their callee: `FILTER(value; "PRED")` over `[1, 2, 3]` is a single `evaluateMultiple` call with
 three `BatchEvaluationCall`s, so implementations can fan out I/O.
 
+The runner also provides the execution context's optional `chargeCall(signatureId, args)` and `readCall(signatureId, args, answer)`, so an implementation that calls another implementation itself (as `FILTER_BY` calls its operator) is charged against the cost limits and read exactly as the same call written in a formula. Both are `@experimental` and may change in a minor release.
+
 **Purity-based caching.** Declared per function definition: `pure` results go to the cross-run
 `cache`/`pending` maps from the context (per-run maps are created when omitted), `run_cached`
 results die with the run, and `uncached` functions are invoked every time. Cache keys combine the

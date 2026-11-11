@@ -25,6 +25,29 @@ arguments with `,` instead.
   exception: a non-boolean-like runtime value is a runtime error.
 - **Operators.** Where an operator backs a function, the operator and the named
   call compile to the same signature. `1 + 2` and `ADD(1; 2)` are identical.
+- **Mode parameters.** A parameter that lists its admitted values, such as
+  `"whitespace"` or `"word"`, must be written as one of those string literals;
+  any other literal is the parse error `LITERAL_VALUE_NOT_ALLOWED`, and a
+  non-literal is `EXPECTED_STRING_LITERAL_REFERENCE`. A mode that reaches the
+  function another way (passed on by `EACH` or `FILTER`, or produced by an
+  expression) is checked when the call runs: the function returns `null` with a
+  `TYPE` warning, and `EACH`/`FILTER` keep the `null` without the warning. A
+  `null` mode counts as omitted and selects the default, the first value listed.
+- **Text and list limits.** `WORDS`, `WORD_COUNT`, `LEADING_WORDS`,
+  `SENTENCES`, `LINES`, `LINE_COUNT`, `FIRST_CONTAINED`, `CONTAINS_ANY`,
+  `MISSING_FROM`, `TAKE`, `INDEX_OF`, `FILTER_BY`, `DISTINCT` and
+  `GROUP_COUNTS` follow the usual null convention:
+  a `null` required argument gives `null`, and a value of the wrong type gives
+  `null` with a `TYPE` warning. A list argument longer than `maxListLength`
+  (1,000 by default) and a list result longer than `maxWildcardOutputLength`
+  (5,000) raise `LIST_TOO_LARGE`; `WORD_COUNT` and `LINE_COUNT` count past that
+  bound. These functions are charged by the size of their input: the cost
+  estimate grows with the text's length and, for `FIRST_CONTAINED`,
+  `CONTAINS_ANY`, `MISSING_FROM` and the `keep` tokens of `SENTENCES`, with the
+  number of phrases, items or tokens searched. A call too large for
+  `maxFunctionCostUnits` fails with `FUNCTION_COST_LIMIT_EXCEEDED` before it
+  runs. A phrase or item longer than 250 code units raises `PHRASE_TOO_LONG` (a
+  security error).
 - **Examples.** The `evalOk(source, variables?)` calls in the examples are the
   repository's test helper (`core-functions/src/test-helpers/eval-formula.ts`):
   it wires `createCoreFormulaRuntime()`, parses, optimizes, and evaluates the
@@ -53,8 +76,8 @@ arguments with `,` instead.
 - **Math:** [ADD](#add) · [SUB](#sub) · [MUL](#mul) · [DIV](#div) · [POW](#pow) · [SUM](#sum) · [PRODUCT](#product) · [MOD](#mod) · [ROUND](#round) · [ROUNDDOWN](#rounddown) · [ROUNDUP](#roundup) · [CEILING](#ceiling) · [FLOOR](#floor) · [SQRT](#sqrt) · [EXP](#exp) · [LOG](#log) · [LOG10](#log10) · [PI](#pi) · [SIN](#sin) · [COS](#cos) · [TAN](#tan) · [ASIN](#asin) · [ACOS](#acos) · [ATAN](#atan) · [ISEVEN](#iseven) · [ISODD](#isodd) · [RANGE_SCORE](#range_score)
 - **Aggregation:** [AVG](#avg) · [MIN](#min) · [MAX](#max) · [MEDIAN](#median) · [COUNT](#count) · [COUNT_UNIQUE](#count_unique)
 - **Logic & comparison:** [EQ](#eq) · [NEQ](#neq) · [GT](#gt) · [GTE](#gte) · [LT](#lt) · [LTE](#lte) · [AND](#and) · [OR](#or) · [NOT](#not)
-- **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl)
-- **Lists:** [LIST](#list) · [INDEX](#index) · [FLAT](#flat) · [SORT](#sort) · [SORT_BY_PROPERTY](#sort_by_property) · [FILTER](#filter) · [FILTER_PROPERTY](#filter_property) · [EACH](#each) · [REDUCE](#reduce) · [INCLUDES](#includes)
+- **Text:** [CONCAT](#concat) · [JOIN](#join) · [LEN](#len) · [LOWER](#lower) · [UPPER](#upper) · [TRIM](#trim) · [LEFT](#left) · [RIGHT](#right) · [MID](#mid) · [REPLACE](#replace) · [SUBSTITUTE](#substitute) · [CHAR](#char) · [TO_TEXT](#to_text) · [STARTS_WITH](#starts_with) · [ENDS_WITH](#ends_with) · [CONTAINS](#contains) · [CONTAINS_ANY](#contains_any) · [FIRST_CONTAINED](#first_contained) · [MISSING_FROM](#missing_from) · [MATCH_EXPRESSION](#match_expression) · [REGEXEXTRACT](#regexextract) · [REGEXREPLACE](#regexreplace) · [ENCODEURL](#encodeurl) · [ISURL](#isurl) · [WORDS](#words) · [WORD_COUNT](#word_count) · [LEADING_WORDS](#leading_words) · [SENTENCES](#sentences) · [LINES](#lines) · [LINE_COUNT](#line_count)
+- **Lists:** [LIST](#list) · [INDEX](#index) · [TAKE](#take) · [INDEX_OF](#index_of) · [FLAT](#flat) · [SORT](#sort) · [SORT_BY_PROPERTY](#sort_by_property) · [FILTER](#filter) · [FILTER_PROPERTY](#filter_property) · [FILTER_BY](#filter_by) · [EACH](#each) · [REDUCE](#reduce) · [INCLUDES](#includes) · [DISTINCT](#distinct) · [GROUP_COUNTS](#group_counts)
 - **Date & time:** [DATE](#date) · [DATEVALUE](#datevalue) · [TIME](#time) · [TIMEVALUE](#timevalue) · [NOW](#now) · [TODAY](#today) · [DAY](#day) · [MONTH](#month) · [YEAR](#year) · [HOUR](#hour) · [MINUTE](#minute) · [SECOND](#second) · [DAYS](#days) · [DATEDIF](#datedif) · [WEEKDAY](#weekday) · [WEEKNUM](#weeknum) · [ISOWEEKNUM](#isoweeknum)
 - **Control flow:** [IF](#if) · [SWITCH](#switch)
 - **Type predicates & empty:** [IS_EMPTY](#is_empty) · [EMPTY](#empty) · [ISNUMBER](#isnumber) · [ISTEXT](#istext) · [ISDATE](#isdate)
@@ -750,6 +773,49 @@ with a `TYPE` warning.
 await evalOk('CONTAINS("abc"; "b")'); // true
 ```
 
+### CONTAINS_ANY
+
+`CONTAINS_ANY(text: text?, phrases: list<text?>?, match?: text, ignoreCase?: boolean?) -> boolean?`
+
+Whether `FIRST_CONTAINED` finds any of the `phrases` in `text`. A `null` list of
+phrases gives `null`.
+
+```ts
+await evalOk('CONTAINS_ANY("The cat sat"; LIST("dog"; "cat"))'); // true
+await evalOk('CONTAINS_ANY("concatenate"; LIST("cat"); "word")'); // false
+```
+
+### FIRST_CONTAINED
+
+`FIRST_CONTAINED(text: text?, phrases: list<text?>?, match?: text, ignoreCase?: boolean?) -> text?`
+
+Returns the first phrase, in list order (not text order), that occurs in
+`text`, as written in the list, or `null` when none does. `match` is
+`"substring"` (the default) or `"word"`, which also needs no letter, mark or
+number directly beside the phrase. `ignoreCase` compares lower-cased text.
+`null` and empty phrases are ignored.
+
+```ts
+await evalOk('FIRST_CONTAINED("The cat sat"; LIST("sat"; "cat"))'); // "sat"
+await evalOk('FIRST_CONTAINED("Concatenate"; LIST("CAT"); "substring"; true)'); // "CAT"
+await evalOk('FIRST_CONTAINED("Concatenate"; LIST("cat"); "word")'); // null
+```
+
+### MISSING_FROM
+
+`MISSING_FROM(items: list<text?>?, text: text?, normalise?: text) -> list<text>?`
+
+Returns the `items`, in order, that `text` does not contain as a substring.
+`normalise` is applied to both sides first: `"whitespace"` (the default)
+collapses runs of whitespace and trims, `"exact"` changes nothing, and `"loose"`
+also lower-cases and folds typographic quotes and dashes to plain ones. `null`
+and empty items are left out of the result.
+
+```ts
+await evalOk('MISSING_FROM(LIST("apples"; "pears"); "I like  apples")'); // ["pears"]
+await evalOk('MISSING_FROM(LIST("Apples"); "I like apples"; "loose")'); // []
+```
+
 ### MATCH_EXPRESSION
 
 `MATCH_EXPRESSION(text: text, pattern: text) -> boolean`
@@ -813,6 +879,91 @@ await evalOk('ISURL("https://example.com")'); // true
 await evalOk('ISURL("localhost")'); // false
 ```
 
+### WORDS
+
+`WORDS(text: text?, mode?: text, option?: text?) -> list<text>?`
+
+Splits a text into its words. `mode` is `"whitespace"` (the default: runs of
+non-whitespace, punctuation included), `"letters"` (runs of letters, marks and
+numbers, where an apostrophe or hyphen between two runs, or `.` or `,` between
+two digits, keeps them one word) or `"locale"`. `"locale"` uses the runtime's
+`Intl.Segmenter` with the BCP 47 tag given as `option`, so results can differ
+between JavaScript runtimes and versions, which ship different locale data; an
+invalid or unsupported tag gives `null` with a `TYPE` warning. `option` is
+accepted only in `"locale"` mode and is then required.
+
+```ts
+await evalOk('WORDS("Hello, big world")'); // ["Hello,", "big", "world"]
+await evalOk('WORDS("Hello, well-known world"; "letters")'); // ["Hello", "well-known", "world"]
+```
+
+### WORD_COUNT
+
+`WORD_COUNT(text: text?, mode?: text, option?: text?) -> number?`
+
+The number of words `WORDS` finds, with the same `mode` and `option`. It
+counts without building a list, so it is not capped by the list limits.
+
+```ts
+await evalOk('WORD_COUNT("Hello, big world")'); // 3
+await evalOk('WORD_COUNT("   "; "letters")'); // 0
+```
+
+### LEADING_WORDS
+
+`LEADING_WORDS(text: text?, count: number?, mode?: text, option?: text?) -> text?`
+
+Returns the first `count` words of `text` joined by single spaces, or `null`
+when the text has fewer than `count` words. `count` must be a whole number of 1
+or more; anything else gives `null` with a `TYPE` warning. `mode` and `option`
+are those of `WORDS`.
+
+```ts
+await evalOk('LEADING_WORDS("One  two three four"; 2)'); // "One two"
+await evalOk('LEADING_WORDS("One two"; 3)'); // null
+```
+
+### SENTENCES
+
+`SENTENCES(text: text?, mode?: text, keep?: list<text?>?) -> list<text>?`
+
+Splits a text into trimmed sentences. `mode` is `"punctuation"` (the default: a
+sentence ends at `.`, `!` or `?` followed by whitespace) or `"terminators"`
+(every run of `.`, `!`, `?` or their full-width forms ends a sentence, even
+inside `3.14`). `keep` lists tokens, such as abbreviations, that never end a
+sentence; a token counts only where it starts at a word boundary.
+
+```ts
+await evalOk('SENTENCES("It works. Does it? Yes!")'); // ["It works.", "Does it?", "Yes!"]
+await evalOk('SENTENCES("Dr. Smith left. He ran."; "punctuation"; LIST("Dr."))'); // ["Dr. Smith left.", "He ran."]
+await evalOk('SENTENCES("Pi is 3.14. Yes."; "terminators")'); // ["Pi is 3.", "14.", "Yes."]
+```
+
+### LINES
+
+`LINES(text: text?, mode?: text) -> list<text>?`
+
+Splits a text at line breaks (`\n`, `\r\n`, `\r`, and the other Unicode
+mandatory breaks). `mode` is `"non-blank"` (the default), which skips lines
+that are empty or whitespace only, or `"all"`, which keeps them. A final line
+break ends the last line rather than starting an empty one.
+
+```ts
+await evalOk('LINES("a" & CHAR(10) & " " & CHAR(10) & "b")'); // ["a", "b"]
+await evalOk('LINES("a" & CHAR(10) & CHAR(10) & "b"; "all")'); // ["a", "", "b"]
+```
+
+### LINE_COUNT
+
+`LINE_COUNT(text: text?, mode?: text) -> number?`
+
+The number of lines `LINES` finds, with the same `mode`, without the list
+limits.
+
+```ts
+await evalOk('LINE_COUNT("a" & CHAR(10) & "b" & CHAR(10))'); // 2
+```
+
 ---
 
 ## Lists
@@ -847,6 +998,34 @@ Commonly used to produce a guaranteed-`null` value, e.g. `INDEX(LIST(1); 0)`.
 ```ts
 await evalOk('INDEX(LIST(10; 20; 30); 2)'); // 20
 await evalOk('INDEX(LIST(10; 20; 30); 4)'); // null
+```
+
+### TAKE
+
+`TAKE(list: list<T?>?, count: number?, start?: number?) -> list<T?>?`
+
+Returns `count` consecutive items beginning at the 1-based position `start`
+(default 1), or fewer when the list ends first. `count` must be a whole number
+of 0 or more and `start` a whole number of 1 or more, otherwise the result is
+`null` with a `TYPE` warning; a `null` `count` gives `null`.
+
+```ts
+await evalOk('TAKE(LIST(1; 2; 3; 4); 2)'); // [1, 2]
+await evalOk('TAKE(LIST(1; 2; 3; 4); 5; 3)'); // [3, 4]
+```
+
+### INDEX_OF
+
+`INDEX_OF(list: list<T?>?, value: T?) -> number?`
+
+Returns the 1-based position of the first item equal to `value`, or `null` when
+none is. Equality is that of `INCLUDES` and `=`, so `null` and `""` equal
+nothing. A list among the items, or as `value`, gives `null` with a `TYPE`
+warning.
+
+```ts
+await evalOk('INDEX_OF(LIST("a"; "b"; "c"); "b")'); // 2
+await evalOk('INDEX_OF(LIST("a"); "z")'); // null
 ```
 
 ### FLAT
@@ -914,6 +1093,22 @@ supported) instead of the item itself.
 await evalOk('FILTER_PROPERTY(value; "a.b"; "="; 2)', { value }); // [{ a: { b: 2 } }]
 ```
 
+### FILTER_BY
+
+`FILTER_BY(list: list<T?>?, keys: list<any?>?, operator: callable, operatorValue?: any?) -> list<T?>?`
+
+Keeps the items of `list` whose key at the same position in `keys` satisfies
+the named `operator`, called as `(key)` or, when `operatorValue` is given,
+`(key, operatorValue)`; a `null` `operatorValue` counts as omitted. `operator`
+is checked at parse time as in `FILTER`. `keys` must be as long as `list`,
+otherwise the result is `null` with a `TYPE` warning. Each operator call is
+charged against the cost limits like a call written in the formula.
+
+```ts
+await evalOk('FILTER_BY(LIST("a"; "b"; "c"); LIST(1; 5; 9); ">"; 3)'); // ["b", "c"]
+await evalOk('FILTER_BY(LIST("x"; "y"); LIST("data:1"; "z"); "STARTS_WITH"; "data:")'); // ["x"]
+```
+
 ### EACH
 
 `EACH(target: list<T>, operator: callable, ...args?: any) -> list<R>`
@@ -949,6 +1144,31 @@ some comparison was indeterminate (`null`), the result is `null`.
 ```ts
 await evalOk('INCLUDES(LIST("a"; "b"); "b")'); // true
 await evalOk('INCLUDES(LIST("a"); "b")'); // false
+```
+
+### DISTINCT
+
+`DISTINCT(list: list<T?>?) -> list<T?>?`
+
+Returns the first occurrence of each distinct non-empty item, in order. Texts,
+numbers and booleans are equal only to the same value of the same type (`"1"`
+and `1` differ, and text is case-sensitive); dates and times are equal when
+their kind and `iso` text are. A list or object among the items gives `null`
+with a `TYPE` warning.
+
+```ts
+await evalOk('DISTINCT(LIST("a"; "b"; "a"; ""; "c"))'); // ["a", "b", "c"]
+```
+
+### GROUP_COUNTS
+
+`GROUP_COUNTS(list: list<any?>?) -> list<number>?`
+
+For each item of `DISTINCT(list)`, in the same order, how many items of `list`
+equal it. Equality and type errors are those of `DISTINCT`.
+
+```ts
+await evalOk('GROUP_COUNTS(LIST("a"; "b"; "a"; "a"))'); // [3, 1]
 ```
 
 ---

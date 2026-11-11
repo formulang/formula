@@ -115,6 +115,20 @@ export function makeOkUnknown(
   return makeOkOutput(name, { value, valueKind: 'unknown', ...extra, children: extra?.children });
 }
 
+/**
+ * How the runner reads an answer on its cached path: the output as given, or an ok `null` when
+ * the implementation gave no output (any falsy answer).
+ *
+ * @experimental May change in a minor release.
+ */
+export function readCallOutput(
+  name: string,
+  signatureId: string,
+  output: FormulaNodeOutput | null | undefined,
+): FormulaNodeOutput {
+  return output || makeOkUnknown(name, null, { signatureId });
+}
+
 export function makeError(
   name: string,
   input: {

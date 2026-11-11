@@ -1,5 +1,5 @@
 import { BuiltinSignatureIds } from './builtin-signature-ids';
-import type { MutableFormulaRegistry } from './registry';
+import type { FunctionParamDefinition, MutableFormulaRegistry } from './registry';
 import { FormulaTypes } from './types';
 
 /**
@@ -1022,6 +1022,125 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
     controlFlow: true,
   });
 
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.TAKE,
+    name: 'TAKE',
+    category: 'core',
+    description: 'A run of consecutive items from a list.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+      { name: 'count', description: 'How many items to take.', type: FormulaTypes.number(true) },
+      {
+        name: 'start',
+        description: 'The 1-based position of the first item taken (default 1).',
+        type: FormulaTypes.number(true),
+        optional: true,
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.INDEX_OF,
+    name: 'INDEX_OF',
+    category: 'core',
+    description: 'The 1-based position of the first item equal to the value.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+      { name: 'value', type: FormulaTypes.template('T', { nullable: true }) },
+    ],
+    returnType: FormulaTypes.number(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.FILTER_BY,
+    name: 'FILTER_BY',
+    category: 'core',
+    description: 'Filter a list by checking the key at the same position in a second list.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+      {
+        name: 'keys',
+        description: 'One key per list item, checked in its place.',
+        type: FormulaTypes.list(FormulaTypes.any(true), true),
+      },
+      {
+        name: 'operator',
+        type: FormulaTypes.callable('function_or_operator', {
+          // FILTER_BY calls the operator with (key[, operatorValue]).
+          paramTypes: [FormulaTypes.any(true), FormulaTypes.any(true)],
+          returnType: FormulaTypes.boolean(true),
+          minArity: 1,
+          maxArity: 2,
+        }),
+        literalOnly: true,
+      },
+      { name: 'operatorValue', type: FormulaTypes.any(true), optional: true },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.DISTINCT,
+    name: 'DISTINCT',
+    category: 'core',
+    description: 'The first occurrence of each distinct non-empty item, in order.',
+    templates: [
+      {
+        name: 'T',
+        description: 'The type of each item in the list.',
+      },
+    ],
+    params: [
+      {
+        name: 'list',
+        type: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.template('T', { nullable: true }), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.GROUP_COUNTS,
+    name: 'GROUP_COUNTS',
+    category: 'core',
+    description: 'For each distinct non-empty item, in order, how many items equal it.',
+    params: [{ name: 'list', type: FormulaTypes.list(FormulaTypes.any(true), true) }],
+    returnType: FormulaTypes.list(FormulaTypes.number(false), true),
+    purity: 'pure',
+  });
+
   // Type predicates
   registry.registerFunction({
     signatureId: BuiltinSignatureIds.ISNUMBER,
@@ -1299,6 +1418,181 @@ export function registerCoreFormulaDefinitions(registry: MutableFormulaRegistry)
     description: 'Whether the value is a valid URL.',
     params: [{ name: 'value', type: FormulaTypes.any(true) }],
     returnType: FormulaTypes.boolean(false),
+    purity: 'pure',
+  });
+
+  // Text segmentation: words, sentences and lines. Each definition gets its own parameter
+  // objects, so no two definitions share a mutable `literalValues` array.
+  const wordModeParam = (): FunctionParamDefinition => ({
+    name: 'mode',
+    description: 'How words are found: "whitespace" (default), "letters" or "locale".',
+    type: FormulaTypes.text(false),
+    optional: true,
+    literalOnly: true,
+    literalValues: ['whitespace', 'letters', 'locale'],
+  });
+  const wordOptionParam = (): FunctionParamDefinition => ({
+    name: 'option',
+    description: 'The BCP 47 language tag in "locale" mode.',
+    type: FormulaTypes.text(true),
+    optional: true,
+  });
+  const lineModeParam = (): FunctionParamDefinition => ({
+    name: 'mode',
+    description: 'Which lines count: "non-blank" (default) or "all".',
+    type: FormulaTypes.text(false),
+    optional: true,
+    literalOnly: true,
+    literalValues: ['non-blank', 'all'],
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.WORDS,
+    name: 'WORDS',
+    category: 'core',
+    description: 'Splits a text into its words.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, wordModeParam(), wordOptionParam()],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.WORD_COUNT,
+    name: 'WORD_COUNT',
+    category: 'core',
+    description: 'Counts the words in a text.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, wordModeParam(), wordOptionParam()],
+    returnType: FormulaTypes.number(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.LEADING_WORDS,
+    name: 'LEADING_WORDS',
+    category: 'core',
+    description: 'The first words of a text, joined by one space.',
+    params: [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'count',
+        description: 'How many words to take; null when the text has fewer.',
+        type: FormulaTypes.number(true),
+      },
+      wordModeParam(),
+      wordOptionParam(),
+    ],
+    returnType: FormulaTypes.text(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.SENTENCES,
+    name: 'SENTENCES',
+    category: 'core',
+    description: 'Splits a text into its sentences.',
+    params: [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'mode',
+        description: 'What ends a sentence: "punctuation" (default) or "terminators".',
+        type: FormulaTypes.text(false),
+        optional: true,
+        literalOnly: true,
+        literalValues: ['punctuation', 'terminators'],
+      },
+      {
+        name: 'keep',
+        description: 'Tokens that never end a sentence, such as abbreviations.',
+        type: FormulaTypes.list(FormulaTypes.text(true), true),
+        optional: true,
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.LINES,
+    name: 'LINES',
+    category: 'core',
+    description: 'Splits a text into its lines.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, lineModeParam()],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.LINE_COUNT,
+    name: 'LINE_COUNT',
+    category: 'core',
+    description: 'Counts the lines in a text.',
+    params: [{ name: 'text', type: FormulaTypes.text(true) }, lineModeParam()],
+    returnType: FormulaTypes.number(true),
+    purity: 'pure',
+  });
+
+  // Phrases.
+  const phraseParams = (): FunctionParamDefinition[] => [
+    { name: 'text', type: FormulaTypes.text(true) },
+    {
+      name: 'phrases',
+      description: 'The phrases to look for, in priority order.',
+      type: FormulaTypes.list(FormulaTypes.text(true), true),
+    },
+    {
+      name: 'match',
+      description: 'How a phrase must occur: "substring" (default) or "word".',
+      type: FormulaTypes.text(false),
+      optional: true,
+      literalOnly: true,
+      literalValues: ['substring', 'word'],
+    },
+    {
+      name: 'ignoreCase',
+      description: 'Compare after lower-casing both sides (default FALSE).',
+      type: FormulaTypes.boolean(true),
+      optional: true,
+    },
+  ];
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.FIRST_CONTAINED,
+    name: 'FIRST_CONTAINED',
+    category: 'core',
+    description: 'The first phrase, in list order, that the text contains.',
+    params: phraseParams(),
+    returnType: FormulaTypes.text(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.CONTAINS_ANY,
+    name: 'CONTAINS_ANY',
+    category: 'core',
+    description: 'Whether the text contains any of the phrases.',
+    params: phraseParams(),
+    returnType: FormulaTypes.boolean(true),
+    purity: 'pure',
+  });
+
+  registry.registerFunction({
+    signatureId: BuiltinSignatureIds.MISSING_FROM,
+    name: 'MISSING_FROM',
+    category: 'core',
+    description: 'The items, in order, that the text does not contain.',
+    params: [
+      { name: 'items', type: FormulaTypes.list(FormulaTypes.text(true), true) },
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'normalise',
+        description: 'How both sides are compared: "whitespace" (default), "exact" or "loose".',
+        type: FormulaTypes.text(false),
+        optional: true,
+        literalOnly: true,
+        literalValues: ['whitespace', 'exact', 'loose'],
+      },
+    ],
+    returnType: FormulaTypes.list(FormulaTypes.text(false), true),
     purity: 'pure',
   });
 }

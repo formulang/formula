@@ -50,13 +50,16 @@ Registration is strict and fails fast, at startup rather than mid-evaluation: in
 
 Each `FunctionParamDefinition` supports:
 
-| Field         | Effect                                                                                                                                                                 |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`        | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null. |
-| `optional`    | May be omitted at the call site.                                                                                                                                       |
-| `variadic`    | The last parameter may repeat (`AND(values...)`).                                                                                                                      |
-| `literalOnly` | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                      |
-| `reference`   | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                   |
+| Field           | Effect                                                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`          | Bound and checked at parse time (`ARGUMENT_TYPE_MISMATCH`); nullability is enforced at run time (`NULL_NOT_ALLOWED`) when a `nullable: false` parameter receives null.                         |
+| `optional`      | May be omitted at the call site.                                                                                                                                                               |
+| `variadic`      | The last parameter may repeat (`AND(values...)`).                                                                                                                                              |
+| `literalOnly`   | The argument must be a string literal in the source, validated at parse time — no dynamic values.                                                                                              |
+| `literalValues` | On a `literalOnly` parameter, the only string literals it admits; any other literal written in the formula fails at parse time with `LITERAL_VALUE_NOT_ALLOWED` (exact, case-sensitive match). |
+| `reference`     | `'function' \| 'operator' \| 'function_or_operator'` — the literal is validated against the registry (`UNKNOWN_FUNCTION_REFERENCE`).                                                           |
+
+Registration rejects an empty `literalValues` list, a list of anything but text, and a list on a parameter that is not literal-only or takes no string literal. A variadic literal-only parameter with a list is checked at every argument; without a list, only at its first. The parser checks only literals written in the call itself: a literal passed on by a higher-order function such as `EACH` or `FILTER`, or produced by an expression, reaches the implementation unchecked, so validate it there (and answer `null` with a `TYPE` warning).
 
 Overloads are supported: register multiple definitions under the same `name` with different signature ids (see `COUNT/v1` vs `COUNT_VALUES/v1`, or the two `STARTS_WITH` variants). The registry rejects overload pairs that could resolve non-deterministically. `aliases` lets one definition answer to several names.
 
@@ -161,6 +164,8 @@ Return `FormulaNodeOutput`s instead of throwing. Build them with the helpers fro
 - **Never emit `NaN`/`Infinity`** — `makeOkNumber` already downgrades them to null.
 
 For hard resource stops, throw `FormulaRuntimeError(code, message, 'security')` (see `FilterImplementation` enforcing `ctx.limits.maxListLength`); the runner converts any throw into a structured error output at the node boundary.
+
+An implementation that calls another implementation itself (as `FILTER_BY` calls its operator) can use the optional `ctx.chargeCall(signatureId, args)` and `ctx.readCall(signatureId, args, answer)`: the runner provides them so that such a call is charged against the cost limits and read exactly as the same call written in a formula. Both are `@experimental` and may change in a minor release.
 
 ### 3.1 The eager batch pattern
 
@@ -349,6 +354,22 @@ registry.registerVariable({/* your VariableDefinition */});
 ```
 
 Registries are cheap in-memory objects. Build one per tenant/document type/security context rather than mutating a global one — the registry _is_ your capability policy.
+
+#### Built-in names added in 1.1.0
+
+Version 1.1.0 adds 14 built-in functions: `WORDS`, `WORD_COUNT`, `LEADING_WORDS`, `SENTENCES`, `LINES`, `LINE_COUNT`, `FIRST_CONTAINED`, `CONTAINS_ANY`, `MISSING_FROM`, `TAKE`, `INDEX_OF`, `FILTER_BY`, `DISTINCT` and `GROUP_COUNTS` ([function reference](functions.md)). A 1.0.0 formula that names none of them gives the same result. But if your host registered its own function under one of these names after `createCoreFormulaRuntime()`, it is affected in one of three ways:
+
+- **Start-up error.** Registering under the built-in's signature id throws `Function already registered`. Registering with the built-in's parameters (or only its required ones) under another id throws `Ambiguous overload`; a one-argument function taking the built-in's first parameter does so for `WORDS`, `WORD_COUNT`, `SENTENCES`, `LINES`, `LINE_COUNT`, `DISTINCT` and `GROUP_COUNTS`.
+- **Silent rebinding.** An overload with narrower parameter types (e.g. `TAKE(list<number>; number)`) still registers, but calls it takes now bind the built-in.
+- **No match.** A call your function does not take now fails with `NO_MATCHING_OVERLOAD`, where 1.0.0 bound your only definition. A host function named `FILTER_BY` also gets the parse-time callable checks of the built-in.
+
+To keep your own function, retire the built-in first, then register yours ([best-practices.md §2.3](best-practices.md#23-same-shape-version-bump-retire-the-old-definition-as-legacy-keep-implementations-forever) explains retirement):
+
+```ts
+const { registry, implementations } = createCoreFormulaRuntime();
+registry.retireFunction('TAKE/v1'); // the built-in leaves the name space
+registry.registerFunction({/* your TAKE definition */});
+```
 
 ### 5.2 Minimal and custom registries
 

@@ -198,6 +198,76 @@ describe('builtins', () => {
     expect(res.value).toStrictEqual([items[1]]);
   });
 
+  it('segments a text variable into words, sentences and lines', async () => {
+    const text = 'Wir helfen z. B. Handwerkern.\nKennst du das?';
+    const counts = await evalFormula(
+      'LIST(WORD_COUNT(value); COUNT(SENTENCES(value; "punctuation"; LIST("z. B."))); LINE_COUNT(value))',
+      { value: text },
+      FormulaTypes.text(true),
+    );
+    expect(counts.res.errors).toStrictEqual([]);
+    expect(counts.res.value).toStrictEqual([8, 2, 2]);
+
+    const opening = await evalFormula(
+      'LEADING_WORDS(value; 2)',
+      { value: text },
+      FormulaTypes.text(true),
+    );
+    expect(opening.res.errors).toStrictEqual([]);
+    expect(opening.res.value).toBe('Wir helfen');
+  });
+
+  it('checks the phrases of a document variable', async () => {
+    const document = ['1. Erstens', 'Kennst du das?', '2. Zweitens', 'Punkt'].join('\n');
+    const missing = await evalFormula(
+      'MISSING_FROM(LIST("1. Erstens"; "3. Drittens"); JOIN(LINES(value); " | "))',
+      { value: document },
+      FormulaTypes.text(true),
+    );
+    expect(missing.res.errors).toStrictEqual([]);
+    expect(missing.res.value).toStrictEqual(['3. Drittens']);
+
+    const phrase = await evalFormula(
+      'FIRST_CONTAINED(LOWER(value); LIST("oder?"; "kennst du das?"))',
+      { value: document },
+      FormulaTypes.text(true),
+    );
+    expect(phrase.res.errors).toStrictEqual([]);
+    expect(phrase.res.value).toBe('kennst du das?');
+  });
+
+  it('slices, filters and groups a list variable', async () => {
+    const segments = ['craft', 'retail', 'craft'];
+    const listOfText = FormulaTypes.list(FormulaTypes.text(true), true);
+    const grouped = await evalFormula(
+      'LIST(MAX(GROUP_COUNTS(value)) - MIN(GROUP_COUNTS(value)); COUNT(DISTINCT(value)); INDEX_OF(value; "retail"))',
+      { value: segments },
+      listOfText,
+    );
+    expect(grouped.res.errors).toStrictEqual([]);
+    expect(grouped.res.value).toStrictEqual([1, 2, 2]);
+
+    const kept = await evalFormula(
+      'TAKE(FILTER_BY(value; LIST(3; 1; 5); ">"; 2); 1)',
+      { value: segments },
+      listOfText,
+    );
+    expect(kept.res.errors).toStrictEqual([]);
+    expect(kept.res.value).toStrictEqual(['craft']);
+  });
+
+  it('resolves a function name a higher-order call passes on when it runs', async () => {
+    const nested = await evalFormula('EACH(LIST(LIST(1; 2; 3)); "FILTER"; ">"; 1)');
+    expect(nested.parsed.errors).toStrictEqual([]);
+    expect(nested.res.value).toStrictEqual([[2, 3]]);
+
+    // A name the registry does not know invokes nothing: the nested FILTER yields null.
+    const unknown = await evalFormula('EACH(LIST(LIST(1; 2; 3)); "FILTER"; "NOPE")');
+    expect(unknown.parsed.errors).toStrictEqual([]);
+    expect(unknown.res.errors).toStrictEqual([]);
+    expect(unknown.res.value).toStrictEqual([null]);
+  });
+
   it('estimated cost counts nested calls exactly once', () => {
     const { registry } = createTestRuntime();
     registry.registerVariable({

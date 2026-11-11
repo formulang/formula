@@ -1,11 +1,20 @@
+import { admittedValues, literalCheckAt } from './literal-checks';
 import type {
   FunctionDefinition,
+  FunctionParamDefinition,
   MutableFormulaRegistry,
   OperatorDefinition,
   VariableDefinition,
 } from './registry';
-import { isAssignable, stripNullability } from './type-utils';
+import {
+  argumentFits,
+  argumentSelects,
+  formatType,
+  isAssignable,
+  stripNullability,
+} from './type-utils';
 import type { FormulaType } from './types';
+import { FormulaTypes } from './types';
 
 export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
   /**
@@ -23,7 +32,8 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     { signatureId: string; from: FormulaType; to: FormulaType }
   >();
 
-  registerFunction(def: FunctionDefinition): void {
+  registerFunction(given: FunctionDefinition): void {
+    const def = withoutNullLiteralValues(given);
     // Basic versioning rule: signature ids must be stable and versioned.
     // Convention: NAME/vN (e.g. FILTER/v1). This keeps requirements + caching stable across future changes.
     if (!/^[A-Z0-9_]+\/v\d+$/.test(def.signatureId)) {
@@ -35,6 +45,34 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     if (this.functionsBySignatureId.has(def.signatureId)) {
       throw new Error(`Function already registered: ${def.signatureId}`);
     }
+
+    // A `literalValues` list must be a non-empty list of texts, on a parameter where the parser
+    // checks literals (`literalCheckAt`) and whose type takes a string literal. Anything else is
+    // a definition mistake, so registration fails.
+    def.params.forEach((param, position) => {
+      if (param.literalValues === undefined) return;
+      if (literalCheckAt(def.params, position, admittedValues)?.param !== param) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues but is not literalOnly`,
+        );
+      }
+      const literal = FormulaTypes.text(false);
+      if (!argumentSelects(literal, param.type) || !argumentFits(literal, param.type)) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues but takes no string literal (its type is ${describeType(param.type)})`,
+        );
+      }
+      if (admittedValues(param) === undefined) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares literalValues that are not a list of texts`,
+        );
+      }
+      if (param.literalValues.length === 0) {
+        throw new Error(
+          `Parameter '${param.name}' of ${def.signatureId} declares an empty literalValues list`,
+        );
+      }
+    });
 
     // Legacy definitions are retired from authoring: they never enter the name index or
     // the cast map, and they are skipped by the ambiguity checks (ambiguity is a
@@ -119,8 +157,9 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
     // Idempotent: retiring an already-legacy definition is a no-op.
     if (def.legacy === true) return;
 
-    // Definitions are stored by caller reference, so replace the stored entry with a
-    // legacy-marked copy instead of mutating an object the caller may share/reuse.
+    // Definitions are stored by caller reference (a copy only where a `null` admitted-value list was
+    // dropped), so replace the stored entry with a legacy-marked copy instead of mutating an object
+    // the caller may share/reuse.
     this.functionsBySignatureId.set(signatureId, { ...def, legacy: true });
 
     const nameKeys = [...new Set([def.name, ...(def.aliases ?? [])].map((n) => n.toUpperCase()))];
@@ -178,6 +217,33 @@ export class InMemoryFormulaRegistry implements MutableFormulaRegistry {
   listVariables(): VariableDefinition[] {
     return [...this.variablesByName.values()];
   }
+}
+
+/**
+ * `def` as the registry stores it: a parameter's `literalValues` given as `null` is absent, as
+ * `null` is on the other optional fields, so a definition from a format that writes absent fields
+ * as `null` registers as written and no reader sees a `null` list.
+ */
+function withoutNullLiteralValues(def: FunctionDefinition): FunctionDefinition {
+  const unlisted = (param: FunctionParamDefinition) => (param.literalValues as unknown) === null;
+  if (!def.params.some(unlisted)) return def;
+  return {
+    ...def,
+    params: def.params.map((param) => {
+      if (!unlisted(param)) return param;
+      const stored = { ...param };
+      delete stored.literalValues;
+      return stored;
+    }),
+  };
+}
+
+/** `t` as a registration error names it: a template with its constraint. */
+function describeType(t: FormulaType): string {
+  if (t.kind === 'template' && t.constraint !== undefined) {
+    return `${formatType(t)}, constrained to ${formatType(t.constraint)}`;
+  }
+  return formatType(t);
 }
 
 function typeKey(t: FormulaType): string {

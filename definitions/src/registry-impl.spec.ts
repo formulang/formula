@@ -1,4 +1,6 @@
 import { createRegistry } from './registry-impl';
+import { formatType } from './type-utils';
+import type { FormulaType } from './types';
 import { FormulaTypes } from './types';
 
 describe('InMemoryFormulaRegistry', () => {
@@ -146,5 +148,182 @@ describe('InMemoryFormulaRegistry', () => {
         purity: 'pure',
       }),
     ).toThrow(/ambiguous overload/i);
+  });
+
+  it('registers a literal-only parameter with admitted values', () => {
+    const registry = createRegistry();
+    registry.registerFunction({
+      signatureId: 'MODE/v1',
+      name: 'MODE',
+      category: 'core',
+      description: 'Test function with an enumerated literal-only mode.',
+      params: [
+        {
+          name: 'mode',
+          type: FormulaTypes.text(false),
+          literalOnly: true,
+          literalValues: ['first', 'second'],
+        },
+      ],
+      returnType: FormulaTypes.text(false),
+      purity: 'pure',
+    });
+
+    expect(registry.getFunction('MODE/v1')?.params[0]?.literalValues).toStrictEqual([
+      'first',
+      'second',
+    ]);
+  });
+
+  it('rejects admitted literal values on a parameter that is not literal-only', () => {
+    const registry = createRegistry();
+    expect(() =>
+      registry.registerFunction({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'Admitted values without literalOnly (expected to throw).',
+        params: [{ name: 'mode', type: FormulaTypes.text(false), literalValues: ['first'] }],
+        returnType: FormulaTypes.text(false),
+        purity: 'pure',
+      }),
+    ).toThrow(/declares literalValues but is not literalOnly/);
+    expect(registry.getFunction('MODE/v1')).toBeUndefined();
+  });
+
+  it('rejects admitted values on a parameter no string literal fits, and takes them where one does', () => {
+    // A literal-only parameter takes a string literal; one whose type no text fits, by both of the
+    // parser's checks of an argument's type, refuses calls before its list is read: choosing
+    // among the overloads (`argumentSelects`), where a template's constraint counts, and checking
+    // the call once it binds the definition (`argumentFits`), where any template fits.
+    const register = (type: FormulaType) => {
+      const registry = createRegistry();
+      registry.registerFunction({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'Admitted values on a parameter of the type given.',
+        params: [{ name: 'mode', type, literalOnly: true, literalValues: ['1', 'true'] }],
+        returnType: FormulaTypes.text(false),
+        purity: 'pure',
+      });
+      return registry;
+    };
+    const refused: Array<[FormulaType, string]> = [
+      [FormulaTypes.number(false), 'number'],
+      [FormulaTypes.boolean(true), 'boolean?'],
+      [FormulaTypes.list(FormulaTypes.text(false)), 'List<text>'],
+      [FormulaTypes.object('date'), 'Object(date)'],
+      [
+        FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.boolean(false)]),
+        '(number | boolean)',
+      ],
+      [
+        FormulaTypes.template('T', { constraint: FormulaTypes.number(false) }),
+        'T, constrained to number',
+      ],
+    ];
+    for (const [type, named] of refused) {
+      expect(() => register(type), named).toThrow(
+        `Parameter 'mode' of MODE/v1 declares literalValues but takes no string literal (its type is ${named})`,
+      );
+    }
+    const taken = [
+      FormulaTypes.text(true),
+      FormulaTypes.any(true),
+      FormulaTypes.template('T'),
+      FormulaTypes.template('T', { constraint: FormulaTypes.text(false) }),
+      FormulaTypes.callable('function'),
+      FormulaTypes.union([FormulaTypes.number(false), FormulaTypes.text(false)]),
+    ];
+    for (const type of taken) {
+      expect(
+        register(type).getFunction('MODE/v1')?.params[0]?.literalValues,
+        formatType(type),
+      ).toStrictEqual(['1', 'true']);
+    }
+  });
+
+  it('rejects an empty admitted-value list', () => {
+    const registry = createRegistry();
+    expect(() =>
+      registry.registerFunction({
+        signatureId: 'MODE/v1',
+        name: 'MODE',
+        category: 'core',
+        description: 'An empty admitted-value list (expected to throw).',
+        params: [
+          { name: 'mode', type: FormulaTypes.text(false), literalOnly: true, literalValues: [] },
+        ],
+        returnType: FormulaTypes.text(false),
+        purity: 'pure',
+      }),
+    ).toThrow(/empty literalValues list/);
+  });
+
+  it('rejects admitted values that are not a list of texts', () => {
+    // As an untyped transport (JSON, YAML, a JavaScript host) can give them.
+    const holed: unknown[] = [];
+    holed[1] = 'second';
+    const malformed: unknown[] = ['whitespace', { length: 2 }, [1, 2], [null], ['first', 2], holed];
+    for (const literalValues of malformed) {
+      const registry = createRegistry();
+      expect(
+        () =>
+          registry.registerFunction({
+            signatureId: 'MODE/v1',
+            name: 'MODE',
+            category: 'core',
+            description: 'Admitted values that are not texts (expected to throw).',
+            params: [
+              {
+                name: 'mode',
+                type: FormulaTypes.text(false),
+                literalOnly: true,
+                literalValues: literalValues as string[],
+              },
+            ],
+            returnType: FormulaTypes.text(false),
+            purity: 'pure',
+          }),
+        JSON.stringify(literalValues),
+      ).toThrow(/declares literalValues that are not a list of texts/);
+      expect(registry.getFunction('MODE/v1')).toBeUndefined();
+    }
+  });
+
+  it('reads a null admitted-value list as none, and stores the definition without it', () => {
+    const registry = createRegistry();
+    const params = [
+      { name: 'text', type: FormulaTypes.text(true) },
+      {
+        name: 'mode',
+        type: FormulaTypes.text(false),
+        literalOnly: true,
+        literalValues: null as unknown as string[],
+      },
+      // `literalOnly` given as `null` too: neither applies.
+      {
+        name: 'option',
+        type: FormulaTypes.text(true),
+        literalOnly: null as unknown as boolean,
+        literalValues: null as unknown as string[],
+      },
+    ];
+    registry.registerFunction({
+      signatureId: 'MODE/v1',
+      name: 'MODE',
+      category: 'core',
+      description: 'Null admitted-value lists, as a JSON transport writes absent fields.',
+      params,
+      returnType: FormulaTypes.text(false),
+      purity: 'pure',
+    });
+    const stored = registry.getFunction('MODE/v1');
+    expect(
+      stored?.params.map((param) => Object.keys(param).includes('literalValues')),
+    ).toStrictEqual([false, false, false]);
+    // The caller's definition is left as given.
+    expect(params[1]?.literalValues).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ and the one-call wiring that makes them executable.
 
 ## Highlights
 
-- **A standard library of 97 functions.** Math, aggregation, logic &
+- **A standard library of 111 functions.** Math, aggregation, logic &
   comparison, text, lists, date & time, control flow, and type & empty — each
   documented with its signature, edge-case behavior, and a runnable example
   ([docs/functions.md](../docs/functions.md)).
@@ -144,16 +144,21 @@ registers just the definitions when you only need to parse and validate.
 The full reference — signatures, edge cases, and a runnable example per
 function — is in **[docs/functions.md](../docs/functions.md)**. Overview:
 
-| Category           | Functions                                                                                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Math               | `ADD` `SUB` `MUL` `DIV` `POW` `SUM` `PRODUCT` `MOD` `ROUND` `ROUNDDOWN` `ROUNDUP` `CEILING` `FLOOR` `SQRT` `EXP` `LOG` `LOG10` `PI` `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` `ISEVEN` `ISODD` `RANGE_SCORE`           |
-| Aggregation        | `AVG` `MIN` `MAX` `MEDIAN` `COUNT` `COUNT_UNIQUE`                                                                                                                                                                   |
-| Logic & comparison | `EQ` `NEQ` `GT` `GTE` `LT` `LTE` `AND` `OR` `NOT`                                                                                                                                                                   |
-| Text               | `CONCAT` `JOIN` `LEN` `LOWER` `UPPER` `TRIM` `LEFT` `RIGHT` `MID` `REPLACE` `SUBSTITUTE` `CHAR` `TO_TEXT` `STARTS_WITH` `ENDS_WITH` `CONTAINS` `MATCH_EXPRESSION` `REGEXEXTRACT` `REGEXREPLACE` `ENCODEURL` `ISURL` |
-| Lists              | `LIST` `INDEX` `FLAT` `SORT` `SORT_BY_PROPERTY` `FILTER` `FILTER_PROPERTY` `EACH` `REDUCE` `INCLUDES`                                                                                                               |
-| Date & time        | `DATE` `DATEVALUE` `TIME` `TIMEVALUE` `NOW` `TODAY` `DAY` `MONTH` `YEAR` `HOUR` `MINUTE` `SECOND` `DAYS` `DATEDIF` `WEEKDAY` `WEEKNUM` `ISOWEEKNUM`                                                                 |
-| Control flow       | `IF` `SWITCH`                                                                                                                                                                                                       |
-| Type & empty       | `IS_EMPTY` `EMPTY` `ISNUMBER` `ISTEXT` `ISDATE`                                                                                                                                                                     |
+| Category           | Functions                                                                                                                                                                                                                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Math               | `ADD` `SUB` `MUL` `DIV` `POW` `SUM` `PRODUCT` `MOD` `ROUND` `ROUNDDOWN` `ROUNDUP` `CEILING` `FLOOR` `SQRT` `EXP` `LOG` `LOG10` `PI` `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` `ISEVEN` `ISODD` `RANGE_SCORE`                                                                                                                                 |
+| Aggregation        | `AVG` `MIN` `MAX` `MEDIAN` `COUNT` `COUNT_UNIQUE`                                                                                                                                                                                                                                                                                         |
+| Logic & comparison | `EQ` `NEQ` `GT` `GTE` `LT` `LTE` `AND` `OR` `NOT`                                                                                                                                                                                                                                                                                         |
+| Text               | `CONCAT` `JOIN` `LEN` `LOWER` `UPPER` `TRIM` `LEFT` `RIGHT` `MID` `REPLACE` `SUBSTITUTE` `CHAR` `TO_TEXT` `STARTS_WITH` `ENDS_WITH` `CONTAINS` `CONTAINS_ANY` `FIRST_CONTAINED` `MISSING_FROM` `MATCH_EXPRESSION` `REGEXEXTRACT` `REGEXREPLACE` `ENCODEURL` `ISURL` `WORDS` `WORD_COUNT` `LEADING_WORDS` `SENTENCES` `LINES` `LINE_COUNT` |
+| Lists              | `LIST` `INDEX` `TAKE` `INDEX_OF` `FLAT` `SORT` `SORT_BY_PROPERTY` `FILTER` `FILTER_PROPERTY` `FILTER_BY` `EACH` `REDUCE` `INCLUDES` `DISTINCT` `GROUP_COUNTS`                                                                                                                                                                             |
+| Date & time        | `DATE` `DATEVALUE` `TIME` `TIMEVALUE` `NOW` `TODAY` `DAY` `MONTH` `YEAR` `HOUR` `MINUTE` `SECOND` `DAYS` `DATEDIF` `WEEKDAY` `WEEKNUM` `ISOWEEKNUM`                                                                                                                                                                                       |
+| Control flow       | `IF` `SWITCH`                                                                                                                                                                                                                                                                                                                             |
+| Type & empty       | `IS_EMPTY` `EMPTY` `ISNUMBER` `ISTEXT` `ISDATE`                                                                                                                                                                                                                                                                                           |
+
+The package also exports `splitWords(text, mode?, option?)` and
+`splitSentences(text, mode?, keep?)`, the tokenisers behind `WORDS` and
+`SENTENCES`, for counting outside a formula. They are experimental and may
+change in a minor release.
 
 ## Register your own handlers
 

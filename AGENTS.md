@@ -4,14 +4,14 @@ Formulang is an open-source, safe, embeddable, strongly-typed formula/expression
 
 ## Repo map
 
-| Path              | Package                     | What it is                                                                                                               |
-| ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `definitions/`    | `@formulang/definitions`    | Portable contracts, types, and registry primitives — the shared vocabulary of the system (no execution logic).           |
-| `parser/`         | `@formulang/parser`         | Compiles formula source text into a typed, validated AST (a `TypedRule`) against a registry.                             |
-| `runner/`         | `@formulang/runner`         | Asynchronous evaluation engine for compiled formulas, with caching, batching, limits, and per-node output.               |
-| `core-functions/` | `@formulang/core-functions` | Built-in function definitions and executable implementations; `createCoreFormulaRuntime()` wires a ready-to-use runtime. |
-| `docs/`           | —                           | Cross-package documentation: architecture, language reference, function reference, extending, best practices, releasing. |
-| `scripts/`        | —                           | Release helper: `set-version.js` sets (or verifies with `--check`) the single shared version across all packages.        |
+| Path              | Package                     | What it is                                                                                                                                                          |
+| ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `definitions/`    | `@formulang/definitions`    | Portable contracts, types, and registry primitives — the shared vocabulary of the system (no execution logic).                                                      |
+| `parser/`         | `@formulang/parser`         | Compiles formula source text into a typed, validated AST (a `TypedRule`) against a registry.                                                                        |
+| `runner/`         | `@formulang/runner`         | Asynchronous evaluation engine for compiled formulas, with caching, batching, limits, and per-node output.                                                          |
+| `core-functions/` | `@formulang/core-functions` | Built-in function definitions and executable implementations; `createCoreFormulaRuntime()` wires a ready-to-use runtime.                                            |
+| `docs/`           | —                           | Cross-package documentation: architecture, language reference, function reference, extending, best practices, releasing.                                            |
+| `scripts/`        | —                           | Release helper: `set-version.js` sets (or verifies with `--check`) the single shared version across all packages; `compat/` holds the 1.0.0 compatibility baseline. |
 
 All four packages are published to npmjs.org and share a single version. Dependency direction: `definitions` has no internal dependencies; `parser` and `core-functions` depend on `definitions`; `runner` depends on `definitions` and `parser`.
 
@@ -40,9 +40,10 @@ Run from the repo root.
 
 ## Critical facts (non-obvious — read before working)
 
-- **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 60 spec files / 291 tests). Run `pnpm run test` freely and often.
+- **Tests need no build.** `vitest.config.ts` aliases `@formulang/*` to each package's `src/index.ts`, so the entire suite runs against source (currently 70 spec files / 715 tests). Run `pnpm run test` freely and often.
 - **Lint DOES need a build.** `lint` is `tsc --noEmit` per package, and cross-package imports resolve through the published entrypoints (`dist/`). Run `pnpm run build` before `pnpm run lint` — and before anything else that resolves `dist/` instead of the vitest aliases.
 - Test files are `*.spec.ts`, co-located with the source they test.
+- `core-functions/src/docs-examples.spec.ts` runs the `evalOk` examples in `docs/functions.md`, so a wrong example fails the suite.
 - TypeScript 6 with `module`/`moduleResolution` set to `nodenext` (modern Node module semantics, matching `engines >=22`), CJS emit. Mind Node-style module resolution rules when adding imports.
 - Formatting is enforced: prettier plus `prettier-plugin-organize-imports`. Run `pnpm run prettier` before finishing any change; CI fails on `prettier:check`.
 - **Releases are version-driven, not commit-driven.** Commit messages are free-form — no required format, no message linting, nothing parses them. A release happens exactly when `main` carries a version that is not yet on npm: the release workflow checks the version lockstep, builds, tests, publishes all packages, then tags `v<version>` and creates a GitHub release with auto-generated notes. If the version on `main` is already published, the run is a green no-op.

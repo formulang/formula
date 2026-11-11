@@ -1,4 +1,4 @@
-import { formatType, isAssignable } from './type-utils';
+import { argumentFits, argumentSelects, formatType, isAssignable } from './type-utils';
 import { FormulaTypes } from './types';
 
 describe('type-utils union support', () => {
@@ -47,6 +47,19 @@ describe('type-utils template support', () => {
     const TN = FormulaTypes.template('T', { constraint: FormulaTypes.number() });
     expect(isAssignable(FormulaTypes.number(), TN)).toBe(true);
     expect(isAssignable(FormulaTypes.text(), TN)).toBe(false);
+  });
+
+  it("chooses an overload by a template's constraint, and fits any template once bound", () => {
+    const TN = FormulaTypes.template('T', { constraint: FormulaTypes.number() });
+    const text = FormulaTypes.text(false);
+    expect(argumentSelects(text, TN)).toBe(false);
+    expect(argumentFits(text, TN)).toBe(true);
+    expect(argumentSelects(FormulaTypes.number(true), TN)).toBe(true);
+    expect(argumentSelects(text, FormulaTypes.template('T'))).toBe(true);
+    // Nullability aside on both sides, and any argument for `any`.
+    expect(argumentSelects(FormulaTypes.text(true), FormulaTypes.text(false))).toBe(true);
+    expect(argumentSelects(FormulaTypes.list(text), FormulaTypes.any(false))).toBe(true);
+    expect(argumentSelects(FormulaTypes.boolean(false), FormulaTypes.text(true))).toBe(false);
   });
 });
 

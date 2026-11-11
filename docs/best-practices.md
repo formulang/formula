@@ -263,7 +263,7 @@ The maps are plain `Map`s you own: the runner adds entries and nothing expires, 
 
 ### 4.3 Cost estimators reject expensive calls before they run
 
-Give every implementation that does real work an `estimateCostsInSeconds`; the runner charges the estimate _before_ invoking. Verified: an estimator returning `3` against the default `maxFunctionCostUnits: 2` fails the call with `FUNCTION_COST_LIMIT_EXCEEDED` (kind `security`) and the implementation is **never executed**; estimator-less calls (including control flow like `IF`) charge a flat `0.05` units, so `limits: { maxTotalCostUnits: 0.04 }` fails any formula containing `IF` with `COST_LIMIT_EXCEEDED`.
+Give every implementation that does real work an `estimateCostsInSeconds`; the runner charges the estimate _before_ invoking. Verified: an estimator returning `3` against the default `maxFunctionCostUnits: 2` fails the call with `FUNCTION_COST_LIMIT_EXCEEDED` (kind `security`) and the implementation is **never executed** (the built-in text functions estimate from the length of their input and the number of phrases or items searched, so very large inputs are refused the same way; raise `maxFunctionCostUnits` for batch surfaces that need them); estimator-less calls (including control flow like `IF`) charge a flat `0.05` units, so `limits: { maxTotalCostUnits: 0.04 }` fails any formula containing `IF` with `COST_LIMIT_EXCEEDED`.
 
 ```ts
 implementations.register('FETCH_SCORE/v1', {

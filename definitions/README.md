@@ -111,7 +111,9 @@ Registration is strict and fails fast: signature ids must match `NAME/vN`, dupli
 
 ### Function definitions vs implementations
 
-A `FunctionDefinition` is data: name, aliases, params (each with `optional`, `variadic`, `literalOnly`, `reference`), template declarations, `returnType`, and behavioral flags. The executable side is a separate `FunctionImplementation`, resolved by signature id through a `FunctionImplementationResolver` at evaluation time. [Registering your own](#registering-your-own) shows a complete definition.
+A `FunctionDefinition` is data: name, aliases, params (each with `optional`, `variadic`, `literalOnly`, `literalValues`, `reference`), template declarations, `returnType`, and behavioral flags. The executable side is a separate `FunctionImplementation`, resolved by signature id through a `FunctionImplementationResolver` at evaluation time. [Registering your own](#registering-your-own) shows a complete definition.
+
+`literalValues?: string[]` on a `literalOnly` parameter lists the only string literals it admits: the parser refuses any other literal written in the call with `LITERAL_VALUE_NOT_ALLOWED` (exact, case-sensitive). Registration rejects an empty list, a non-text list, and a list on a parameter that is not literal-only or takes no string literal. A literal that reaches a function another way (passed on by `EACH`, `FILTER`, `FILTER_PROPERTY`, `REDUCE` or `FILTER_BY`, or produced by an expression) is not checked by the parser; the built-ins check it when the call runs and answer `null` with a `TYPE` warning.
 
 - **Signature ids** like `'ADD/v1'` (see `BuiltinSignatureIds`) are the stable currency of the system: requirements, caches, and operator bindings key off them, so behavior changes get a new version instead of mutating an existing id.
 - **Purity** drives caching: `pure` results may be memoized across evaluations (keyed by signature id + arguments), `run_cached` results are cached only within a single evaluation run, and `uncached` results never are (`NOW`, `TODAY`).
@@ -119,11 +121,15 @@ A `FunctionDefinition` is data: name, aliases, params (each with `optional`, `va
 - **`redaction: 'mask'`** (available on functions and variables) masks the value in per-node debug output.
 - Implementations are **batch-first**: `evaluateMultiple(calls, ctx)` receives many calls at once and returns structured `FormulaNodeOutput`s (value, warnings, error, children) rather than throwing. The helpers in [`execution-helpers.ts`](src/execution-helpers.ts) (`makeOkNumber`, `makeError`, `expectText`, ...) keep implementations small. Optional hooks: `tryStaticEvaluate` for parse-time folding and `estimateCostsInSeconds` for cost limits.
 
+The execution context (`FormulaExecutionContext`) has two optional members, `chargeCall(signatureId, args)` and `readCall(signatureId, args, answer)`, which the runner provides so that an implementation calling another implementation itself is charged and read like the same call written in a formula.
+
+**Experimental exports.** These may change in a minor release: `chargeCall` and `readCall`, `literalCheckAt`, `admittedValues` and the `LiteralCheck` type, `argumentFits`, `argumentSelects`, and `readCallOutput`.
+
 ### Limits and errors
 
 `FormulaLimits` centralizes the resource caps enforced by parser and runner: source length, token and AST-node counts, parenthesis depth, evaluation steps, cost units, wall time, list/regex sizes, and debug-log sizes. `resolveFormulaLimits(overrides)` shallow-merges partial overrides onto the conservative `DEFAULT_FORMULA_LIMITS`.
 
-Errors are structured values, not strings: `FormulaError { kind, code, message, span?, path? }`, where `kind` is `parse | type | runtime | security | config` and `code` comes from the stable `FormulaErrorCodes` set (`UNKNOWN_VARIABLE`, `NO_MATCHING_OVERLOAD`, `DENYLISTED_PROPERTY`, `EVAL_LIMIT_EXCEEDED`, ...). For enforcement inside implementations there are the `FormulaLimitError` and `FormulaRuntimeError` exception classes and the step-counting `FormulaEvaluationBudget`.
+Errors are structured values, not strings: `FormulaError { kind, code, message, span?, path? }`, where `kind` is `parse | type | runtime | security | config` and `code` comes from the stable `FormulaErrorCodes` set (`UNKNOWN_VARIABLE`, `NO_MATCHING_OVERLOAD`, `DENYLISTED_PROPERTY`, `EVAL_LIMIT_EXCEEDED`, ...), including `LITERAL_VALUE_NOT_ALLOWED` (kind `type`) and `PHRASE_TOO_LONG` (kind `security`). For enforcement inside implementations there are the `FormulaLimitError` and `FormulaRuntimeError` exception classes and the step-counting `FormulaEvaluationBudget`.
 
 ## Registering your own
 

@@ -36,14 +36,14 @@ parser/          @formulang/parser        — formula source -> typed, validated
 runner/          @formulang/runner        — asynchronous evaluation engine
 core-functions/  @formulang/core-functions — built-in function definitions + implementations
 docs/            language, functions, architecture, extending, best-practices, and releasing guides
-scripts/         release tooling (set-version.js)
+scripts/         release tooling (set-version.js) and the 1.0.0 compatibility baseline (compat/)
 ```
 
 The four packages form a small dependency chain: `definitions` has no dependencies; `parser` and `core-functions` depend on `definitions`; `runner` depends on `definitions` and `parser`. Published packages must stay free of third-party runtime dependencies.
 
 ## Testing
 
-Tests use [vitest](https://vitest.dev). Spec files are named `*.spec.ts` and live next to the source they cover (for example `parser/src/index.spec.ts` next to `parser/src/index.ts`).
+Tests use [vitest](https://vitest.dev). Spec files are named `*.spec.ts` and live next to the source they cover (for example `parser/src/index.spec.ts` next to `parser/src/index.ts`). `core-functions/src/docs-examples.spec.ts` runs the `evalOk` examples in `docs/functions.md`.
 
 ```sh
 # Everything

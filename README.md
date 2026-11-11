@@ -19,7 +19,7 @@ Thirteen capabilities every embedder gets out of the box, and thirteen more for 
 
 ### Core capabilities
 
-- **Spreadsheet-style formula language.** 97 built-in functions covering math, aggregation, logic and comparison, text, lists, date and time, control flow, and type and empty ([function reference](docs/functions.md)).
+- **Spreadsheet-style formula language.** 111 built-in functions covering math, aggregation, logic and comparison, text, lists, date and time, control flow, and type and empty ([function reference](docs/functions.md)).
 - **Strong static typing.** Every literal, variable, property, and call is bound to a type at compile time; argument type mismatches, unresolvable overloads, and nullability violations are compile errors (`ARGUMENT_TYPE_MISMATCH`, `NO_MATCHING_OVERLOAD`, `NULL_NOT_ALLOWED`), reported as structured diagnostics with exact source spans — before anything executes ([architecture §2.4](docs/architecture.md#24-type-binding-and-overload-resolution)).
 - **Return-type analysis.** Every compiled formula reports its result type, and every AST node its bound type, nullability included — `1 + 2 * 3` compiles to `number?`, `EACH(LIST("a";"bb"); "LEN")` to `List<number?>?` — so editors can show result types before execution and hosts can require, say, a number-returning formula by checking `isAssignable` against `rule.returnType` ([parser README](parser/README.md#the-typedrule-result)).
 - **Rich data-type vocabulary.** `FormulaType` is a JSON-serializable union of ten kinds — `any`, `null`, `boolean`, `number`, `text`, `template` (per-function generics), `callable` (typed function and operator references), `list`, `object` (a clarifier tag plus a per-property type allowlist), and `union` — with explicit nullability on every type, declared as plain data ([definitions README](definitions/README.md#types-formulatype-and-formulatypes)).
@@ -162,7 +162,7 @@ The language convention is "empty in, empty out": built-ins return `null` instea
 
 ### Where is the full list of built-in functions?
 
-[docs/functions.md](docs/functions.md) documents all 97 functions registered by `createCoreFormulaRuntime()`, grouped by category as in [Core capabilities](#core-capabilities), with signatures and examples for each.
+[docs/functions.md](docs/functions.md) documents all 111 functions registered by `createCoreFormulaRuntime()`, grouped by category as in [Core capabilities](#core-capabilities), with signatures and examples for each.
 
 ## Development
 
@@ -189,7 +189,7 @@ Tests need no build: vitest resolves `@formulang/*` imports directly to package 
 
 ## Versioning & releases
 
-All packages share a single version and are always published together. A maintainer sets the version with `pnpm run set-version X.Y.Z` (which keeps every `package.json` in lockstep), commits with any message, and merges to `main`; the release workflow then builds, tests, publishes every package to npm with provenance, tags `v<version>`, and creates a GitHub release with auto-generated notes. If the version on `main` is already published, the workflow is a no-op. Release notes live on the [GitHub Releases page](https://github.com/formulang/formula/releases) — there is no `CHANGELOG.md`. See [docs/releasing.md](docs/releasing.md).
+All packages share a single version and are always published together. A maintainer sets the version with `pnpm run set-version X.Y.Z` (which keeps every `package.json` in lockstep), commits with any message, and merges to `main`; the release workflow then builds, tests, publishes every package to npm with provenance, tags `v<version>`, and creates a GitHub release with auto-generated notes. If the version on `main` is already published, the workflow is a no-op. Release notes live on the [GitHub Releases page](https://github.com/formulang/formula/releases) — there is no `CHANGELOG.md`. See [docs/releasing.md](docs/releasing.md). Upgrading from 1.0.0: hosts that registered their own function under one of the 14 names added in 1.1.0 should read [Built-in names added in 1.1.0](docs/extending.md#built-in-names-added-in-110).
 
 ## Maintenance
 

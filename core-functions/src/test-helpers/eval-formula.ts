@@ -95,6 +95,28 @@ export async function evalOk(
   return res.value;
 }
 
+/**
+ * The codes of the errors a formula reports: those its compiled form carries (the parser's, which
+ * optimisation keeps), then those its evaluation reports.
+ */
+export async function evalErrors(
+  source: string,
+  vars: Record<string, unknown> = {},
+  options?: EvalOptions,
+): Promise<string[]> {
+  const { compiled, res } = await evalFormula(source, vars, options);
+  return [...compiled.errors, ...res.errors].map((error) => error.code);
+}
+
+/** Registers `other`, a second test input next to `value` (an `EvalOptions` setup). */
+export function withOther(registry: MutableFormulaRegistry): void {
+  registry.registerVariable({
+    name: 'other',
+    description: 'A second test input value.',
+    type: FormulaTypes.any(true),
+  });
+}
+
 export async function evalOkWithOutput(
   source: string,
   vars: Record<string, unknown> = {},
